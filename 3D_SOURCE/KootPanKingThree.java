@@ -751,8 +751,22 @@ public class KootPanKingThree extends Application {
                 javafx.scene.control.MenuItem cityItem =
                     new javafx.scene.control.MenuItem(city);
                 cityItem.setOnAction(ev -> {
-                    javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
-                    if (!ensureYoutubeExePaths(owner)) return; // 취소 시 중단
+                    // exe 경로 미설정 시 → 메시지만 표시하고 종료
+                    String ytdlp  = ytdlpPath;
+                    String ffmpeg = config.getProperty("youtube.ffmpeg.path", "");
+                    if (ytdlp.isEmpty() || !new java.io.File(ytdlp).exists()
+                     || ffmpeg.isEmpty() || !new java.io.File(ffmpeg).exists()) {
+                        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+                            javafx.scene.control.Alert.AlertType.INFORMATION);
+                        alert.setTitle("YouTube 설정 필요");
+                        alert.setHeaderText(null);
+                        alert.setContentText(
+                            "[YouTube 스트림 URL & 설정] 메뉴에서\n" +
+                            "(yt-dlp.exe) (ffmpeg.exe) 실행 파일 경로 설정을 미리 하세요.");
+                        alert.initOwner((javafx.stage.Stage) popup.getOwnerWindow());
+                        alert.showAndWait();
+                        return;
+                    }
                     youtubeUrl = url;
                     stopCamera(); stopItsCctv();
                     startYoutube(url);
@@ -765,24 +779,10 @@ public class KootPanKingThree extends Application {
         ytMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
         javafx.scene.control.MenuItem ytUrlItem =
-            new javafx.scene.control.MenuItem("🔗 URL 직접 입력...");
+            new javafx.scene.control.MenuItem("🔗 URL직접입력 & YouTube설정");
         ytUrlItem.setOnAction(ev -> {
             javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
-            if (!ensureYoutubeExePaths(owner)) return; // 취소 시 중단
-            javafx.scene.control.TextInputDialog dlg =
-                new javafx.scene.control.TextInputDialog(youtubeUrl);
-            dlg.setTitle("YouTube 스트림 URL");
-            dlg.setHeaderText("YouTube / 라이브 URL 입력");
-            dlg.setContentText("URL:");
-            dlg.initOwner(owner);
-            dlg.showAndWait().ifPresent(url -> {
-                if (!url.trim().isEmpty()) {
-                    youtubeUrl = url.trim();
-                    stopCamera(); stopItsCctv();
-                    startYoutube(youtubeUrl);
-                    saveConfig();
-                }
-            });
+            showYoutubeSettingsDialog(owner);
         });
 
         javafx.scene.control.MenuItem ytDlItem =
@@ -1477,19 +1477,40 @@ public class KootPanKingThree extends Application {
     // ══════════════════════════════════════════════════════════════════
 
     // ══════════════════════════════════════════════════════════════════
-    //  YouTube EXE 경로 확인 (ini → 없으면 FileChooser)
+    //  YouTube 스트림 URL & 설정 다이얼로그
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * yt-dlp.exe 와 ffmpeg.exe 경로를 ini에서 확인하고,
-     * 없거나 파일이 사라졌으면 FileChooser로 사용자에게 각각 선택하게 한다.
-     * 하나라도 취소하면 false 반환 (YouTube 시작 안 함).
-     * 모두 확인되면 ini 저장 후 true 반환.
+     * [YouTube 스트림 URL & 설정] 다이얼로그.
+     * - URL 입력 필드
+     * - yt-dlp.exe 경로 표시 + 지정 버튼
+     * - ffmpeg.exe 경로 표시 + 지정 버튼
+     * - [확인] 시 URL + exe 경로 ini 저장 후 YouTube 시작
+     * - [취소] 시 아무것도 안 함
      */
-    private boolean ensureYoutubeExePaths(javafx.stage.Stage owner) {
-        // ── yt-dlp.exe ──────────────────────────────────────────────
-        String ytdlp = ytdlpPath;
-        if (ytdlp.isEmpty() || !new java.io.File(ytdlp).exists()) {
+    private void showYoutubeSettingsDialog(javafx.stage.Stage owner) {
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initOwner(owner);
+        dlg.initStyle(javafx.stage.StageStyle.UTILITY);
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dlg.setAlwaysOnTop(true);
+        dlg.setTitle("YouTube 스트림 URL & 설정");
+
+        // ── URL 입력 ──────────────────────────────────────────────────
+        javafx.scene.control.Label urlLabel = new javafx.scene.control.Label("YouTube URL:");
+        javafx.scene.control.TextField urlField = new javafx.scene.control.TextField(youtubeUrl);
+        urlField.setPrefWidth(380);
+        urlField.setPromptText("https://www.youtube.com/live/...");
+
+        // ── yt-dlp.exe 경로 ───────────────────────────────────────────
+        javafx.scene.control.Label ytdlpLabel = new javafx.scene.control.Label("yt-dlp.exe:");
+        javafx.scene.control.TextField ytdlpField = new javafx.scene.control.TextField(ytdlpPath);
+        ytdlpField.setPrefWidth(300);
+        ytdlpField.setEditable(false);
+        ytdlpField.setPromptText("(미지정)");
+
+        javafx.scene.control.Button ytdlpBtn = new javafx.scene.control.Button("yt-dlp.exe 지정");
+        ytdlpBtn.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
             fc.setTitle("yt-dlp.exe 위치 선택");
             fc.getExtensionFilters().addAll(
@@ -1497,21 +1518,25 @@ public class KootPanKingThree extends Application {
                 new javafx.stage.FileChooser.ExtensionFilter("실행 파일", "*.exe"),
                 new javafx.stage.FileChooser.ExtensionFilter("모든 파일", "*.*")
             );
-            if (!ytdlp.isEmpty()) {
-                java.io.File prev = new java.io.File(ytdlp).getParentFile();
+            String cur = ytdlpField.getText().trim();
+            if (!cur.isEmpty()) {
+                java.io.File prev = new java.io.File(cur).getParentFile();
                 if (prev != null && prev.exists()) fc.setInitialDirectory(prev);
             }
-            java.io.File chosen = fc.showOpenDialog(owner);
-            if (chosen == null) {
-                System.out.println("[YT-EXE] yt-dlp 선택 취소 → YouTube 시작 안 함");
-                return false;
-            }
-            ytdlp = chosen.getAbsolutePath();
-        }
+            java.io.File chosen = fc.showOpenDialog(dlg);
+            if (chosen != null) ytdlpField.setText(chosen.getAbsolutePath());
+        });
 
-        // ── ffmpeg.exe (YouTube 전용) ────────────────────────────────
-        String ffmpeg = config.getProperty("youtube.ffmpeg.path", "");
-        if (ffmpeg.isEmpty() || !new java.io.File(ffmpeg).exists()) {
+        // ── ffmpeg.exe 경로 ───────────────────────────────────────────
+        String ffmpegCur = config.getProperty("youtube.ffmpeg.path", "");
+        javafx.scene.control.Label ffmpegLabel = new javafx.scene.control.Label("ffmpeg.exe:");
+        javafx.scene.control.TextField ffmpegField = new javafx.scene.control.TextField(ffmpegCur);
+        ffmpegField.setPrefWidth(300);
+        ffmpegField.setEditable(false);
+        ffmpegField.setPromptText("(미지정)");
+
+        javafx.scene.control.Button ffmpegBtn = new javafx.scene.control.Button("ffmpeg.exe 지정");
+        ffmpegBtn.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
             fc.setTitle("ffmpeg.exe 위치 선택");
             fc.getExtensionFilters().addAll(
@@ -1519,26 +1544,77 @@ public class KootPanKingThree extends Application {
                 new javafx.stage.FileChooser.ExtensionFilter("실행 파일", "*.exe"),
                 new javafx.stage.FileChooser.ExtensionFilter("모든 파일", "*.*")
             );
-            if (!ffmpeg.isEmpty()) {
-                java.io.File prev = new java.io.File(ffmpeg).getParentFile();
+            String cur = ffmpegField.getText().trim();
+            if (!cur.isEmpty()) {
+                java.io.File prev = new java.io.File(cur).getParentFile();
                 if (prev != null && prev.exists()) fc.setInitialDirectory(prev);
             }
-            java.io.File chosen = fc.showOpenDialog(owner);
-            if (chosen == null) {
-                System.out.println("[YT-EXE] ffmpeg 선택 취소 → YouTube 시작 안 함");
-                return false;
-            }
-            ffmpeg = chosen.getAbsolutePath();
-        }
+            java.io.File chosen = fc.showOpenDialog(dlg);
+            if (chosen != null) ffmpegField.setText(chosen.getAbsolutePath());
+        });
 
-        // ── ini 저장 ────────────────────────────────────────────────
-        ytdlpPath = ytdlp;
-        config.setProperty("youtube.ytdlp.path",  ytdlp);
-        config.setProperty("youtube.ffmpeg.path",  ffmpeg);
-        saveConfig();
-        System.out.println("[YT-EXE] yt-dlp: " + ytdlp);
-        System.out.println("[YT-EXE] ffmpeg : " + ffmpeg);
-        return true;
+        // ── 버튼: 확인 / 취소 ─────────────────────────────────────────
+        javafx.scene.control.Button okBtn     = new javafx.scene.control.Button("확인");
+        javafx.scene.control.Button cancelBtn = new javafx.scene.control.Button("취소");
+        okBtn.setDefaultButton(true);
+        cancelBtn.setCancelButton(true);
+
+        okBtn.setOnAction(e -> {
+            String newUrl    = urlField.getText().trim();
+            String newYtdlp  = ytdlpField.getText().trim();
+            String newFfmpeg = ffmpegField.getText().trim();
+
+            // exe 경로 ini 저장 (URL과 무관하게 항상 저장)
+            ytdlpPath = newYtdlp;
+            config.setProperty("youtube.ytdlp.path",  newYtdlp);
+            config.setProperty("youtube.ffmpeg.path", newFfmpeg);
+
+            if (!newUrl.isEmpty()) {
+                youtubeUrl = newUrl;
+                config.setProperty("youtube.url", newUrl);
+                // exe 경로가 모두 지정된 경우만 재생 시작
+                if (!newYtdlp.isEmpty() && new java.io.File(newYtdlp).exists()
+                 && !newFfmpeg.isEmpty() && new java.io.File(newFfmpeg).exists()) {
+                    stopCamera(); stopItsCctv();
+                    startYoutube(newUrl);
+                }
+            }
+            saveConfig();
+            dlg.close();
+        });
+
+        cancelBtn.setOnAction(e -> dlg.close());
+
+        // ── 레이아웃 ──────────────────────────────────────────────────
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(8);
+        grid.setVgap(10);
+        grid.setPadding(new javafx.geometry.Insets(16, 18, 10, 18));
+
+        // URL 행
+        grid.add(urlLabel,  0, 0);
+        grid.add(urlField,  1, 0, 2, 1);
+
+        // yt-dlp 행
+        grid.add(ytdlpLabel, 0, 1);
+        grid.add(ytdlpField, 1, 1);
+        grid.add(ytdlpBtn,   2, 1);
+
+        // ffmpeg 행
+        grid.add(ffmpegLabel, 0, 2);
+        grid.add(ffmpegField, 1, 2);
+        grid.add(ffmpegBtn,   2, 2);
+
+        // 버튼 행
+        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, okBtn, cancelBtn);
+        btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+        btnRow.setPadding(new javafx.geometry.Insets(6, 18, 12, 18));
+
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, btnRow);
+        root.setStyle("-fx-background-color: white;");
+
+        dlg.setScene(new javafx.scene.Scene(root));
+        dlg.showAndWait();
     }
 
     /** YouTube / 라이브 스트림 배경 시작. FX 스레드에서 호출. */
