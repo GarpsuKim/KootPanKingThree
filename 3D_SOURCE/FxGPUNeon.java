@@ -217,6 +217,10 @@ public class FxGPUNeon {
         private Runnable stopYoutubeCallback = null;
         /** KootPanKingThree에서 주입. 테마 변경 시 YouTube 중지에 사용. */
         public void setStopYoutubeCallback(Runnable cb) { this.stopYoutubeCallback = cb; }
+
+        private Runnable onDigitalSettingsRequest = null;
+        /** 디지탈 영역 더블클릭 시 설정 다이얼로그 콜백. KootPanKingThree에서 주입. */
+        public void setOnDigitalSettingsRequest(Runnable cb) { this.onDigitalSettingsRequest = cb; }
 		
         private void installHandlers(Scene scene) {
             // ── 마우스 이벤트 (구 MenuController.install) ───────────────
@@ -262,12 +266,24 @@ public class FxGPUNeon {
                 assembler.applyGeometryScale();
                 updateCamera();
                 e.consume();
-			});
+            });
+
+            // 디지탈 영역 더블클릭 → subScene에서 Y좌표로 판단 (overlay는 mouseTransparent 유지)
             subScene.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
+                    // 디지탈 영역 더블클릭 체크
+                    if (state.showDigital) {
+                        double posY = state.viewportHeight / 2.0
+                            + (state.coinRadius / AppState.BASE_COIN_RADIUS)
+                            * AppState.BASE_COIN_RADIUS + 30;
+                        if (e.getY() >= posY && e.getY() <= posY + state.digitalFontSize + 20) {
+                            if (onDigitalSettingsRequest != null) onDigitalSettingsRequest.run();
+                            return;
+                        }
+                    }
                     popup.show(subScene, e.getScreenX(), e.getScreenY());
-				}
-			});
+                }
+            });
             scene.setOnKeyPressed(e -> {
                 KeyCode code = e.getCode();
                 if (code == KeyCode.SPACE) {
@@ -741,7 +757,29 @@ public class FxGPUNeon {
 			}
 		}
 
-        /** YouTube 로딩 메시지 표시/숨김. FX 스레드 전용. */
+        /** 중앙 고정: GOLD 테마 + 기본 반지름 + 주 모니터 중앙으로 이동. */
+        public void resetToDefault() {
+            state.applyTheme(AppState.Theme.GOLD);
+            state.coinRadius = AppState.BASE_COIN_RADIUS;
+            assembler.rebuildMaterialsAndScene();
+            javafx.geometry.Rectangle2D vb0 = javafx.stage.Screen.getPrimary().getVisualBounds();
+            mainStage.setX(vb0.getMinX() + (vb0.getWidth()  - mainStage.getWidth())  / 2);
+            mainStage.setY(vb0.getMinY() + (vb0.getHeight() - mainStage.getHeight()) / 2);
+        }
+
+        /** 디지탈 시계 ON/OFF 반환. */
+        public static boolean getDigitalState(ClockController cc) {
+            return cc.state.showDigital;
+        }
+
+        /** 디지탈 시계 ON/OFF 설정. */
+        public static void setDigitalState(ClockController cc, boolean on) {
+            cc.state.showDigital = on;
+        }
+
+        /** AppState 직접 접근 (KootPanKingThree 설정 다이얼로그용). */
+        public static AppState getAppState(ClockController cc) { return cc.state; }
+
         public void showStatusMessage(String message) {
             if (statusLabel == null) return;
             if (message == null || message.isEmpty()) {
@@ -892,6 +930,24 @@ public class FxGPUNeon {
         /** 앞면·본체·뒷면·유리 모두 숨겨 시계 내부를 투명하게 만드는 모드 */
         boolean transparentMode = false;
 		
+        // ── 디지탈 시계 ──────────────────────────────────────────────
+        /** 디지탈 시계 표시 ON/OFF */
+        boolean showDigital = false;
+        /** 표시 방식 인덱스 (0~3) */
+        int digitalFormatIndex = 0;
+        /** 폰트 패밀리 */
+        String digitalFontFamily = "Consolas";
+        /** 폰트 크기 */
+        double digitalFontSize   = 20.0;
+        /** 글자 색 (0xAARRGGBB) */
+        int digitalColorRgb = 0xFFFFFFFF;
+        /** 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우 */
+        int digitalScrollDir = 1;
+        /** 스크롤 속도 (px/frame) */
+        double digitalScrollSpeed = 1.5;
+        /** 스크롤 X 오프셋 (OverlayRenderer 내부 누적) */
+        double digitalScrollOffset = 0.0;
+
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
         Image backgroundImage = null;
@@ -2714,24 +2770,82 @@ public class FxGPUNeon {
     // ───────────────────────── Overlay ─────────────────────────
     static final class OverlayRenderer {
         private final AppState state;
-        OverlayRenderer(AppState state) {
-            this.state = state;
-		}
-		
-        // #7: appState 파라미터 제거 — 생성자 주입된 this.state를 직접 사용
+        OverlayRenderer(AppState state) { this.state = state; }
+
         void draw(Canvas overlay) {
             GraphicsContext gc = overlay.getGraphicsContext2D();
             gc.clearRect(0, 0, state.viewportWidth, state.viewportHeight);
-			
+
             if (state.paused) {
                 gc.setFill(Color.color(1.0, 0.85, 0.20, 0.90));
                 gc.setFont(Font.font("Consolas", FontWeight.BOLD, 14));
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.setTextBaseline(VPos.TOP);
                 gc.fillText("[ PAUSED ]", state.viewportWidth / 2.0, 10);
-			}
-		}
-	}
+            }
+
+            if (!state.showDigital) return;
+
+            // ── 시간 문자열 생성 ─────────────────────────────────────────
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+            String[] weekdays = {"일","월","화","수","목","금","토"};
+            String dow = weekdays[now.getDayOfWeek().getValue() % 7];
+            int h24 = now.getHour();
+            int h12 = h24 % 12 == 0 ? 12 : h24 % 12;
+            String ampm = h24 < 12 ? "오전" : "오후";
+            String text;
+            switch (state.digitalFormatIndex) {
+                case 1  -> text = String.format("%02d:%02d %s [%s]",
+                    h12, now.getMinute(), ampm, dow);
+                case 2  -> text = String.format("%02d:%02d:%02d %s [%s]",
+                    h12, now.getMinute(), now.getSecond(), ampm, dow);
+                case 3  -> text = String.format("%d년 %02d월 %02d일 [%s]",
+                    now.getYear(), now.getMonthValue(), now.getDayOfMonth(), dow);
+                default -> text = String.format("%02d/%02d/%02d  %02d:%02d:%02d %s [%s]",
+                    now.getYear() % 100, now.getMonthValue(), now.getDayOfMonth(),
+                    h12, now.getMinute(), now.getSecond(), ampm, dow);
+            }
+
+            // ── 폰트 / 색 설정 ──────────────────────────────────────────
+            gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, state.digitalFontSize));
+            int rgb = state.digitalColorRgb;
+            gc.setFill(Color.rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF,
+                ((rgb >> 24) & 0xFF) / 255.0));
+
+            // ── 텍스트 폭 측정 ──────────────────────────────────────────
+            javafx.scene.text.Text measure = new javafx.scene.text.Text(text);
+            measure.setFont(gc.getFont());
+            double textW = measure.getLayoutBounds().getWidth();
+
+            // ── 위치: 화면 하단 (overlay 전체 기준) ─────────────────────
+            double centerX = state.viewportWidth  / 2.0;
+            double posY    = state.viewportHeight / 2.0
+                           + (state.coinRadius / AppState.BASE_COIN_RADIUS)
+                           * AppState.BASE_COIN_RADIUS + 30;
+
+            gc.setTextBaseline(VPos.TOP);
+
+            if (state.digitalScrollDir == 0) {
+                // ── 고정 ────────────────────────────────────────────────
+                gc.setTextAlign(TextAlignment.CENTER);
+                gc.fillText(text, centerX, posY);
+            } else {
+                // ── 스크롤 ──────────────────────────────────────────────
+                gc.setTextAlign(TextAlignment.LEFT);
+                double x = centerX + state.digitalScrollOffset;
+
+                // 스크롤 오프셋 갱신
+                if (state.digitalScrollDir == 1) { // 우→좌
+                    state.digitalScrollOffset -= state.digitalScrollSpeed;
+                    if (x + textW < 0) state.digitalScrollOffset = state.viewportWidth / 2.0;
+                } else {                            // 좌→우
+                    state.digitalScrollOffset += state.digitalScrollSpeed;
+                    if (x > state.viewportWidth) state.digitalScrollOffset = -state.viewportWidth / 2.0 - textW;
+                }
+                gc.fillText(text, x, posY);
+            }
+        }
+    }
 	
     // ───────────────────────── Setup Panel ─────────────────────────
     static final class SetupPanelController {
