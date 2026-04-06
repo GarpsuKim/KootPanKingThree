@@ -21,6 +21,7 @@ if not exist "%ERROR_DIR%" mkdir "%ERROR_DIR%"
 if not exist "%CLASS_DIR%"  mkdir "%CLASS_DIR%"
 type nul > "%ERROR_FILE%"
 
+ECHO COMPILIING : %SOURCE_FILE%
 javac -d "%CLASS_DIR%" ^
       --module-path "%JAVAFX_LIB%" ^
       --add-modules javafx.controls,javafx.graphics,javafx.base,javafx.swing,javafx.fxml,javafx.web ^

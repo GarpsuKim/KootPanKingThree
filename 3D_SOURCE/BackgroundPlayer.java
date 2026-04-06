@@ -59,8 +59,10 @@ public class BackgroundPlayer {
             void onStatusMessage(String message);
             /** %APPDATA%\KootPanKingThree\settings\ */
             String getSettingsDir();
-            /** 실행파일(exe/jar) 폴더 — yt-dlp.exe / ffmpeg.exe 탐색용 */
-            String getAppDir();
+            /** ini에 저장된 yt-dlp.exe 절대 경로. */
+            String getYtDlpPath();
+            /** ini에 저장된 ffmpeg.exe 절대 경로. */
+            String getFfmpegPath();
         }
 
         // ── 상수 ───────────────────────────────────────────────────
@@ -243,8 +245,13 @@ public class BackgroundPlayer {
         // ── yt-dlp: 스트림 URL 추출 ────────────────────────────────
         private String extractStreamUrl(String youtubeUrl) {
             try {
+                String ytdlp = host.getYtDlpPath();
+                if (ytdlp == null || ytdlp.isEmpty()) {
+                    System.out.println("[YT-BG] yt-dlp 경로 없음 → 중단");
+                    return "";
+                }
                 ProcessBuilder pb = new ProcessBuilder(
-                    resolveExe("yt-dlp.exe"),
+                    ytdlp,
                     "-f", "bestvideo[ext=mp4][height<=720]/bestvideo[ext=mp4]/best[ext=mp4]",
                     "--get-url", "--no-playlist", youtubeUrl
                 );
@@ -265,9 +272,14 @@ public class BackgroundPlayer {
         // ── ffmpeg: 30초 청크 다운로드 ────────────────────────────
         private boolean downloadChunk(String streamUrl, Path output) {
             try {
+                String ffmpeg = host.getFfmpegPath();
+                if (ffmpeg == null || ffmpeg.isEmpty()) {
+                    System.out.println("[YT-BG] ffmpeg 경로 없음 → 중단");
+                    return false;
+                }
                 Files.deleteIfExists(output);
                 ProcessBuilder pb = new ProcessBuilder(
-                    resolveExe("ffmpeg.exe"), "-y",
+                    ffmpeg, "-y",
                     "-reconnect",           "1",
                     "-reconnect_streamed",  "1",
                     "-reconnect_delay_max", "5",
@@ -356,14 +368,6 @@ public class BackgroundPlayer {
         }
 
         // ── 유틸 ───────────────────────────────────────────────────
-        private String resolveExe(String name) {
-            Path inApp   = Path.of(host.getAppDir(), name);
-            if (Files.exists(inApp))   return inApp.toString();
-            Path inTools = Path.of(host.getAppDir(), "tools", name);
-            if (Files.exists(inTools)) return inTools.toString();
-            return name;
-        }
-
         private void cleanCache() {
             if (cacheDir == null) return;
             try {
