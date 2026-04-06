@@ -1363,15 +1363,20 @@ public class KootPanKingThree extends Application {
         // ── 생활도구 ─────────────────────────────────────────────
         javafx.scene.control.Menu lifeMenu = buildLifeMenu(popup);
 
-        // ── 디지탈 시계 토글 ─────────────────────────────────────
+        // ── 디지탈 시계 토글 + 설정 ──────────────────────────────
         javafx.scene.control.CheckMenuItem digitalItem =
-            new javafx.scene.control.CheckMenuItem("디지탈 시계");
+            new javafx.scene.control.CheckMenuItem("디지탈 시계 on/off");
         digitalItem.setSelected(clockController != null && getDigitalState());
         digitalItem.setOnAction(e -> {
             boolean on = digitalItem.isSelected();
             setDigitalState(on);
             saveConfig();
         });
+
+        javafx.scene.control.MenuItem digitalSettingsItem =
+            new javafx.scene.control.MenuItem("디지탈 시계 설정");
+        digitalSettingsItem.setOnAction(e ->
+            showDigitalSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow()));
 
         // ── 중앙 고정 (최상단) ────────────────────────────────────
         javafx.scene.control.MenuItem centerItem = new javafx.scene.control.MenuItem("📌 중앙 고정");
@@ -1383,6 +1388,7 @@ public class KootPanKingThree extends Application {
             phoneCam, ytMenu, cctv,
             new javafx.scene.control.SeparatorMenuItem(),
             digitalItem,
+            digitalSettingsItem,
             new javafx.scene.control.SeparatorMenuItem(),
             chimeItem,
             new javafx.scene.control.SeparatorMenuItem(),
@@ -1875,16 +1881,19 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.RadioButton rbFixed = new javafx.scene.control.RadioButton("고정");
         javafx.scene.control.RadioButton rbLTR   = new javafx.scene.control.RadioButton("좌에서 우로");
         javafx.scene.control.RadioButton rbRTL   = new javafx.scene.control.RadioButton("우에서 좌로");
+        javafx.scene.control.RadioButton rbPing  = new javafx.scene.control.RadioButton("핑퐁");
         rbFixed.setToggleGroup(dirGroup);
         rbLTR  .setToggleGroup(dirGroup);
         rbRTL  .setToggleGroup(dirGroup);
+        rbPing .setToggleGroup(dirGroup);
         switch (st.digitalScrollDir) {
             case 0 -> rbFixed.setSelected(true);
             case 2 -> rbLTR  .setSelected(true);
+            case 3 -> rbPing .setSelected(true);
             default-> rbRTL  .setSelected(true);
         }
         javafx.scene.layout.HBox dirRow =
-            new javafx.scene.layout.HBox(12, rbFixed, rbRTL, rbLTR);
+            new javafx.scene.layout.HBox(12, rbFixed, rbRTL, rbLTR, rbPing);
 
         // ── 스크롤 속도 슬라이더 ─────────────────────────────────────
         javafx.scene.control.Label speedLabel = new javafx.scene.control.Label("스크롤 속도");
@@ -1923,6 +1932,7 @@ public class KootPanKingThree extends Application {
             st.digitalColorRgb = (a << 24) | (r << 16) | (g << 8) | b2;
             if (rbFixed.isSelected()) st.digitalScrollDir = 0;
             else if (rbLTR.isSelected()) st.digitalScrollDir = 2;
+            else if (rbPing.isSelected()) st.digitalScrollDir = 3;
             else st.digitalScrollDir = 1;
             st.digitalScrollSpeed = speedSlider.getValue();
             st.digitalScrollOffset = Double.NaN; // 방향 변경 시 끝 위치에서 재시작

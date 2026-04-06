@@ -301,7 +301,7 @@ public class FxGPUNeon {
             header.setDisable(true);
             header.setStyle("-fx-opacity:1; -fx-text-fill:#555555; -fx-font-weight:bold;");
 			
-            MenuItem menuSetup = new MenuItem("시계 설정");
+            MenuItem menuSetup = new MenuItem("메인 시계 설정");
             menuSetup.setOnAction(e -> toggleSetup());
 			
             menuSwing.setSelected(!state.paused);
@@ -935,8 +935,10 @@ public class FxGPUNeon {
         double digitalFontSize   = 20.0;
         /** 글자 색 (0xAARRGGBB) */
         int digitalColorRgb = 0xFFFFFFFF;
-        /** 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우 */
+        /** 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
         int digitalScrollDir = 1;
+        /** 핑퐁 전용: 현재 이동 방향 (+1=우→좌, -1=좌→우) */
+        int digitalPingPongDir = 1;
         /** 스크롤 속도 (px/frame) */
         double digitalScrollSpeed = 1.5;
         /** 스크롤 X 오프셋 (NaN = 미초기화, 첫 프레임에서 끝 위치로 자동 설정). */
@@ -1616,25 +1618,37 @@ public class FxGPUNeon {
             if (state.digitalScrollDir == 0) {
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.fillText(text, texW / 2.0, texH / 2.0);
-            } else {
-                // ── 스크롤: 끝에서 시작 → 반대편에서 즉시 랩어라운드 ──
-                // digitalScrollOffset 이 NaN(미초기화)이면 시작 위치로 리셋
-                if (Double.isNaN(state.digitalScrollOffset)) {
-                    state.digitalScrollOffset = (state.digitalScrollDir == 1)
-                        ? texW           // 우→좌: 오른쪽 끝에서 시작
-                        : -tw;           // 좌→우: 왼쪽 끝(텍스트 폭만큼 밖)에서 시작
-                }
-
+            } else if (state.digitalScrollDir == 3) {
+                // ── 핑퐁: 끝에 닿으면 방향 반전 ──────────────────────
+                if (Double.isNaN(state.digitalScrollOffset))
+                    state.digitalScrollOffset = 0; // 핑퐁은 중앙에서 시작
                 double x = state.digitalScrollOffset;
                 gc.setTextAlign(TextAlignment.LEFT);
                 gc.fillText(text, x, texH / 2.0);
-
+                state.digitalScrollOffset += state.digitalPingPongDir * state.digitalScrollSpeed * 0.5;
+                // 오른쪽 끝 충돌
+                if (state.digitalScrollOffset + tw > texW) {
+                    state.digitalScrollOffset = texW - tw;
+                    state.digitalPingPongDir = -1;
+                }
+                // 왼쪽 끝 충돌
+                if (state.digitalScrollOffset < 0) {
+                    state.digitalScrollOffset = 0;
+                    state.digitalPingPongDir = 1;
+                }
+            } else {
+                // ── 단방향 스크롤: 끝에서 시작 → 반대편에서 즉시 랩어라운드 ──
+                if (Double.isNaN(state.digitalScrollOffset)) {
+                    state.digitalScrollOffset = (state.digitalScrollDir == 1)
+                        ? texW : -tw;
+                }
+                double x = state.digitalScrollOffset;
+                gc.setTextAlign(TextAlignment.LEFT);
+                gc.fillText(text, x, texH / 2.0);
                 if (state.digitalScrollDir == 1) {
-                    // 우→좌: x 감소, 텍스트가 왼쪽으로 사라지면 오른쪽 끝에서 즉시 재시작
                     state.digitalScrollOffset -= state.digitalScrollSpeed * 0.5;
                     if (x + tw < 0) state.digitalScrollOffset = texW;
                 } else {
-                    // 좌→우: x 증가, 텍스트가 오른쪽으로 사라지면 왼쪽 끝에서 즉시 재시작
                     state.digitalScrollOffset += state.digitalScrollSpeed * 0.5;
                     if (x > texW) state.digitalScrollOffset = -tw;
                 }
