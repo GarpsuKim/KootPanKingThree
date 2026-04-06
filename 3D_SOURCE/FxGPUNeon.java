@@ -220,7 +220,10 @@ public class FxGPUNeon {
 
         private Runnable onDigitalSettingsRequest = null;
         /** 디지탈 영역 더블클릭 시 설정 다이얼로그 콜백. KootPanKingThree에서 주입. */
-        public void setOnDigitalSettingsRequest(Runnable cb) { this.onDigitalSettingsRequest = cb; }
+        public void setOnDigitalSettingsRequest(Runnable cb) {
+            this.onDigitalSettingsRequest = cb;
+            assembler.setDigitalClickHandler(cb);
+        }
 		
         private void installHandlers(Scene scene) {
             // ── 마우스 이벤트 (구 MenuController.install) ───────────────
@@ -268,19 +271,8 @@ public class FxGPUNeon {
                 e.consume();
             });
 
-            // 디지탈 영역 더블클릭 → subScene에서 Y좌표로 판단 (overlay는 mouseTransparent 유지)
             subScene.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
-                    // 디지탈 영역 더블클릭 체크
-                    if (state.showDigital) {
-                        double posY = state.viewportHeight / 2.0
-                            + (state.coinRadius / AppState.BASE_COIN_RADIUS)
-                            * AppState.BASE_COIN_RADIUS + 30;
-                        if (e.getY() >= posY && e.getY() <= posY + state.digitalFontSize + 20) {
-                            if (onDigitalSettingsRequest != null) onDigitalSettingsRequest.run();
-                            return;
-                        }
-                    }
                     popup.show(subScene, e.getScreenX(), e.getScreenY());
                 }
             });
@@ -501,8 +493,10 @@ public class FxGPUNeon {
 						}
 					}
                     overlayRenderer.draw(overlay);
-				}
-			};
+                    // 디지탈 3D 텍스처 갱신 (30fps 제한)
+                    assembler.updateDigitalTexture();
+                    assembler.digitalGroup.setVisible(state.showDigital);
+                }			};
             timer.start();
 		}
         void loadBackgroundImageFromFile(File file) {
@@ -1078,6 +1072,12 @@ public class FxGPUNeon {
         private final Group crystalGroup = new Group();
         private final List<Node> crystalNodes = new ArrayList<>();
         private Cylinder coinBodyView;
+
+        // ── 디지탈 시계 3D 노드 ─────────────────────────────────────────
+        private final Group  digitalGroup   = new Group();
+        private Box          digitalBox     = null;
+        private WritableImage digitalTexImg = null;
+        private PhongMaterial digitalMat    = null;
 		
         // [추가] 배경 이미지 텍스처 스냅샷 캐시:
         //   applyBackgroundImage()가 호출될 때마다 512×512 Canvas를 새로 그리고 snapshot()하는 것은
@@ -1293,6 +1293,10 @@ public class FxGPUNeon {
 			
             coinGroup.getTransforms().setAll(coinScale, rootRotY, rootRotX);
             root3D.getChildren().addAll(coinGroup, lightsGroup, imageLayerGroup);
+
+            // ── 디지탈 3D 그룹: 코인과 동일한 transform 공유 ──────────
+            buildDigitalGroup();
+            root3D.getChildren().add(digitalGroup);
             applyGeometryScale();
             applyVisibilityState();
             applyInteractiveResizeState(); // 내부에서 applyBackgroundImage() 호출
@@ -1304,7 +1308,9 @@ public class FxGPUNeon {
         void applyRootRotation() {
             rootRotY.setAngle(state.autoRotAngleY + state.manualRotAngleY);
             rootRotX.setAngle(AppState.clamp(state.baseAngleX + state.autoRotAngleX + state.manualRotAngleX, AppState.ROOT_ROTATE_X_MIN, AppState.ROOT_ROTATE_X_MAX));
-		}
+            // 디지탈 그룹도 동일 회전 적용
+            updateDigitalGroupTransform();
+        }
 		
         /**
 			* 사용자가 선택한 이미지를 시계 앞면(동그라미)의 배경으로 설정한다.
@@ -1500,7 +1506,7 @@ public class FxGPUNeon {
             buildMaterials();
             buildAll();
             applyNeonEffects();   // 재빌드 후 네온 상태 복원
-		}
+        }
 		
         void rebuildAllGeometry() {
             applyGeometryScale();
@@ -1512,8 +1518,142 @@ public class FxGPUNeon {
             coinScale.setX(scale);
             coinScale.setY(scale);
             coinScale.setZ(scale);
-		}
+            updateDigitalGroupTransform();
+        }
 		
+        // ── 디지탈 3D 시계 ────────────────────────────────────────────
+
+        /** 디지탈 Box 노드 생성 및 digitalGroup 초기화. buildAll() 에서 1회 호출. */
+        void buildDigitalGroup() {
+            digitalGroup.getChildren().clear();
+            double r  = AppState.BASE_COIN_RADIUS;
+            double boxW = r * 2.0;   // 코인 지름과 동일
+            double boxH = r * 0.28;  // 높이
+            double boxD = 2.0;       // 두께
+
+            int texW = 512, texH = 64;
+            digitalTexImg = new WritableImage(texW, texH);
+            digitalMat = new PhongMaterial();
+            digitalMat.setDiffuseMap(digitalTexImg);
+            digitalMat.setSpecularColor(Color.TRANSPARENT);
+
+            digitalBox = new Box(boxW, boxH, boxD);
+            digitalBox.setMaterial(digitalMat);
+            // 반투명 배경 (5% 불투명)
+            digitalBox.setOpacity(0.05);
+            digitalBox.setMouseTransparent(false);
+
+            digitalGroup.getChildren().add(digitalBox);
+            digitalGroup.setVisible(state.showDigital);
+            updateDigitalGroupTransform();
+            applyDigitalClickHandler(); // 재빌드 후 핸들러 자동 재등록
+        }
+
+        /** 코인 반지름·회전과 동기화. applyRootRotation / applyGeometryScale 에서 호출. */
+        void updateDigitalGroupTransform() {
+            if (digitalBox == null) return;
+            double scale = state.coinRadius / AppState.BASE_COIN_RADIUS;
+            double r     = state.coinRadius;
+            double boxH  = AppState.BASE_COIN_RADIUS * 0.28 * scale;
+
+            // 코인 아래에 위치: Y축 아래로 (코인반지름 + 박스절반높이 + 여백)
+            double offsetY = r + boxH * 0.5 + 4.0;
+
+            // 코인과 동일한 transform
+            double angY = state.autoRotAngleY + state.manualRotAngleY;
+            double angX = AppState.clamp(
+                state.baseAngleX + state.autoRotAngleX + state.manualRotAngleX,
+                AppState.ROOT_ROTATE_X_MIN, AppState.ROOT_ROTATE_X_MAX);
+
+            digitalGroup.getTransforms().setAll(
+                new Scale(scale, scale, scale),
+                new Rotate(angY, Rotate.Y_AXIS),
+                new Rotate(angX, Rotate.X_AXIS),
+                new javafx.scene.transform.Translate(0, AppState.BASE_COIN_RADIUS + AppState.BASE_COIN_RADIUS * 0.28 * 0.5 + 4.0 / scale, 0)
+            );
+            digitalGroup.setVisible(state.showDigital);
+        }
+
+        /** 매 프레임 디지탈 텍스처 갱신. AnimationTimer 에서 호출. */
+        void updateDigitalTexture() {
+            if (!state.showDigital || digitalTexImg == null) return;
+            int texW = (int) digitalTexImg.getWidth();
+            int texH = (int) digitalTexImg.getHeight();
+
+            javafx.scene.canvas.Canvas c = new javafx.scene.canvas.Canvas(texW, texH);
+            javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
+            gc.clearRect(0, 0, texW, texH);
+
+            // 시간 문자열
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+            String[] wd = {"일","월","화","수","목","금","토"};
+            String dow = wd[now.getDayOfWeek().getValue() % 7];
+            int h24 = now.getHour(), h12 = h24 % 12 == 0 ? 12 : h24 % 12;
+            String ampm = h24 < 12 ? "오전" : "오후";
+            String text;
+            switch (state.digitalFormatIndex) {
+                case 1  -> text = String.format("%02d:%02d %s [%s]", h12, now.getMinute(), ampm, dow);
+                case 2  -> text = String.format("%02d:%02d:%02d %s [%s]", h12, now.getMinute(), now.getSecond(), ampm, dow);
+                case 3  -> text = String.format("%d년 %02d월 %02d일 [%s]", now.getYear(), now.getMonthValue(), now.getDayOfMonth(), dow);
+                default -> text = String.format("%02d/%02d/%02d  %02d:%02d:%02d %s [%s]",
+                    now.getYear()%100, now.getMonthValue(), now.getDayOfMonth(),
+                    h12, now.getMinute(), now.getSecond(), ampm, dow);
+            }
+
+            int rgb = state.digitalColorRgb;
+            gc.setFill(Color.rgb((rgb>>16)&0xFF,(rgb>>8)&0xFF,rgb&0xFF,((rgb>>24)&0xFF)/255.0));
+            double fs = Math.max(10, texH * 0.7);
+            gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, fs));
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.setTextBaseline(VPos.CENTER);
+
+            // 스크롤
+            if (state.digitalScrollDir == 0) {
+                gc.fillText(text, texW / 2.0, texH / 2.0);
+            } else {
+                double x = texW / 2.0 + state.digitalScrollOffset;
+                gc.fillText(text, x, texH / 2.0);
+                if (state.digitalScrollDir == 1) {
+                    state.digitalScrollOffset -= state.digitalScrollSpeed * 0.5;
+                    javafx.scene.text.Text m = new javafx.scene.text.Text(text);
+                    m.setFont(gc.getFont());
+                    double tw = m.getLayoutBounds().getWidth();
+                    if (x + tw < 0) state.digitalScrollOffset = texW / 2.0;
+                } else {
+                    state.digitalScrollOffset += state.digitalScrollSpeed * 0.5;
+                    javafx.scene.text.Text m = new javafx.scene.text.Text(text);
+                    m.setFont(gc.getFont());
+                    double tw = m.getLayoutBounds().getWidth();
+                    if (x > texW) state.digitalScrollOffset = -texW / 2.0 - tw;
+                }
+            }
+
+            // Canvas → WritableImage
+            javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
+            sp.setFill(Color.TRANSPARENT);
+            c.snapshot(sp, digitalTexImg);
+        }
+
+        // ── 디지탈 3D 시계 ────────────────────────────────────────────
+
+        /** digitalGroup 의 Box 에 클릭 핸들러 등록. ClockController 에서 주입. */
+        void setDigitalClickHandler(Runnable onDoubleClick) {
+            this.digitalClickCallback = onDoubleClick;
+            applyDigitalClickHandler();
+        }
+
+        private Runnable digitalClickCallback = null;
+
+        private void applyDigitalClickHandler() {
+            if (digitalBox == null || digitalClickCallback == null) return;
+            digitalBox.setOnMouseClicked(e -> {
+                if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY
+                        && e.getClickCount() == 2) {
+                    digitalClickCallback.run();
+                }
+            });
+        }
+
         void applyVisibilityState() {
             // ── 투명 모드: 앞면·본체·뒷면·유리 숨김, 베젤·바늘·눈금·숫자는 유지 ──
 			if (state.transparentMode) {
@@ -2783,67 +2923,7 @@ public class FxGPUNeon {
                 gc.setTextBaseline(VPos.TOP);
                 gc.fillText("[ PAUSED ]", state.viewportWidth / 2.0, 10);
             }
-
-            if (!state.showDigital) return;
-
-            // ── 시간 문자열 생성 ─────────────────────────────────────────
-            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
-            String[] weekdays = {"일","월","화","수","목","금","토"};
-            String dow = weekdays[now.getDayOfWeek().getValue() % 7];
-            int h24 = now.getHour();
-            int h12 = h24 % 12 == 0 ? 12 : h24 % 12;
-            String ampm = h24 < 12 ? "오전" : "오후";
-            String text;
-            switch (state.digitalFormatIndex) {
-                case 1  -> text = String.format("%02d:%02d %s [%s]",
-                    h12, now.getMinute(), ampm, dow);
-                case 2  -> text = String.format("%02d:%02d:%02d %s [%s]",
-                    h12, now.getMinute(), now.getSecond(), ampm, dow);
-                case 3  -> text = String.format("%d년 %02d월 %02d일 [%s]",
-                    now.getYear(), now.getMonthValue(), now.getDayOfMonth(), dow);
-                default -> text = String.format("%02d/%02d/%02d  %02d:%02d:%02d %s [%s]",
-                    now.getYear() % 100, now.getMonthValue(), now.getDayOfMonth(),
-                    h12, now.getMinute(), now.getSecond(), ampm, dow);
-            }
-
-            // ── 폰트 / 색 설정 ──────────────────────────────────────────
-            gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, state.digitalFontSize));
-            int rgb = state.digitalColorRgb;
-            gc.setFill(Color.rgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF,
-                ((rgb >> 24) & 0xFF) / 255.0));
-
-            // ── 텍스트 폭 측정 ──────────────────────────────────────────
-            javafx.scene.text.Text measure = new javafx.scene.text.Text(text);
-            measure.setFont(gc.getFont());
-            double textW = measure.getLayoutBounds().getWidth();
-
-            // ── 위치: 화면 하단 (overlay 전체 기준) ─────────────────────
-            double centerX = state.viewportWidth  / 2.0;
-            double posY    = state.viewportHeight / 2.0
-                           + (state.coinRadius / AppState.BASE_COIN_RADIUS)
-                           * AppState.BASE_COIN_RADIUS + 30;
-
-            gc.setTextBaseline(VPos.TOP);
-
-            if (state.digitalScrollDir == 0) {
-                // ── 고정 ────────────────────────────────────────────────
-                gc.setTextAlign(TextAlignment.CENTER);
-                gc.fillText(text, centerX, posY);
-            } else {
-                // ── 스크롤 ──────────────────────────────────────────────
-                gc.setTextAlign(TextAlignment.LEFT);
-                double x = centerX + state.digitalScrollOffset;
-
-                // 스크롤 오프셋 갱신
-                if (state.digitalScrollDir == 1) { // 우→좌
-                    state.digitalScrollOffset -= state.digitalScrollSpeed;
-                    if (x + textW < 0) state.digitalScrollOffset = state.viewportWidth / 2.0;
-                } else {                            // 좌→우
-                    state.digitalScrollOffset += state.digitalScrollSpeed;
-                    if (x > state.viewportWidth) state.digitalScrollOffset = -state.viewportWidth / 2.0 - textW;
-                }
-                gc.fillText(text, x, posY);
-            }
+            // 디지탈 시계는 3D Box(SceneAssembler.digitalGroup)에서 렌더링
         }
     }
 	
