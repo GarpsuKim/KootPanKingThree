@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <img width="645" height="859" alt="image" src="https://github.com/user-attachments/assets/2dc1d594-b4a7-4886-a006-2dd0de7d6cdf" />
 
 ⚠️ Windows 보안 경고 해결 방법
@@ -77,3 +78,7 @@ _ReleaseBLD_All.bat
 <img width="499" height="578" alt="image" src="https://github.com/user-attachments/assets/8621087b-327f-4d63-a97e-fb9d3811d161" />
 
 
+=======
+# KootPanKingThree
+3차원 끝판왕(아나로그 시계)
+>>>>>>> d0f040d6465e4cd8b6efb19fb002729ee5f79a83
