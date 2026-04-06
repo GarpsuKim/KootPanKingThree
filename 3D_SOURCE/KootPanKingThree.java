@@ -1925,7 +1925,7 @@ public class KootPanKingThree extends Application {
             else if (rbLTR.isSelected()) st.digitalScrollDir = 2;
             else st.digitalScrollDir = 1;
             st.digitalScrollSpeed = speedSlider.getValue();
-            st.digitalScrollOffset = 0; // 리셋
+            st.digitalScrollOffset = Double.NaN; // 방향 변경 시 끝 위치에서 재시작
             // ini 저장
             saveDigitalConfig();
             dlg.close();

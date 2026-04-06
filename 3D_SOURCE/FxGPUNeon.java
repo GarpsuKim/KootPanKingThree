@@ -939,8 +939,8 @@ public class FxGPUNeon {
         int digitalScrollDir = 1;
         /** 스크롤 속도 (px/frame) */
         double digitalScrollSpeed = 1.5;
-        /** 스크롤 X 오프셋 (OverlayRenderer 내부 누적) */
-        double digitalScrollOffset = 0.0;
+        /** 스크롤 X 오프셋 (NaN = 미초기화, 첫 프레임에서 끝 위치로 자동 설정). */
+        double digitalScrollOffset = Double.NaN;
 
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
@@ -1584,7 +1584,7 @@ public class FxGPUNeon {
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, texW, texH);
 
-            // 시간 문자열
+            // ── 시간 문자열 생성 ─────────────────────────────────────
             java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
             String[] wd = {"일","월","화","수","목","금","토"};
             String dow = wd[now.getDayOfWeek().getValue() % 7];
@@ -1600,35 +1600,47 @@ public class FxGPUNeon {
                     h12, now.getMinute(), now.getSecond(), ampm, dow);
             }
 
+            // ── 폰트 / 색 ────────────────────────────────────────────
             int rgb = state.digitalColorRgb;
             gc.setFill(Color.rgb((rgb>>16)&0xFF,(rgb>>8)&0xFF,rgb&0xFF,((rgb>>24)&0xFF)/255.0));
             double fs = Math.max(10, texH * 0.7);
             gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, fs));
-            gc.setTextAlign(TextAlignment.CENTER);
             gc.setTextBaseline(VPos.CENTER);
 
-            // 스크롤
+            // ── 텍스트 폭 측정 ───────────────────────────────────────
+            javafx.scene.text.Text m = new javafx.scene.text.Text(text);
+            m.setFont(gc.getFont());
+            double tw = m.getLayoutBounds().getWidth();
+
+            // ── 고정 ─────────────────────────────────────────────────
             if (state.digitalScrollDir == 0) {
+                gc.setTextAlign(TextAlignment.CENTER);
                 gc.fillText(text, texW / 2.0, texH / 2.0);
             } else {
-                double x = texW / 2.0 + state.digitalScrollOffset;
+                // ── 스크롤: 끝에서 시작 → 반대편에서 즉시 랩어라운드 ──
+                // digitalScrollOffset 이 NaN(미초기화)이면 시작 위치로 리셋
+                if (Double.isNaN(state.digitalScrollOffset)) {
+                    state.digitalScrollOffset = (state.digitalScrollDir == 1)
+                        ? texW           // 우→좌: 오른쪽 끝에서 시작
+                        : -tw;           // 좌→우: 왼쪽 끝(텍스트 폭만큼 밖)에서 시작
+                }
+
+                double x = state.digitalScrollOffset;
+                gc.setTextAlign(TextAlignment.LEFT);
                 gc.fillText(text, x, texH / 2.0);
+
                 if (state.digitalScrollDir == 1) {
+                    // 우→좌: x 감소, 텍스트가 왼쪽으로 사라지면 오른쪽 끝에서 즉시 재시작
                     state.digitalScrollOffset -= state.digitalScrollSpeed * 0.5;
-                    javafx.scene.text.Text m = new javafx.scene.text.Text(text);
-                    m.setFont(gc.getFont());
-                    double tw = m.getLayoutBounds().getWidth();
-                    if (x + tw < 0) state.digitalScrollOffset = texW / 2.0;
+                    if (x + tw < 0) state.digitalScrollOffset = texW;
                 } else {
+                    // 좌→우: x 증가, 텍스트가 오른쪽으로 사라지면 왼쪽 끝에서 즉시 재시작
                     state.digitalScrollOffset += state.digitalScrollSpeed * 0.5;
-                    javafx.scene.text.Text m = new javafx.scene.text.Text(text);
-                    m.setFont(gc.getFont());
-                    double tw = m.getLayoutBounds().getWidth();
-                    if (x > texW) state.digitalScrollOffset = -texW / 2.0 - tw;
+                    if (x > texW) state.digitalScrollOffset = -tw;
                 }
             }
 
-            // Canvas → WritableImage
+            // ── Canvas → WritableImage ───────────────────────────────
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(Color.TRANSPARENT);
             c.snapshot(sp, digitalTexImg);
