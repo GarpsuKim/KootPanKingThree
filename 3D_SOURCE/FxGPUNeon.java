@@ -495,7 +495,9 @@ public class FxGPUNeon {
                     overlayRenderer.draw(overlay);
                     // 통합 페이스 디지탈 텍스처 갱신 (showDigital / showFaceDate 제어)
                     assembler.updateFaceDateTimeTextures();
-                    assembler.faceDateTimeGroup.setVisible(state.showDigital || state.showFaceDate);
+                    // Bug1: transparentMode 일 때는 항상 숨김
+                    boolean dtVisible = (state.showDigital || state.showFaceDate) && !state.transparentMode;
+                    assembler.faceDateTimeGroup.setVisible(dtVisible);
                 }			};
             timer.start();
 		}
@@ -769,7 +771,9 @@ public class FxGPUNeon {
         /** 시분초 행 ON/OFF 설정. faceDateTimeGroup 표시는 날짜/시간 둘 다 고려. */
         public static void setDigitalState(ClockController cc, boolean on) {
             cc.state.showDigital = on;
-            cc.assembler.faceDateTimeGroup.setVisible(on || cc.state.showFaceDate);
+            // transparentMode 에서는 faceDateTimeGroup도 숨긴다 (Bug1+Bug2 통합 수정)
+            boolean groupVisible = (on || cc.state.showFaceDate) && !cc.state.transparentMode;
+            cc.assembler.faceDateTimeGroup.setVisible(groupVisible);
         }
 
         /** AppState 직접 접근 (KootPanKingThree 설정 다이얼로그용). */
@@ -779,10 +783,14 @@ public class FxGPUNeon {
         public static void rebuildFaceDateTimeGroup(ClockController cc) {
             if (cc != null) cc.assembler.buildFaceDateTimeGroup();
         }
-        /** 페이스 날짜/시간 ON/OFF — showDigital 과 통합 */
+        /** 페이스 날짜/시간 ON/OFF — showFaceDate 와 showDigital 을 함께 고려 */
         public static void setFaceDateTimeVisible(ClockController cc, boolean on) {
             if (cc == null) return;
-            setDigitalState(cc, on);
+            cc.state.showFaceDate = on;
+            // faceDateTimeGroup 가시성: 날짜 OR 시간이 켜져 있어야 하고 transparentMode 가 아니어야 함
+            boolean groupVisible = (on || cc.state.showDigital) && !cc.state.transparentMode;
+            cc.assembler.faceDateTimeGroup.setVisible(groupVisible);
+            if (cc.assembler.faceDateBox != null) cc.assembler.faceDateBox.setVisible(on);
         }
 
         public void showStatusMessage(String message) {
@@ -958,6 +966,16 @@ public class FxGPUNeon {
         double faceScrollOffset = Double.NaN;
         /** 페이스 시간 행 핑퐁 방향 */
         int    facePingPongDir  = 1;
+
+        // ── 날짜 행 스크롤 (Bug7 추가) ──────────────────────────────
+        /** 날짜 행 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
+        int    faceDateScrollDir   = 0;
+        /** 날짜 행 스크롤 속도 */
+        double faceDateScrollSpeed = 1.5;
+        /** 날짜 행 스크롤 X 오프셋 (NaN=미초기화) */
+        double faceDateScrollOffset = Double.NaN;
+        /** 날짜 행 핑퐁 방향 */
+        int    faceDatePingPongDir  = 1;
 
         // ── 날짜 행 (상단) ───────────────────────────────────────────
         /** 날짜 행 표시 ON/OFF */
@@ -1548,6 +1566,12 @@ public class FxGPUNeon {
             coinScale.setX(scale);
             coinScale.setY(scale);
             coinScale.setZ(scale);
+            // Bug9: 코인 스케일이 변경될 때 faceDateTimeGroup의 Z 좌표를
+            // 스케일-독립적인 절대값으로 재계산해야 한다.
+            // coinGroup 에 coinScale(Scale 변환)이 걸려 있으므로
+            // faceDateBox/faceTimeBox 의 translateZ 는 스케일 적용 전 로컬 좌표다.
+            // numberFrontZ() 를 다시 호출해 최신 numberHeightScale 기반 Z 를 재적용한다.
+            updateFaceDateTimeZ();
         }
 
         // ════════════════════════════════════════════════════════════
@@ -1620,6 +1644,9 @@ public class FxGPUNeon {
             // 스크롤 오프셋 리셋
             state.faceScrollOffset = Double.NaN;
             state.facePingPongDir  = 1;
+            // Bug7: 날짜 행 스크롤 오프셋도 리셋
+            state.faceDateScrollOffset = Double.NaN;
+            state.faceDatePingPongDir  = 1;
 
             updateFaceDateTimeTextures();
         }
@@ -1689,20 +1716,69 @@ public class FxGPUNeon {
             }
         }
 
-        /** 날짜 행 — 단순 중앙 정렬, 그림자 없음 */
+        // Bug4: renderFaceText / renderFaceTimeScrolled 에서 매 프레임 Canvas 를 생성하면
+        // GC 부담이 크다. 크기가 동일하면 같은 Canvas 인스턴스를 재사용한다.
+        private javafx.scene.canvas.Canvas _dateCachedCanvas  = null;
+        private javafx.scene.canvas.Canvas _timeCachedCanvas  = null;
+
+        /**
+         * 날짜 행 — Bug7: 스크롤 지원 (state.faceDateScrollDir 사용).
+         *   0=고정(중앙), 1=우→좌, 2=좌→우, 3=핑퐁
+         * Bug4: Canvas 재사용.
+         */
         private void renderFaceText(WritableImage target, String text,
                                     javafx.scene.paint.Color col,
                                     String fontFamily, double fontSize) {
             int W = (int) target.getWidth(), H = (int) target.getHeight();
-            javafx.scene.canvas.Canvas c = new javafx.scene.canvas.Canvas(W, H);
+            // Bug4: Canvas 재사용
+            if (_dateCachedCanvas == null
+                    || (int) _dateCachedCanvas.getWidth()  != W
+                    || (int) _dateCachedCanvas.getHeight() != H) {
+                _dateCachedCanvas = new javafx.scene.canvas.Canvas(W, H);
+            }
+            javafx.scene.canvas.Canvas c = _dateCachedCanvas;
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, W, H);
-            gc.setFont(javafx.scene.text.Font.font(
-                fontFamily, javafx.scene.text.FontWeight.BOLD, fontSize));
-            gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
-            gc.setTextBaseline(javafx.geometry.VPos.CENTER);
+            gc.setFont(javafx.scene.text.Font.font(fontFamily, FontWeight.BOLD, fontSize));
+            gc.setTextBaseline(VPos.CENTER);
             gc.setFill(col);
-            gc.fillText(text, W / 2.0, H / 2.0);
+
+            // Bug7: 날짜 행 스크롤 처리
+            if (state.faceDateScrollDir == 0) {
+                // 고정: 중앙 정렬
+                gc.setTextAlign(TextAlignment.CENTER);
+                gc.fillText(text, W / 2.0, H / 2.0);
+            } else {
+                javafx.scene.text.Text m = new javafx.scene.text.Text(text);
+                m.setFont(gc.getFont());
+                double tw = m.getLayoutBounds().getWidth();
+
+                if (state.faceDateScrollDir == 3) {
+                    // 핑퐁
+                    if (Double.isNaN(state.faceDateScrollOffset)) state.faceDateScrollOffset = 0;
+                    double x = state.faceDateScrollOffset;
+                    gc.setTextAlign(TextAlignment.LEFT);
+                    gc.fillText(text, x, H / 2.0);
+                    state.faceDateScrollOffset += state.faceDatePingPongDir * state.faceDateScrollSpeed * 0.5;
+                    if (state.faceDateScrollOffset + tw > W) { state.faceDateScrollOffset = W - tw; state.faceDatePingPongDir = -1; }
+                    if (state.faceDateScrollOffset < 0)       { state.faceDateScrollOffset = 0;     state.faceDatePingPongDir =  1; }
+                } else {
+                    // 방향 1(우→좌) 또는 2(좌→우)
+                    if (Double.isNaN(state.faceDateScrollOffset)) {
+                        state.faceDateScrollOffset = (state.faceDateScrollDir == 1) ? W : -tw;
+                    }
+                    double x = state.faceDateScrollOffset;
+                    gc.setTextAlign(TextAlignment.LEFT);
+                    gc.fillText(text, x, H / 2.0);
+                    if (state.faceDateScrollDir == 1) {
+                        state.faceDateScrollOffset -= state.faceDateScrollSpeed * 0.5;
+                        if (state.faceDateScrollOffset + tw < 0) state.faceDateScrollOffset = W;
+                    } else {
+                        state.faceDateScrollOffset += state.faceDateScrollSpeed * 0.5;
+                        if (state.faceDateScrollOffset > W) state.faceDateScrollOffset = -tw;
+                    }
+                }
+            }
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
             c.snapshot(sp, target);
@@ -1711,13 +1787,23 @@ public class FxGPUNeon {
         /**
          * 시간 행 — 스크롤 렌더링, 그림자 없음.
          * state.digitalScrollDir / digitalScrollSpeed / faceScrollOffset / facePingPongDir 사용.
+         *
+         * Bug3 수정: 방향 1(우→좌) / 2(좌→우) 에서 텍스트가 완전히 화면 밖으로 나가는
+         * 순간 오프셋을 리셋할 때 texW (또는 -tw) 로 설정하면 한 프레임 동안 텍스트가
+         * 보이지 않는다. texW + tw (또는 -tw - padding) 로 초기화해 연속성을 보장한다.
          */
         private void renderFaceTimeScrolled(WritableImage target, String text,
                                              javafx.scene.paint.Color col) {
             int texW = (int) target.getWidth();
             int texH = (int) target.getHeight();
 
-            javafx.scene.canvas.Canvas c = new javafx.scene.canvas.Canvas(texW, texH);
+            // Bug4: Canvas 재사용 — 크기 동일 시 새 인스턴스 생성 생략
+            if (_timeCachedCanvas == null
+                    || (int) _timeCachedCanvas.getWidth()  != texW
+                    || (int) _timeCachedCanvas.getHeight() != texH) {
+                _timeCachedCanvas = new javafx.scene.canvas.Canvas(texW, texH);
+            }
+            javafx.scene.canvas.Canvas c = _timeCachedCanvas;
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, texW, texH);
 
@@ -1732,9 +1818,11 @@ public class FxGPUNeon {
             double tw = m.getLayoutBounds().getWidth();
 
             if (state.digitalScrollDir == 0) {
+                // 고정: 중앙 정렬
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.fillText(text, texW / 2.0, texH / 2.0);
             } else if (state.digitalScrollDir == 3) {
+                // 핑퐁
                 if (Double.isNaN(state.faceScrollOffset)) state.faceScrollOffset = 0;
                 double x = state.faceScrollOffset;
                 gc.setTextAlign(TextAlignment.LEFT);
@@ -1743,17 +1831,25 @@ public class FxGPUNeon {
                 if (state.faceScrollOffset + tw > texW) { state.faceScrollOffset = texW - tw; state.facePingPongDir = -1; }
                 if (state.faceScrollOffset < 0)          { state.faceScrollOffset = 0;         state.facePingPongDir =  1; }
             } else {
-                if (Double.isNaN(state.faceScrollOffset))
+                // 방향 1(우→좌) 또는 2(좌→우): Bug3 수정
+                // 초기화: 텍스트 전체가 화면 바깥에서 시작해서 스크롤인 되도록 시작 위치 설정
+                if (Double.isNaN(state.faceScrollOffset)) {
+                    // 방향 1: 오른쪽 밖(texW)에서 왼쪽으로 진입
+                    // 방향 2: 왼쪽 밖(-tw)에서 오른쪽으로 진입
                     state.faceScrollOffset = (state.digitalScrollDir == 1) ? texW : -tw;
+                }
                 double x = state.faceScrollOffset;
                 gc.setTextAlign(TextAlignment.LEFT);
                 gc.fillText(text, x, texH / 2.0);
                 if (state.digitalScrollDir == 1) {
                     state.faceScrollOffset -= state.digitalScrollSpeed * 0.5;
-                    if (x + tw < 0) state.faceScrollOffset = texW;
+                    // Bug3: 텍스트 오른쪽 끝이 왼쪽 경계를 완전히 벗어나면 리셋
+                    // x + tw < 0 이면 보이지 않음 → texW 에서 다시 시작 (끊김 없음)
+                    if (state.faceScrollOffset + tw < 0) state.faceScrollOffset = texW;
                 } else {
                     state.faceScrollOffset += state.digitalScrollSpeed * 0.5;
-                    if (x > texW) state.faceScrollOffset = -tw;
+                    // Bug3: 텍스트 왼쪽 끝이 오른쪽 경계를 완전히 벗어나면 리셋
+                    if (state.faceScrollOffset > texW) state.faceScrollOffset = -tw;
                 }
             }
 
@@ -1799,6 +1895,8 @@ public class FxGPUNeon {
                 // 투명 모드에서는 앞/뒤 면과 유리 관련 보조층도 모두 숨긴다.
                 if (imageLayerGroup != null) imageLayerGroup.setVisible(false);
                 if (crystalGroup != null) crystalGroup.setVisible(false);
+                // Bug1: 투명 모드에서 faceDateTimeGroup 도 숨긴다.
+                faceDateTimeGroup.setVisible(false);
 				
                 if (handsGroup    != null) handsGroup.setVisible(!state.interactiveResizing);
                 if (numbersGroup  != null) numbersGroup.setVisible(state.showNumbers && !state.interactiveResizing);
