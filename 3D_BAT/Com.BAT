@@ -16,6 +16,11 @@ set "LIB_PATH=%ROOT_DIR%\3D_Lib"
 set "ERROR_DIR=%ROOT_DIR%\ERROR_OF_COMPILE"
 set "ERROR_FILE=%ERROR_DIR%\ERROR_%CLASS_NAME%.txt"
 set "JAVAFX_LIB=%ROOT_DIR%\3D_Lib\javafx-sdk-21.0.10\lib"
+set vlcJar1=C:\Temp\jna-5.14.0.jar
+set vlcJar2=C:\Temp\jna-platform-5.14.0.jar
+set vlcJar3=C:\Temp\vlcj-4.8.2.jar
+set vlcJar4=C:\Temp\plugins\access\libbluray-awt-j2se-1.4.0.jar
+set vlcJar5=C:\Temp\plugins\access\libbluray-j2se-1.4.0.jar
 
 if not exist "%ERROR_DIR%" mkdir "%ERROR_DIR%"
 if not exist "%CLASS_DIR%"  mkdir "%CLASS_DIR%"
@@ -25,7 +30,7 @@ ECHO COMPILIING : %SOURCE_FILE%
 javac -d "%CLASS_DIR%" ^
       --module-path "%JAVAFX_LIB%" ^
       --add-modules javafx.controls,javafx.graphics,javafx.base,javafx.swing,javafx.fxml,javafx.web ^
-      --class-path "%CLASS_DIR%;%LIB_PATH%\*;C:\opencv\build\java\opencv-4120.jar" ^
+      --class-path "%vlcJar1%;%vlcJar2%;%vlcJar3%;%vlcJar4%;%vlcJar5%;%CLASS_DIR%;%LIB_PATH%\*;C:\opencv\build\java\opencv-4120.jar" ^
       -encoding UTF-8 ^
       -sourcepath "%SOURCE_DIR%" ^
       "%SOURCE_FILE%"     %2    2> "%ERROR_FILE%"

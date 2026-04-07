@@ -135,11 +135,15 @@ public class KootPanKingThree extends Application {
     String youtubeUrl = "";                         // 마지막 사용 URL
     String ytdlpPath  = "";                         // ini: youtube.ytdlp.path
 
+    // ── 로컬 MP4 배경 재생 ───────────────────────────────────────────
+    String localMp4LastFile = "";                   // ini: localmp4.lastFile
+    double localMp4Volume   = 1.0;                  // ini: localmp4.volume (0.0~1.0)
+
     // ── 동영상 녹화 ────────────────────────────────────────────
     volatile boolean      videoRecording  = false;   // 녹화 중 플래그
 
     // ffmpeg 실행파일 경로 (ini 저장/로드)
-    String ffmpegPath = "";   // MP4 녹화용 (MP4.FFMPEG)
+    String ffmpegPath = "";   // ffmpeg 경로 (ini 키: ffmpeg.path)
 	
     // ── 5초 간격 이미지 시퀀스 저장 (ffmpeg 없을 때 대체 모드) ──
     volatile boolean      imageSeqRecording  = false;
@@ -172,6 +176,9 @@ public class KootPanKingThree extends Application {
     private int     pendingDigitalColorRgb    = 0xFFFFFFFF;
     private int     pendingDigitalScrollDir   = 1;
     private double  pendingDigitalScrollSpeed = 1.5;
+    // ── 페이스 날짜/시간 pending ──────────────────────────────────────
+    private boolean pendingFaceDateTime      = false;
+    private int     pendingFaceDateTimeColor = 0xFFFF2222;
 	
     boolean alwaysOnTop = true;
     boolean showDigital = true;
@@ -496,13 +503,24 @@ public class KootPanKingThree extends Application {
             cameraUrl   = config.getProperty("camera.url", "http://192.168.0.100:8080");
             cameraFlipH = Boolean.parseBoolean(config.getProperty("camera.flipH", "false"));
             cameraFlipV = Boolean.parseBoolean(config.getProperty("camera.flipV", "false"));
-            ffmpegPath  = config.getProperty("MP4.FFMPEG", "");
+            ffmpegPath  = config.getProperty("ffmpeg.path", "");
+            // 구버전 키 마이그레이션 (MP4.FFMPEG / youtube.ffmpeg.path → ffmpeg.path)
+            // 파일이 실제로 존재하는 경로만 채택
+            if (ffmpegPath.isEmpty() || !new java.io.File(ffmpegPath).exists()) {
+                String leg1 = config.getProperty("MP4.FFMPEG", "");
+                String leg2 = config.getProperty("youtube.ffmpeg.path", "");
+                if (!leg1.isEmpty() && new java.io.File(leg1).exists())       ffmpegPath = leg1;
+                else if (!leg2.isEmpty() && new java.io.File(leg2).exists())  ffmpegPath = leg2;
+                if (!ffmpegPath.isEmpty())
+                    System.out.println("[Config] ffmpeg.path 마이그레이션: " + ffmpegPath);
+            }
             // ITS 교통 CCTV API 키 복원
             { String _itsKey = config.getProperty("its.cctv.apiKey", "");
               if (!_itsKey.isEmpty()) getItsCctv().setApiKey(_itsKey); }
-            youtubeUrl = config.getProperty("youtube.url", "");
-            ytdlpPath  = config.getProperty("youtube.ytdlp.path", "");
-            // youtube용 ffmpeg는 별도 키 (MP4.FFMPEG와 분리)
+            youtubeUrl     = config.getProperty("youtube.url", "");
+            ytdlpPath      = config.getProperty("youtube.ytdlp.path", "");
+            localMp4LastFile = config.getProperty("localmp4.lastFile", "");
+            localMp4Volume   = Double.parseDouble(config.getProperty("localmp4.volume", "1.0"));
             // ── 디지탈 시계 설정 (clockController 생성 전 → pending 보관) ──
             pendingDigitalShow        = Boolean.parseBoolean(config.getProperty("digital.show", "false"));
             pendingDigitalFormatIndex = Integer.parseInt(config.getProperty("digital.formatIndex", "0"));
@@ -511,6 +529,8 @@ public class KootPanKingThree extends Application {
             pendingDigitalColorRgb    = Integer.parseInt(config.getProperty("digital.colorRgb", String.valueOf(0xFFFFFFFF)));
             pendingDigitalScrollDir   = Integer.parseInt(config.getProperty("digital.scrollDir", "1"));
             pendingDigitalScrollSpeed = Double.parseDouble(config.getProperty("digital.scrollSpeed", "1.5"));
+            pendingFaceDateTime      = Boolean.parseBoolean(config.getProperty("face.dateTime.show", "false"));
+            pendingFaceDateTimeColor = Integer.parseInt(config.getProperty("face.dateTime.color", String.valueOf(0xFFFF2222)));
         } catch (Exception ignored) {}
 
         try {
@@ -613,12 +633,12 @@ public class KootPanKingThree extends Application {
         config.setProperty("camera.url",   cameraUrl);
         config.setProperty("camera.flipH", String.valueOf(cameraFlipH));
         config.setProperty("camera.flipV", String.valueOf(cameraFlipV));
-        config.setProperty("MP4.FFMPEG",   ffmpegPath);
+        config.setProperty("ffmpeg.path",   ffmpegPath);
         config.setProperty("its.cctv.apiKey", itsCctv != null ? itsCctv.getApiKey() : "");
         config.setProperty("youtube.url", youtubeUrl);
         config.setProperty("youtube.ytdlp.path", ytdlpPath);
-        config.setProperty("youtube.ffmpeg.path",
-            config.getProperty("youtube.ffmpeg.path", "")); // 별도 보존
+        config.setProperty("localmp4.lastFile", localMp4LastFile);
+        config.setProperty("localmp4.volume",   String.valueOf(localMp4Volume));
 
         // ── 차임벨 설정 저장 ─────────────────────────────────
         if (chimeController != null) {
@@ -732,6 +752,36 @@ public class KootPanKingThree extends Application {
                     if (clockController != null)
                         Platform.runLater(() -> clockController.startRainbow(durationSec));
                 }
+                // ── 동영상 차임벨 → BackgroundPlayer.YoutubePlayer 연결 ──
+                @Override
+                public BackgroundPlayer.YoutubePlayer getVideoPlayer() {
+                    if (ytPlayer == null) {
+                        ytPlayer = new BackgroundPlayer.YoutubePlayer(
+                            new BackgroundPlayer.YoutubePlayer.HostCallback() {
+                                @Override public void attachMediaView(javafx.scene.Node v) {
+                                    if (clockController != null) clockController.attachMediaView(v);
+                                }
+                                @Override public void detachMediaView() {
+                                    if (clockController != null) clockController.detachMediaView();
+                                }
+                                @Override public void onYoutubeFrame(javafx.scene.image.WritableImage frame) {
+                                    FxGPUNeon.cameraActive = true;
+                                    if (clockController != null) clockController.setCameraFrame(frame);
+                                }
+                                @Override public void clearYoutubeFrame() {
+                                    FxGPUNeon.cameraActive = false;
+                                    if (clockController != null) clockController.setCameraFrame(null);
+                                }
+                                @Override public void onStatusMessage(String message) {
+                                    if (clockController != null) clockController.showStatusMessage(message);
+                                }
+                                @Override public String getSettingsDir() { return SETTINGS_DIR; }
+                                @Override public String getYtDlpPath()   { return ytdlpPath; }
+                                @Override public String getFfmpegPath()  { return ffmpegPath; }
+                            });
+                    }
+                    return ytPlayer;
+                }
             });
             // loadConfig() 에서 임시 보관한 pending 값 적용
             chimeController.setEnabled(pendingChimeEnabled);
@@ -745,6 +795,9 @@ public class KootPanKingThree extends Application {
             // ── 디지탈 시계 pending 값 → AppState 반영 ──────────────
             if (clockController != null) {
                 FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+                st.showFaceDateTime      = pendingFaceDateTime;
+                st.faceDateTimeColorRgb  = pendingFaceDateTimeColor;
+                FxGPUNeon.ClockController.rebuildFaceDateTimeGroup(clockController);
                 st.showDigital        = pendingDigitalShow;
                 st.digitalFormatIndex = pendingDigitalFormatIndex;
                 st.digitalFontFamily  = pendingDigitalFontFamily;
@@ -785,7 +838,7 @@ public class KootPanKingThree extends Application {
                 cityItem.setOnAction(ev -> {
                     // exe 경로 미설정 시 → 메시지만 표시하고 종료
                     String ytdlp  = ytdlpPath;
-                    String ffmpeg = config.getProperty("youtube.ffmpeg.path", "");
+                    String ffmpeg = ffmpegPath;
                     if (ytdlp.isEmpty() || !new java.io.File(ytdlp).exists()
                      || ffmpeg.isEmpty() || !new java.io.File(ffmpeg).exists()) {
                         javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
@@ -843,6 +896,107 @@ public class KootPanKingThree extends Application {
         ytMenu.setOnShowing(ev ->
             ytStopItem.setDisable(ytPlayer == null || !ytPlayer.isRunning()));
 
+        // ── 로컬 MP4 배경 재생 메뉴 ────────────────────────────────
+        javafx.scene.control.Menu localMp4Menu =
+            new javafx.scene.control.Menu("📂 로컬 MP4 배경 재생");
+
+        javafx.scene.control.MenuItem mp4OpenItem =
+            new javafx.scene.control.MenuItem("📁 파일 선택...");
+        mp4OpenItem.setOnAction(ev -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle("배경으로 재생할 동영상 파일 선택");
+            fc.getExtensionFilters().addAll(
+                new javafx.stage.FileChooser.ExtensionFilter(
+                    "동영상 파일", "*.mp4", "*.m4v", "*.mov", "*.mkv", "*.avi", "*.webm"),
+                new javafx.stage.FileChooser.ExtensionFilter("모든 파일", "*.*")
+            );
+            // 마지막 경로 기억
+            if (!localMp4LastFile.isEmpty()) {
+                File lastDir = new File(localMp4LastFile).getParentFile();
+                if (lastDir != null && lastDir.exists())
+                    fc.setInitialDirectory(lastDir);
+            }
+            javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
+            File chosen = fc.showOpenDialog(owner);
+            if (chosen != null) {
+                startLocalMp4(chosen);
+            }
+        });
+
+        javafx.scene.control.MenuItem mp4ReplayItem =
+            new javafx.scene.control.MenuItem("🔄 마지막 파일 다시 재생");
+        mp4ReplayItem.setOnAction(ev -> {
+            if (localMp4LastFile.isEmpty()) return;
+            File f = new File(localMp4LastFile);
+            if (!f.exists()) {
+                javafx.scene.control.Alert a = new javafx.scene.control.Alert(
+                    javafx.scene.control.Alert.AlertType.WARNING);
+                a.setTitle("파일 없음");
+                a.setContentText("마지막 파일을 찾을 수 없습니다:\n" + localMp4LastFile);
+                a.initOwner((javafx.stage.Stage) popup.getOwnerWindow());
+                a.showAndWait();
+                return;
+            }
+            startLocalMp4(f);
+        });
+
+        javafx.scene.control.MenuItem mp4StopItem =
+            new javafx.scene.control.MenuItem("⏹ MP4 재생 정지");
+        mp4StopItem.setOnAction(ev -> stopLocalMp4());
+
+        // ── 볼륨 슬라이더 ──────────────────────────────────────────
+        javafx.scene.control.Label volLabel =
+            new javafx.scene.control.Label(
+                String.format("🔊 볼륨: %d%%", (int)(localMp4Volume * 100)));
+        volLabel.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
+
+        javafx.scene.control.Slider volSlider =
+            new javafx.scene.control.Slider(0.0, 1.0, localMp4Volume);
+        volSlider.setShowTickMarks(true);
+        volSlider.setShowTickLabels(true);
+        volSlider.setMajorTickUnit(0.5);
+        volSlider.setMinorTickCount(4);
+        volSlider.setPrefWidth(200);
+
+        volSlider.valueProperty().addListener((obs, ov, nv) -> {
+            localMp4Volume = nv.doubleValue();
+            volLabel.setText(String.format("🔊 볼륨: %d%%", (int)(localMp4Volume * 100)));
+            if (ytPlayer != null) ytPlayer.setVolume(localMp4Volume);
+        });
+
+        // 🔇 음소거 토글 버튼
+        javafx.scene.control.Button muteBtn = new javafx.scene.control.Button("🔇 음소거");
+        muteBtn.setStyle("-fx-font-size:11px;");
+        muteBtn.setOnAction(ev -> {
+            if (localMp4Volume > 0.0) {
+                // 현재 볼륨 저장 후 0으로
+                volSlider.setValue(0.0);
+            } else {
+                // 음소거 해제 → 80% 복원
+                volSlider.setValue(0.8);
+            }
+        });
+
+        javafx.scene.layout.VBox volBox = new javafx.scene.layout.VBox(4,
+            volLabel, volSlider, muteBtn);
+        volBox.setPadding(new javafx.geometry.Insets(6, 14, 6, 14));
+
+        javafx.scene.control.CustomMenuItem volItem =
+            new javafx.scene.control.CustomMenuItem(volBox, false); // false = 드래그 중 메뉴 유지
+
+        localMp4Menu.getItems().addAll(
+            mp4OpenItem, mp4ReplayItem,
+            new javafx.scene.control.SeparatorMenuItem(),
+            volItem,
+            new javafx.scene.control.SeparatorMenuItem(),
+            mp4StopItem
+        );
+
+        localMp4Menu.setOnShowing(ev -> {
+            mp4ReplayItem.setDisable(localMp4LastFile.isEmpty());
+            mp4StopItem.setDisable(ytPlayer == null || !ytPlayer.isRunning());
+        });
+
 		
         javafx.scene.control.MenuItem camStart      = new javafx.scene.control.MenuItem("▶ 폰 카메라 연결");
         javafx.scene.control.MenuItem camSnapshot   = new javafx.scene.control.MenuItem("📸 이미지 저장");
@@ -893,7 +1047,7 @@ public class KootPanKingThree extends Application {
 			
             // ── 동영상 도구(FFmpeg) 지정 행 ──────────────────────
             javafx.scene.control.Label ffmpegLabel = new javafx.scene.control.Label(
-			"동영상 도구(MP4.FFMPEG): " + (ffmpegPath.isEmpty() ? "(미지정)" : ffmpegPath));
+			"동영상 도구(ffmpeg.path): " + (ffmpegPath.isEmpty() ? "(미지정)" : ffmpegPath));
             ffmpegLabel.setStyle("-fx-font-size:11px; -fx-text-fill:#555;");
             ffmpegLabel.setWrapText(true);
             ffmpegLabel.setMaxWidth(380);
@@ -901,7 +1055,7 @@ public class KootPanKingThree extends Application {
             javafx.scene.control.Button btnFfmpeg = new javafx.scene.control.Button("동영상 도구 지정");
             btnFfmpeg.setOnAction(ev -> {
                 javafx.stage.FileChooser ffChooser = new javafx.stage.FileChooser();
-                ffChooser.setTitle("ffmpeg.exe 선택 — MP4.FFMPEG 에 저장됩니다");
+                ffChooser.setTitle("ffmpeg.exe 선택 — ffmpeg.path 에 저장됩니다");
                 boolean isWin2 = System.getProperty("os.name", "").toLowerCase().contains("win");
                 ffChooser.getExtensionFilters().addAll(
                     new javafx.stage.FileChooser.ExtensionFilter(
@@ -918,7 +1072,7 @@ public class KootPanKingThree extends Application {
                 if (chFf != null && chFf.isFile()) {
                     ffmpegPath = chFf.getAbsolutePath();
                     saveConfig();
-                    ffmpegLabel.setText("동영상 도구(MP4.FFMPEG): " + ffmpegPath);
+                    ffmpegLabel.setText("동영상 도구(ffmpeg.path): " + ffmpegPath);
                     System.out.println("[FFmpeg] 지정 완료: " + ffmpegPath);
 				}
 			});
@@ -1378,6 +1532,18 @@ public class KootPanKingThree extends Application {
         digitalSettingsItem.setOnAction(e ->
             showDigitalSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow()));
 
+        // ── 페이스 날짜/시간 토글 ────────────────────────────────
+        javafx.scene.control.CheckMenuItem faceDateTimeItem =
+            new javafx.scene.control.CheckMenuItem("📅 날짜/시간 (시계 면)");
+        boolean fdtOn = clockController != null
+            && FxGPUNeon.ClockController.getAppState(clockController).showFaceDateTime;
+        faceDateTimeItem.setSelected(fdtOn);
+        faceDateTimeItem.setOnAction(e -> {
+            boolean on = faceDateTimeItem.isSelected();
+            FxGPUNeon.ClockController.setFaceDateTimeVisible(clockController, on);
+            saveDigitalConfig();
+        });
+
         // ── 중앙 고정 (최상단) ────────────────────────────────────
         javafx.scene.control.MenuItem centerItem = new javafx.scene.control.MenuItem("📌 중앙 고정");
         centerItem.setOnAction(e -> resetToCenter());
@@ -1385,10 +1551,11 @@ public class KootPanKingThree extends Application {
         popup.getItems().addAll(
             centerItem,
             new javafx.scene.control.SeparatorMenuItem(),
-            phoneCam, ytMenu, cctv,
+            phoneCam, ytMenu, localMp4Menu, cctv,
             new javafx.scene.control.SeparatorMenuItem(),
             digitalItem,
             digitalSettingsItem,
+            faceDateTimeItem,
             new javafx.scene.control.SeparatorMenuItem(),
             chimeItem,
             new javafx.scene.control.SeparatorMenuItem(),
@@ -1975,6 +2142,8 @@ public class KootPanKingThree extends Application {
         config.setProperty("digital.colorRgb",    String.valueOf(st.digitalColorRgb));
         config.setProperty("digital.scrollDir",   String.valueOf(st.digitalScrollDir));
         config.setProperty("digital.scrollSpeed", String.valueOf(st.digitalScrollSpeed));
+        config.setProperty("face.dateTime.show",  String.valueOf(st.showFaceDateTime));
+        config.setProperty("face.dateTime.color", String.valueOf(st.faceDateTimeColorRgb));
         saveConfig();
     }
 
@@ -2030,7 +2199,7 @@ public class KootPanKingThree extends Application {
         });
 
         // ── ffmpeg.exe 경로 ───────────────────────────────────────────
-        String ffmpegCur = config.getProperty("youtube.ffmpeg.path", "");
+        String ffmpegCur = ffmpegPath;
         javafx.scene.control.Label ffmpegLabel = new javafx.scene.control.Label("ffmpeg.exe:");
         javafx.scene.control.TextField ffmpegField = new javafx.scene.control.TextField(ffmpegCur);
         ffmpegField.setPrefWidth(300);
@@ -2068,8 +2237,9 @@ public class KootPanKingThree extends Application {
 
             // exe 경로 ini 저장 (URL과 무관하게 항상 저장)
             ytdlpPath = newYtdlp;
-            config.setProperty("youtube.ytdlp.path",  newYtdlp);
-            config.setProperty("youtube.ffmpeg.path", newFfmpeg);
+            config.setProperty("youtube.ytdlp.path", newYtdlp);
+            ffmpegPath = newFfmpeg;
+            config.setProperty("ffmpeg.path", newFfmpeg);
 
             if (!newUrl.isEmpty()) {
                 youtubeUrl = newUrl;
@@ -2146,7 +2316,7 @@ public class KootPanKingThree extends Application {
                     @Override public String getSettingsDir() { return SETTINGS_DIR; }
                     @Override public String getYtDlpPath()  { return ytdlpPath; }
                     @Override public String getFfmpegPath()  {
-                        return config.getProperty("youtube.ffmpeg.path", "");
+                        return ffmpegPath;
                     }
                 });
             // 테마 변경 시 YouTube 중지 콜백 주입
@@ -2159,6 +2329,67 @@ public class KootPanKingThree extends Application {
     /** YouTube 배경 중지. FX 스레드에서 호출. */
     void stopYoutube() {
         if (ytPlayer != null) ytPlayer.stop();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  로컬 MP4 배경 재생
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 로컬 MP4 파일을 시계 배경으로 재생.
+     *  - ffmpeg(ffmpeg.path) 있으면 모든 코덱 지원 (H.265·AV1·VP9 포함)
+     *  - ffmpeg 없으면 JavaFX MediaPlayer 폴백 (H.264 한정)
+     * FX 스레드에서 호출.
+     */
+    void startLocalMp4(File file) {
+        if (isChild) return;
+        if (file == null || !file.exists()) return;
+
+        stopCamera();
+        stopItsCctv();
+        stopYoutube();
+
+        // ytPlayer 재사용 (HostCallback 은 YouTube 와 동일)
+        if (ytPlayer == null) {
+            ytPlayer = new BackgroundPlayer.YoutubePlayer(
+                new BackgroundPlayer.YoutubePlayer.HostCallback() {
+                    @Override public void attachMediaView(javafx.scene.Node v) {
+                        if (clockController != null) clockController.attachMediaView(v);
+                    }
+                    @Override public void detachMediaView() {
+                        if (clockController != null) clockController.detachMediaView();
+                    }
+                    @Override public void onYoutubeFrame(javafx.scene.image.WritableImage frame) {
+                        FxGPUNeon.cameraActive = true;
+                        if (clockController != null) clockController.setCameraFrame(frame);
+                    }
+                    @Override public void clearYoutubeFrame() {
+                        FxGPUNeon.cameraActive = false;
+                        if (clockController != null) clockController.setCameraFrame(null);
+                    }
+                    @Override public void onStatusMessage(String message) {
+                        if (clockController != null) clockController.showStatusMessage(message);
+                    }
+                    @Override public String getSettingsDir() { return SETTINGS_DIR; }
+                    @Override public String getYtDlpPath()   { return ytdlpPath; }
+                    @Override public String getFfmpegPath()  { return ffmpegPath; }
+                });
+            if (clockController != null)
+                clockController.setStopYoutubeCallback(this::stopYoutube);
+        }
+
+        localMp4LastFile = file.getAbsolutePath();
+        ytPlayer.startLocalMp4(file);
+        ytPlayer.setVolume(localMp4Volume); // ini에서 복원한 볼륨 즉시 적용
+        saveConfig();
+        System.out.println("[KPK] 로컬 MP4 재생 시작: " + file.getName());
+    }
+
+    /** 로컬 MP4 재생 중지 (stopYoutube 와 공유). */
+    void stopLocalMp4() {
+        stopYoutube();
+        localMp4LastFile = "";
+        saveConfig();
     }
 
     /**
@@ -2319,7 +2550,7 @@ public class KootPanKingThree extends Application {
                 info.setTitle("동영상 저장 불가 — 이미지 저장으로 대체");
                 info.setHeaderText(null);
                 info.setContentText(
-                    "MP4.FFMPEG 가 미설정되었거나 파일을 찾을 수 없습니다.\n\n" +
+                    "ffmpeg.path 가 미설정되었거나 파일을 찾을 수 없습니다.\n\n" +
                     "5초 간격으로 이미지를 저장합니다.\n" +
                     "저장 폴더: " + imgDir.getAbsolutePath() + "\n\n" +
                     "동영상 저장을 원하면:\n" +
@@ -2451,13 +2682,13 @@ public class KootPanKingThree extends Application {
 	
     /**
 		* FFmpeg 실행파일 경로 반환.
-		* ini 의 MP4.FFMPEG 키 값만 사용한다. 자동 탐색 없음.
+		* ini 의 ffmpeg.path 키 값만 사용한다. 자동 탐색 없음.
 		* [폰 카메라 연결] 다이얼로그의 [동영상 도구 지정] 버튼으로 설정.
 		* @return 실행 가능한 ffmpeg 절대경로, 미설정/파일없음이면 null
 	*/
     private String findFfmpeg() {
         if (ffmpegPath == null || ffmpegPath.trim().isEmpty()) {
-            System.out.println("[FFmpeg] MP4.FFMPEG 미설정");
+            System.out.println("[FFmpeg] ffmpeg.path 미설정");
             return null;
 		}
         File f = new File(ffmpegPath.trim());

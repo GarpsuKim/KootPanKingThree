@@ -3,7 +3,7 @@ chcp 65001 > nul
 set "ROOT_DIR=%~dp0.."
 set "CLASS_DIR=%ROOT_DIR%\3D_Class"
 set "BAT_DIR=%ROOT_DIR%\3D_BAT"
-del  %CLASS_DIR%\*.*
+del  %CLASS_DIR%\*.CLASS
 CALL  %BAT_DIR%\0Com_AlarmController.BAT
 CALL  %BAT_DIR%\0Com_AppLogger.BAT
 CALL  %BAT_DIR%\0Com_AppRestarter.BAT

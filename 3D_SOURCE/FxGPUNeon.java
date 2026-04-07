@@ -496,6 +496,9 @@ public class FxGPUNeon {
                     // 디지탈 3D 텍스처 갱신 (30fps 제한)
                     assembler.updateDigitalTexture();
                     assembler.digitalGroup.setVisible(state.showDigital);
+                    // 페이스 날짜/시간 텍스처 갱신
+                    assembler.updateFaceDateTimeTextures();
+                    assembler.faceDateTimeGroup.setVisible(state.showFaceDateTime);
                 }			};
             timer.start();
 		}
@@ -774,6 +777,17 @@ public class FxGPUNeon {
         /** AppState 직접 접근 (KootPanKingThree 설정 다이얼로그용). */
         public static AppState getAppState(ClockController cc) { return cc.state; }
 
+        /** KootPanKingThree 에서 페이스 날짜/시간 그룹 재빌드 요청 */
+        public static void rebuildFaceDateTimeGroup(ClockController cc) {
+            if (cc != null) cc.assembler.buildFaceDateTimeGroup();
+        }
+        /** 페이스 날짜/시간 ON/OFF 토글 후 즉시 반영 */
+        public static void setFaceDateTimeVisible(ClockController cc, boolean on) {
+            if (cc == null) return;
+            cc.state.showFaceDateTime = on;
+            cc.assembler.faceDateTimeGroup.setVisible(on);
+        }
+
         public void showStatusMessage(String message) {
             if (statusLabel == null) return;
             if (message == null || message.isEmpty()) {
@@ -944,6 +958,12 @@ public class FxGPUNeon {
         /** 스크롤 X 오프셋 (NaN = 미초기화, 첫 프레임에서 끝 위치로 자동 설정). */
         double digitalScrollOffset = Double.NaN;
 
+        // ── 페이스 날짜/시간 (코인 앞면 위에 직접 표시) ─────────────────
+        /** 코인 앞면 날짜·시간 표시 ON/OFF */
+        boolean showFaceDateTime = false;
+        /** 날짜·시간 글자 색 (0xAARRGGBB) — 기본 빨강 */
+        int faceDateTimeColorRgb = 0xFFFF2222;
+
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
         Image backgroundImage = null;
@@ -1077,6 +1097,15 @@ public class FxGPUNeon {
 
         // ── 디지탈 시계 3D 노드 ─────────────────────────────────────────
         private final Group  digitalGroup   = new Group();
+
+        // ── 페이스 날짜/시간 3D 노드 (coinGroup 자식 — 코인과 함께 회전) ──
+        private final Group  faceDateTimeGroup = new Group();
+        private Box          faceDateBox     = null;
+        private Box          faceTimeBox     = null;
+        private WritableImage faceDateTexImg = null;
+        private WritableImage faceTimeTexImg = null;
+        private PhongMaterial faceDateMat    = null;
+        private PhongMaterial faceTimeMat    = null;
         private Box          digitalBox     = null;
         private WritableImage digitalTexImg = null;
         private PhongMaterial digitalMat    = null;
@@ -1295,6 +1324,9 @@ public class FxGPUNeon {
 			
             coinGroup.getTransforms().setAll(coinScale, rootRotY, rootRotX);
             root3D.getChildren().addAll(coinGroup, lightsGroup, imageLayerGroup);
+
+            // ── 페이스 날짜/시간: coinGroup 자식으로 추가 ─────────────
+            buildFaceDateTimeGroup();
 
             // ── 디지탈 3D 그룹: 코인과 동일한 transform 공유 ──────────
             buildDigitalGroup();
@@ -1524,6 +1556,142 @@ public class FxGPUNeon {
         }
 		
         // ── 디지탈 3D 시계 ────────────────────────────────────────────
+
+        // ════════════════════════════════════════════════════════════
+        //  페이스 날짜/시간 — 코인 앞면에 직접 새겨진 3D 텍스트 패널
+        // ════════════════════════════════════════════════════════════
+
+        /**
+         * 숫자(1~12) 돌출 높이(numberHeightScale)에 맞춰
+         * faceDateTimeGroup 의 Z 위치를 계산.
+         *
+         * 숫자 노드 배치 Z = -(BASE_COIN_HEIGHT/2 + 7.2)
+         * 돌출 두께 = max(1, fontSize * EXTRUDE_THICKNESS_RATIO * scale)
+         * → 앞면 Z = 배치Z - halfThickness
+         * faceDateTimeBox 는 그보다 1.0 단위 앞에 배치.
+         */
+        private double numberFrontZ() {
+            double fontSize  = AppState.BASE_COIN_RADIUS * AppState.NUMBER_FONT_SIZE_RATIO;
+            double thickness = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
+            return -(AppState.BASE_COIN_HEIGHT * 0.5 + 7.2 + thickness * 0.5 + 1.0);
+        }
+
+        /**
+         * 코인 앞면에 날짜(상단)·시간(하단)을 표시하는 두 개의 Box를 생성.
+         * buildAll() / numberHeightScale 변경 시 호출. coinGroup 에 추가.
+         */
+        void buildFaceDateTimeGroup() {
+            coinGroup.getChildren().remove(faceDateTimeGroup);
+            faceDateTimeGroup.getChildren().clear();
+
+            double r     = AppState.BASE_COIN_RADIUS;
+            double faceZ = numberFrontZ();   // ← 숫자 높이와 동기화
+
+            // ── 날짜 박스 (상단) ──────────────────────────────────────
+            int dtW = 512, dtH = 80;
+            faceDateTexImg = new WritableImage(dtW, dtH);
+            faceDateMat    = new PhongMaterial();
+            faceDateMat.setDiffuseMap(faceDateTexImg);
+            faceDateMat.setSpecularColor(javafx.scene.paint.Color.WHITE);
+            faceDateMat.setSpecularPower(60);
+
+            faceDateBox = new Box(r * 1.30, r * 0.28, 1.5);
+            faceDateBox.setMaterial(faceDateMat);
+            faceDateBox.setTranslateX(0);
+            faceDateBox.setTranslateY(-r * 0.22);
+            faceDateBox.setTranslateZ(faceZ);
+            faceDateBox.setMouseTransparent(true);
+
+            // ── 시간 박스 (하단) ──────────────────────────────────────
+            int tmW = 512, tmH = 96;
+            faceTimeTexImg = new WritableImage(tmW, tmH);
+            faceTimeMat    = new PhongMaterial();
+            faceTimeMat.setDiffuseMap(faceTimeTexImg);
+            faceTimeMat.setSpecularColor(javafx.scene.paint.Color.WHITE);
+            faceTimeMat.setSpecularPower(60);
+
+            faceTimeBox = new Box(r * 1.30, r * 0.30, 1.5);
+            faceTimeBox.setMaterial(faceTimeMat);
+            faceTimeBox.setTranslateX(0);
+            faceTimeBox.setTranslateY(r * 0.22);
+            faceTimeBox.setTranslateZ(faceZ);
+            faceTimeBox.setMouseTransparent(true);
+
+            faceDateTimeGroup.getChildren().addAll(faceDateBox, faceTimeBox);
+            faceDateTimeGroup.setVisible(state.showFaceDateTime);
+            coinGroup.getChildren().add(faceDateTimeGroup);
+            updateFaceDateTimeTextures();
+        }
+
+        /**
+         * 숫자 높이 변경 시 Z만 갱신 (buildFaceDateTimeGroup 전체 재빌드 없이).
+         * rebuildNumbers() 끝에서 호출.
+         */
+        void updateFaceDateTimeZ() {
+            if (faceDateBox == null || faceTimeBox == null) return;
+            double faceZ = numberFrontZ();
+            faceDateBox.setTranslateZ(faceZ);
+            faceTimeBox.setTranslateZ(faceZ);
+        }
+
+        /** 매 프레임 날짜·시간 텍스처 갱신. AnimationTimer 에서 호출. */
+        void updateFaceDateTimeTextures() {
+            if (!state.showFaceDateTime) return;
+            if (faceDateTexImg == null || faceTimeTexImg == null) return;
+
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+            String[] wd = {"일","월","화","수","목","금","토"};
+            String dow = wd[now.getDayOfWeek().getValue() % 7];
+            int h24  = now.getHour();
+            int h12  = h24 % 12 == 0 ? 12 : h24 % 12;
+            String ampm = h24 < 12 ? "오전" : "오후";
+
+            String dateStr = String.format("%d월 %d일, %s",
+                now.getMonthValue(), now.getDayOfMonth(), dow);
+            String timeStr = String.format("%02d:%02d %s", h12, now.getMinute(), ampm);
+
+            int rgb = state.faceDateTimeColorRgb;
+            javafx.scene.paint.Color col = javafx.scene.paint.Color.rgb(
+                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF,
+                ((rgb >> 24) & 0xFF) / 255.0);
+
+            renderFaceText(faceDateTexImg, dateStr, col,
+                state.numberFont, (int) faceDateTexImg.getHeight() * 0.68);
+            renderFaceText(faceTimeTexImg, timeStr, col,
+                state.numberFont, (int) faceTimeTexImg.getHeight() * 0.72);
+        }
+
+        /** 텍스트를 WritableImage에 중앙 정렬 + 입체감(그림자·하이라이트)으로 렌더링 */
+        private void renderFaceText(WritableImage target, String text,
+                                    javafx.scene.paint.Color col,
+                                    String fontFamily, double fontSize) {
+            int W = (int) target.getWidth(), H = (int) target.getHeight();
+            javafx.scene.canvas.Canvas c = new javafx.scene.canvas.Canvas(W, H);
+            javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
+            gc.clearRect(0, 0, W, H);
+            javafx.scene.text.Font font = javafx.scene.text.Font.font(
+                fontFamily, javafx.scene.text.FontWeight.BOLD, fontSize);
+            gc.setFont(font);
+            gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
+            gc.setTextBaseline(javafx.geometry.VPos.CENTER);
+            // 그림자
+            gc.setFill(javafx.scene.paint.Color.color(
+                col.getRed()*0.2, col.getGreen()*0.2, col.getBlue()*0.2, col.getOpacity()*0.75));
+            gc.fillText(text, W/2.0+2.5, H/2.0+2.5);
+            // 본문
+            gc.setFill(col);
+            gc.fillText(text, W/2.0, H/2.0);
+            // 하이라이트
+            gc.setFill(javafx.scene.paint.Color.color(
+                Math.min(1.0, col.getRed()+0.45),
+                Math.min(1.0, col.getGreen()+0.45),
+                Math.min(1.0, col.getBlue()+0.45),
+                col.getOpacity()*0.45));
+            gc.fillText(text, W/2.0-1.0, H/2.0-1.0);
+            javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
+            sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
+            c.snapshot(sp, target);
+        }
 
         /** 디지탈 Box 노드 생성 및 digitalGroup 초기화. buildAll() 에서 1회 호출. */
         void buildDigitalGroup() {
@@ -1971,6 +2139,7 @@ public class FxGPUNeon {
             numbersGroup.setOpacity(1.0);
             numbersGroup.setVisible(state.showNumbers);
             applyNeonEffects();   // 숫자 재빌드 후 네온 상태 복원
+            updateFaceDateTimeZ(); // 숫자 높이 변경 → faceDateTimeGroup Z 동기화
 		}
         void rebuildGlass() {
             if (glassView != null) {

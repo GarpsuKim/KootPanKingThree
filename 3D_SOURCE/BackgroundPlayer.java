@@ -74,6 +74,8 @@ public class BackgroundPlayer {
         private volatile boolean             running = false;
         private Thread                       workerThread;
         private MediaPlayer                  currentPlayer;
+        private MediaPlayer                  audioPlayer;       // 로컬 MP4 오디오 전담
+        private double                       currentVolume = 1.0; // 0.0~1.0
         private javafx.animation.AnimationTimer captureTimer;  // 프레임 캡처 타이머
         private Path                         cacheDir;
 
@@ -111,12 +113,30 @@ public class BackgroundPlayer {
                     currentPlayer.dispose();
                     currentPlayer = null;
                 }
+                if (audioPlayer != null) {
+                    audioPlayer.stop();
+                    audioPlayer.dispose();
+                    audioPlayer = null;
+                }
                 host.detachMediaView();
                 host.clearYoutubeFrame();
             });
             cleanCache();
             System.out.println("[YT-BG] 중지");
         }
+
+        /**
+         * 로컬 MP4 볼륨 조절 (0.0 ~ 1.0).
+         * 재생 중에도 즉시 반영된다.
+         */
+        public void setVolume(double volume) {
+            currentVolume = Math.max(0.0, Math.min(1.0, volume));
+            Platform.runLater(() -> {
+                if (audioPlayer != null) audioPlayer.setVolume(currentVolume);
+            });
+        }
+
+        public double getVolume() { return currentVolume; }
 
         public boolean isRunning() { return running; }
 
@@ -365,6 +385,261 @@ public class BackgroundPlayer {
                 System.out.println("[YT-BG] 재생 준비 오류: " + e.getMessage());
                 latch.countDown();
             }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  로컬 MP4 재생 (FFmpeg 파이프 → 모든 코덱 지원)
+        //  ffmpeg 없으면 JavaFX MediaPlayer 로 폴백 (H.264 한정)
+        // ══════════════════════════════════════════════════════════════
+
+        /**
+         * 로컬 MP4 파일 배경 재생.
+         *  - ffmpeg 있음 : rawvideo 파이프 → WritableImage → 코인 페이스 주입 (모든 코덱)
+         *  - ffmpeg 없음 : JavaFX MediaPlayer 폴백 (H.264 + AAC 한정)
+         * FX 스레드에서 호출.
+         */
+        public void startLocalMp4(File mp4File) {
+            stop();
+            running = true;
+
+            String ffmpeg = host.getFfmpegPath();
+            boolean hasFfmpeg = ffmpeg != null && !ffmpeg.isEmpty()
+                                && new File(ffmpeg).exists();
+
+            if (hasFfmpeg) {
+                startLocalMp4Ffmpeg(mp4File, ffmpeg);
+            } else {
+                startLocalMp4Javafx(mp4File);
+                Platform.runLater(() ->
+                    host.onStatusMessage("⚠ ffmpeg 미설정 → H.264 전용 모드"));
+            }
+
+            // 오디오는 항상 JavaFX MediaPlayer 가 담당 (ffmpeg 파이프는 -an 으로 영상만 처리)
+            // JavaFX 폴백 모드일 때는 startLocalMp4Javafx 내부에서 이미 재생하므로 중복 방지
+            if (hasFfmpeg) {
+                startLocalMp4Audio(mp4File);
+            }
+
+            System.out.println("[LocalMP4] 시작: " + mp4File.getName()
+                + (hasFfmpeg ? " (FFmpeg 파이프 + JavaFX 오디오)" : " (JavaFX 폴백)"));
+        }
+
+        /** 오디오 전담 MediaPlayer 시작 (FFmpeg 파이프 방식일 때만 호출). FX 스레드 필요. */
+        private void startLocalMp4Audio(File mp4File) {
+            Platform.runLater(() -> {
+                try {
+                    if (audioPlayer != null) {
+                        audioPlayer.stop();
+                        audioPlayer.dispose();
+                        audioPlayer = null;
+                    }
+                    Media media = new Media(mp4File.toURI().toString());
+                    audioPlayer = new MediaPlayer(media);
+                    audioPlayer.setMute(false);
+                    audioPlayer.setVolume(currentVolume);
+                    audioPlayer.setCycleCount(MediaPlayer.INDEFINITE); // 무한 반복
+                    audioPlayer.setOnError(() ->
+                        System.out.println("[LocalMP4-Audio] 재생 오류: " + audioPlayer.getError()));
+                    audioPlayer.play();
+                    System.out.println("[LocalMP4-Audio] 오디오 재생 시작: " + mp4File.getName());
+                } catch (Exception e) {
+                    System.out.println("[LocalMP4-Audio] 시작 실패: " + e.getMessage());
+                }
+            });
+        }
+
+        // ── FFmpeg 파이프 방식 ─────────────────────────────────────
+        private void startLocalMp4Ffmpeg(File mp4File, String ffmpegExe) {
+            // 실제 해상도 probe: 세로 영상이면 360×640, 가로면 640×360
+            int[] dim = probeVideoDimensions(mp4File, ffmpegExe);
+            final int W = dim[0], H = dim[1];
+            final int frameBytes = W * H * 3; // BGR24
+            System.out.println("[LocalMP4-FF] 출력 해상도: " + W + "×" + H
+                + (H > W ? " (세로 영상)" : " (가로 영상)"));
+
+            workerThread = new Thread(() -> {
+                Process proc = null;
+                try {
+                    ProcessBuilder pb = new ProcessBuilder(
+                        ffmpegExe,
+                        "-re",                          // 실시간 속도 (배경 과부하 방지)
+                        "-stream_loop", "-1",           // 무한 반복
+                        "-i", mp4File.getAbsolutePath(),
+                        "-vf", "scale=" + W + ":" + H,
+                        "-f",  "rawvideo",
+                        "-pix_fmt", "bgr24",            // TYPE_3BYTE_BGR 과 1:1 대응
+                        "-an",                          // 오디오 제거 (배경 무음)
+                        "pipe:1"
+                    );
+                    pb.redirectErrorStream(false);
+                    proc = pb.start();
+
+                    // stderr 드레인 (블로킹 방지)
+                    final Process finalProc = proc;
+                    new Thread(() -> {
+                        try { finalProc.getErrorStream()
+                                .transferTo(OutputStream.nullOutputStream()); }
+                        catch (Exception ignored) {}
+                    }, "LocalMP4-stderr").start();
+
+                    InputStream stdout = proc.getInputStream();
+                    byte[] buf = new byte[frameBytes];
+
+                    Platform.runLater(() -> host.onStatusMessage(""));
+
+                    while (running) {
+                        // 정확히 한 프레임(frameBytes) 읽기
+                        int read = 0;
+                        while (read < frameBytes) {
+                            int n = stdout.read(buf, read, frameBytes - read);
+                            if (n < 0) { running = false; break; } // EOF
+                            read += n;
+                        }
+                        if (!running) break;
+
+                        // BGR → BufferedImage
+                        java.awt.image.BufferedImage img =
+                            new java.awt.image.BufferedImage(W, H,
+                                java.awt.image.BufferedImage.TYPE_3BYTE_BGR);
+                        img.getRaster().setDataElements(0, 0, W, H, buf.clone());
+
+                        // BufferedImage → WritableImage
+                        javafx.scene.image.WritableImage wImg =
+                            javafx.embed.swing.SwingFXUtils.toFXImage(img, null);
+
+                        Platform.runLater(() -> host.onYoutubeFrame(wImg));
+                    }
+
+                } catch (Exception e) {
+                    System.out.println("[LocalMP4-FF] 오류: " + e.getMessage());
+                } finally {
+                    if (proc != null) proc.destroyForcibly();
+                    Platform.runLater(() -> {
+                        host.clearYoutubeFrame();
+                        host.detachMediaView();
+                    });
+                    System.out.println("[LocalMP4-FF] 워커 종료");
+                }
+            }, "LocalMP4-FF-Worker");
+            workerThread.setDaemon(true);
+            workerThread.start();
+        }
+
+        // ── JavaFX MediaPlayer 폴백 (H.264 한정) ──────────────────
+        private void startLocalMp4Javafx(File mp4File) {
+            Platform.runLater(() -> {
+                try {
+                    if (captureTimer  != null) { captureTimer.stop();  captureTimer  = null; }
+                    if (currentPlayer != null) {
+                        currentPlayer.stop(); currentPlayer.dispose(); currentPlayer = null;
+                    }
+
+                    Media      media  = new Media(mp4File.toURI().toString());
+                    currentPlayer     = new MediaPlayer(media);
+                    currentPlayer.setCycleCount(MediaPlayer.INDEFINITE); // 무한 반복
+                    currentPlayer.setMute(false);  // 폴백 모드: JavaFX 자체 오디오 사용
+                    currentPlayer.setVolume(currentVolume);
+                    currentPlayer.setAutoPlay(false);
+
+                    MediaView view = new MediaView(currentPlayer);
+                    // 초기값: 가로 기준. onReady 에서 실제 해상도로 재조정
+                    view.setFitWidth(640);
+                    view.setFitHeight(640);   // 세로 영상 대응용 충분한 높이
+                    view.setPreserveRatio(true);
+                    host.attachMediaView(view);
+
+                    // AnimationTimer: ~30fps 스냅샷 → 코인 페이스 주입
+                    captureTimer = new javafx.animation.AnimationTimer() {
+                        private long lastNs = 0;
+                        private final javafx.scene.SnapshotParameters params =
+                            new javafx.scene.SnapshotParameters();
+                        @Override public void handle(long now) {
+                            if (now - lastNs < 33_000_000L) return;
+                            lastNs = now;
+                            javafx.scene.image.WritableImage wi =
+                                view.snapshot(params, null);
+                            if (wi != null) host.onYoutubeFrame(wi);
+                        }
+                    };
+
+                    currentPlayer.setOnReady(() -> {
+                        // 실제 영상 해상도로 fitWidth/Height 결정
+                        int vw = currentPlayer.getMedia().getWidth();
+                        int vh = currentPlayer.getMedia().getHeight();
+                        if (vw > 0 && vh > 0) {
+                            if (vh > vw) {
+                                // 세로 영상: 높이 640 기준
+                                view.setFitWidth(640);
+                                view.setFitHeight(640);
+                            } else {
+                                // 가로 영상: 너비 640 기준
+                                view.setFitWidth(640);
+                                view.setFitHeight(360);
+                            }
+                            System.out.println("[LocalMP4-FX] 해상도=" + vw + "×" + vh
+                                + (vh > vw ? " (세로)" : " (가로)"));
+                        }
+                        captureTimer.start();
+                        currentPlayer.play();
+                        System.out.println("[LocalMP4-FX] 재생 시작: "
+                            + mp4File.getName());
+                    });
+                    currentPlayer.setOnError(() -> {
+                        System.out.println("[LocalMP4-FX] 재생 오류: "
+                            + currentPlayer.getError());
+                        if (captureTimer != null) { captureTimer.stop(); captureTimer = null; }
+                        Platform.runLater(() -> {
+                            host.clearYoutubeFrame();
+                            host.detachMediaView();
+                        });
+                    });
+
+                } catch (Exception e) {
+                    System.out.println("[LocalMP4-FX] 시작 실패: " + e.getMessage());
+                }
+            });
+        }
+
+        // ── 영상 해상도 probe (ffmpeg -i) ─────────────────────────
+        /**
+         * ffmpeg -i 로 영상의 실제 해상도를 읽어 출력 해상도를 결정한다.
+         * · 가로 영상 (w >= h) → 640×360
+         * · 세로 영상 (h >  w) → 360×640
+         * probe 실패 시 기본값 640×360 반환.
+         */
+        private int[] probeVideoDimensions(File mp4File, String ffmpegExe) {
+            try {
+                ProcessBuilder pb = new ProcessBuilder(
+                    ffmpegExe, "-i", mp4File.getAbsolutePath()
+                );
+                pb.redirectErrorStream(true);
+                Process proc = pb.start();
+
+                String output;
+                try (java.io.BufferedReader br = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(proc.getInputStream(), "UTF-8"))) {
+                    output = br.lines().collect(java.util.stream.Collectors.joining("\n"));
+                }
+                proc.waitFor();
+
+                // "Stream #0:0: Video: ... 1280x720" 또는 "1080x1920" 형태 파싱
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("Video:.*?(\\d{2,5})x(\\d{2,5})")
+                    .matcher(output);
+                if (m.find()) {
+                    int srcW = Integer.parseInt(m.group(1));
+                    int srcH = Integer.parseInt(m.group(2));
+                    System.out.println("[LocalMP4-FF] 원본 해상도: " + srcW + "×" + srcH);
+                    if (srcH > srcW) {
+                        return new int[]{360, 640};  // 세로 영상
+                    } else {
+                        return new int[]{640, 360};  // 가로 영상
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("[LocalMP4-FF] probe 실패: " + e.getMessage());
+            }
+            return new int[]{640, 360}; // 기본값
         }
 
         // ── 유틸 ───────────────────────────────────────────────────

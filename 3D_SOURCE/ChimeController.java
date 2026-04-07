@@ -17,43 +17,54 @@ import javafx.util.Duration;
 /**
  * ChimeController (JavaFX 버전) - 차임벨 재생 로직 + 설정 다이얼로그
  *
- * ── 책임 ────────────────────────────────────────────────────
- *   ① JavaFX Timeline으로 매 초 시각 체크 → 지정 분에 차임벨 자동 재생
- *   ② javax.sound.sampled Clip 으로 WAV 재생 (볼륨 제어)
- *   ③ wmplayer 프로세스로 mp3/wma/mp4 등 재생
- *   ④ showChimeDialog() — JavaFX Stage 기반 설정 UI
+ * ── 재생 분기 ─────────────────────────────────────────────────────
+ *   ① WAV  → javax.sound.sampled Clip (볼륨 제어)
+ *   ② 동영상(mp4/avi/wmv/mkv/mov/m4v) → BackgroundPlayer.YoutubePlayer.startLocalMp4()
+ *      · ffmpeg 있으면: rawvideo 파이프 → 코인 페이스 주입
+ *      · ffmpeg 없으면: JavaFX MediaPlayer 폴백
+ *      · duration 0/1 → 지정 초 후 자동 stop / 2 → 영상 끝까지
+ *   ③ 나머지 오디오(mp3/wma/m4a/flac/ogg) → wmplayer 프로세스 (기존 유지)
  *
- * ── HostCallback ─────────────────────────────────────────────
- *   최소 인터페이스: isChild() / getTimeZone() 만 필요.
- *   (무지개 기능은 추후 추가 예정 — 현재 미구현)
- *
- * ── 사용법 ───────────────────────────────────────────────────
- *   ChimeController chime = new ChimeController(ownerStage, hostCallback);
- *   chime.startCheckTimer();      // initUI 완료 후 1회 호출
- *   chime.showChimeDialog();      // 팝업 메뉴 → 차임벨 설정
- *   chime.stopChime();            // 강제 중지
- *   chime.playMediaFile(file);    // 텔레그램 수신 미디어 재생
- *
- *   // INI 저장/로드
- *   isEnabled() getFile() getDuration() getMinutes() getVolume()
- *   setEnabled() setFile() setDuration() setMinutes() setVolume()
+ * ── HostCallback 변경 ─────────────────────────────────────────────
+ *   getVideoPlayer() — BackgroundPlayer.YoutubePlayer 인스턴스 반환.
+ *   동영상 차임벨 기능이 필요 없으면 default(null) 반환해도 무방.
+ *   null이면 자동으로 wmplayer 폴백.
  */
 public class ChimeController {
 
-    // ── 호스트 콜백 인터페이스 ───────────────────────────────
+    // ── 동영상 확장자 목록 ───────────────────────────────────────
+    private static final java.util.Set<String> VIDEO_EXTS = new java.util.HashSet<>(
+        java.util.Arrays.asList("mp4","avi","wmv","mkv","mov","m4v","flv","webm")
+    );
+
+    // ── 호스트 콜백 인터페이스 ───────────────────────────────────
     public interface HostCallback {
         /** 자식 인스턴스 여부 (자식은 차임벨 비활성) */
         boolean isChild();
+
         /** 현재 타임존 (차임벨 시각 체크에 사용) */
         ZoneId getTimeZone();
+
         /**
          * 레인보우 베젤 효과 시작.
          * @param durationSec 지속 시간(초). 0=무한(toggleMode). 30=차임벨 연동.
          */
         default void startRainbow(int durationSec) {}
+
+        /**
+         * 동영상 차임벨 재생에 사용할 YoutubePlayer 인스턴스.
+         * null 반환 시 wmplayer 폴백.
+         */
+        default BackgroundPlayer.YoutubePlayer getVideoPlayer() { return null; }
+
+        /**
+         * ffmpeg.exe 절대 경로 (ini: MP4.FFMPEG).
+         * 동영상 차임벨 재생 전 경로 진단에 사용.
+         */
+        default String getFfmpegPath() { return ""; }
     }
 
-    // ── 설정 필드 ────────────────────────────────────────────
+    // ── 설정 필드 ────────────────────────────────────────────────
     private boolean   enabled  = false;
     private String    file     = "";
     /** 연주 시간: 0=처음 15초, 1=처음 30초, 2=끝까지 */
@@ -62,25 +73,34 @@ public class ChimeController {
     /** 볼륨: 0(무음) ~ 100(최대), 기본 80 */
     private int       volume   = 80;
 
-    // ── 내부 상태 ────────────────────────────────────────────
+    // ── 내부 상태 ────────────────────────────────────────────────
     private Process          chimeProcess    = null;
     private Thread           wavThread       = null;
     private volatile boolean wavRunning      = false;
     private Timeline         checkTimer      = null;
     private int              lastChimeMinute = -1;
 
-    // ── 의존성 ───────────────────────────────────────────────
+    /** 동영상 재생 중단용 타이머 (duration 0/1일 때) */
+    private java.util.concurrent.ScheduledFuture<?> videoStopFuture = null;
+    private final java.util.concurrent.ScheduledExecutorService videoStopScheduler =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "ChimeVideoStop");
+            t.setDaemon(true);
+            return t;
+        });
+
+    // ── 의존성 ───────────────────────────────────────────────────
     private final Stage        ownerStage;
     private final HostCallback host;
 
-    // ── 생성자 ───────────────────────────────────────────────
+    // ── 생성자 ───────────────────────────────────────────────────
     public ChimeController(Stage ownerStage, HostCallback host) {
         this.ownerStage = ownerStage;
         this.host       = host;
         minutes[0]      = true;  // 기본값: 정각(0분)
     }
 
-    // ── 설정 접근자 ──────────────────────────────────────────
+    // ── 설정 접근자 ──────────────────────────────────────────────
 
     public boolean   isEnabled()   { return enabled; }
     public String    getFile()     { return file; }
@@ -96,7 +116,7 @@ public class ChimeController {
     }
     public void setVolume(int v)        { this.volume   = Math.max(0, Math.min(100, v)); }
 
-    // ── 공개 API ─────────────────────────────────────────────
+    // ── 공개 API ─────────────────────────────────────────────────
 
     /** 매 초 시각 체크 타이머 시작 (JavaFX Timeline — FX 스레드에서 실행) */
     public void startCheckTimer() {
@@ -108,9 +128,21 @@ public class ChimeController {
 
     /** 차임벨 강제 중지 */
     public void stopChime() {
+        // ① WAV 중지
         wavRunning = false;
-        if (wavThread  != null) { wavThread.interrupt();  wavThread  = null; }
-        if (chimeProcess != null) { chimeProcess.destroy(); chimeProcess = null; }
+        if (wavThread    != null) { wavThread.interrupt();    wavThread    = null; }
+        // ② wmplayer 프로세스 중지
+        if (chimeProcess != null) { chimeProcess.destroy();   chimeProcess = null; }
+        // ③ 동영상 예약 stop 취소
+        cancelVideoStop();
+        // ④ YoutubePlayer 동영상 중지
+        BackgroundPlayer.YoutubePlayer vp = host.getVideoPlayer();
+        if (vp != null && vp.isRunning()) {
+            // FX 스레드에서 직접 호출 — Platform.runLater로 감싸면
+            // 새 audioPlayer 생성(C) 이후에 stop cleanup(A)이 실행되어
+            // 방금 만든 플레이어를 kill하는 순서 역전 버그 발생
+            vp.stop();
+        }
     }
 
     /** 텔레그램 수신 미디어 파일을 OS 기본 앱으로 재생 */
@@ -129,11 +161,6 @@ public class ChimeController {
      */
     public void showChimeDialog() {
         Stage dlg = new Stage();
-        // ── 마우스 독점 해제 ─────────────────────────────────
-        // mainStage 가 StageStyle.TRANSPARENT 전체 오버레이이므로
-        // initOwner + APPLICATION_MODAL 조합은 OS 마우스 이벤트를 완전히 독점해
-        // 모든 윈도우가 먹통이 된다.
-        // 설정 패널과 동일하게: initOwner 없음 + Modality.NONE + alwaysOnTop.
         dlg.initModality(Modality.NONE);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("차임벨 설정");
@@ -168,9 +195,9 @@ public class ChimeController {
             fc.setTitle("오디오/비디오 파일 선택");
             fc.getExtensionFilters().addAll(
                 new FileChooser.ExtensionFilter(
-                    "미디어 파일 (mp3, wav, wma, mp4, avi, wmv, m4a, flac, ogg)",
+                    "미디어 파일 (mp3, wav, wma, mp4, avi, wmv, m4a, flac, ogg, mkv, mov)",
                     "*.mp3","*.wav","*.wma","*.mp4","*.avi","*.wmv",
-                    "*.m4a","*.flac","*.ogg","*.aac","*.mkv"),
+                    "*.m4a","*.flac","*.ogg","*.aac","*.mkv","*.mov","*.m4v"),
                 new FileChooser.ExtensionFilter("모든 파일", "*.*")
             );
             if (!file.isEmpty()) {
@@ -179,13 +206,26 @@ public class ChimeController {
                     fc.setInitialDirectory(init.getParentFile());
             }
             File chosen = fc.showOpenDialog(dlg);
-            if (chosen != null) fileField.setText(chosen.getAbsolutePath());
+            if (chosen != null) {
+                fileField.setText(chosen.getAbsolutePath());
+                // 동영상 파일 선택 시 힌트 표시
+                if (isVideoFile(chosen.getName())) {
+                    System.out.println("[Chime] 동영상 파일 선택 → BackgroundPlayer 로 재생");
+                }
+            }
         });
 
         // Row 2: 테스트 / 중지 버튼
         Button testBtn = new Button("▶ 테스트");
         Button stopBtn = new Button("■ 중지");
-        HBox testRow = new HBox(8, testBtn, stopBtn);
+        // 동영상 파일 선택 시 재생 방식 힌트 라벨
+        Label modeHint = new Label();
+        modeHint.setStyle("-fx-font-size:10px; -fx-text-fill: #666;");
+        updateModeHint(modeHint, fileField.getText());
+        fileField.textProperty().addListener((obs, o, n) -> updateModeHint(modeHint, n));
+
+        HBox testRow = new HBox(8, testBtn, stopBtn, modeHint);
+        testRow.setAlignment(Pos.CENTER_LEFT);
         GridPane.setColumnSpan(testRow, 4);
         top.add(testRow, 0, 2);
         stopBtn.setOnAction(e -> stopChime());
@@ -219,7 +259,7 @@ public class ChimeController {
         volSlider.valueProperty().addListener((obs, o, n) ->
             volLabel.setText((int) Math.round(n.doubleValue()) + "%"));
 
-        // 테스트 버튼 리스너 (volSlider/rFull/r30 선언 후 등록)
+        // 테스트 버튼 리스너
         testBtn.setOnAction(e -> {
             String f = fileField.getText().trim();
             if (f.isEmpty()) { showAlert(dlg, "파일을 먼저 선택하세요."); return; }
@@ -282,7 +322,7 @@ public class ChimeController {
         VBox root = new VBox(6, topLabel, top, minScroll, bot);
         root.setPadding(new Insets(8));
 
-        dlg.setScene(new Scene(root, 465, 570));
+        dlg.setScene(new Scene(root, 465, 590));
         dlg.showAndWait();
     }
 
@@ -311,22 +351,99 @@ public class ChimeController {
         final int    snapVolume   = volume;
         final int    snapDuration = duration;
 
-        boolean isWav = snapFile.toLowerCase().endsWith(".wav");
+        boolean isWav   = snapFile.toLowerCase().endsWith(".wav");
+        boolean isVideo = isVideoFile(snapFile);
+
         System.out.println("[Chime] 재생 → " + snapFile
-            + " (wav=" + isWav + ", vol=" + snapVolume
-            + ", dur=" + snapDuration + ")");
+            + " (wav=" + isWav + ", video=" + isVideo
+            + ", vol=" + snapVolume + ", dur=" + snapDuration + ")");
 
         if (isWav) {
+            // ① WAV: javax.sound.sampled (볼륨 제어)
             playWavWithVolume(snapFile, snapVolume, snapDuration);
+
+        } else if (isVideo) {
+            // ② 동영상: BackgroundPlayer.YoutubePlayer.startLocalMp4()
+            playWithLocalMp4(snapFile, snapVolume, snapDuration);
+
         } else {
+            // ③ 오디오(mp3/wma/m4a/flac 등): wmplayer 프로세스 폴백
             playWithWmplayer(snapFile, snapDuration);
         }
 
-        // ── 차임벨 울릴 때 레인보우 30초 병행 ─────────────────
+        // 차임벨 울릴 때 레인보우 30초 병행
         host.startRainbow(30);
     }
 
-    // ── 내부: WAV 재생 (javax.sound.sampled Clip) ────────────
+    // ── ② 동영상: BackgroundPlayer.YoutubePlayer 통합 ───────
+
+    /**
+     * 동영상 파일을 BackgroundPlayer.YoutubePlayer.startLocalMp4()로 재생.
+     * · ffmpeg 있으면 코인 페이스에 영상 주입
+     * · duration 0/1 이면 지정 초 후 자동 stop
+     * · duration 2 이면 영상이 자연 종료될 때까지 재생
+     * FX 스레드에서 호출.
+     */
+    private void playWithLocalMp4(String playFile, int playVolume, int playDuration) {
+        BackgroundPlayer.YoutubePlayer vp = host.getVideoPlayer();
+        if (vp == null) {
+            // YoutubePlayer 미제공 → wmplayer 폴백
+            System.out.println("[Chime] YoutubePlayer 없음 → wmplayer 폴백");
+            playWithWmplayer(playFile, playDuration);
+            return;
+        }
+
+        // ── ffmpeg 경로 사전 진단 ─────────────────────────────────
+        String ffmpegPath = host.getFfmpegPath();
+        System.out.println("[Chime-MP4] ffmpegPath=\"" + ffmpegPath + "\"");
+        if (ffmpegPath == null || ffmpegPath.isEmpty()) {
+            System.out.println("[Chime-MP4] ★ ffmpegPath 빈 문자열 → ini 저장 여부 확인 필요");
+        } else if (!new File(ffmpegPath).exists()) {
+            System.out.println("[Chime-MP4] ★ ffmpeg 파일 없음 → 경로 불일치: " + ffmpegPath);
+        } else {
+            System.out.println("[Chime-MP4] ffmpeg 정상");
+        }
+
+        File mp4 = new File(playFile);
+        if (!mp4.exists()) {
+            System.out.println("[Chime] 동영상 파일 없음: " + playFile);
+            return;
+        }
+
+        // 볼륨 적용 (0~100 → 0.0~1.0)
+        vp.setVolume(playVolume / 100.0);
+        vp.startLocalMp4(mp4);
+
+        System.out.println("[Chime] 동영상 차임벨 시작: " + mp4.getName()
+            + " vol=" + playVolume + "% dur=" + playDuration);
+
+        // duration 0(15초) / 1(30초): 지정 시간 후 자동 stop
+        if (playDuration < 2) {
+            long stopMs = (playDuration == 1) ? 30_000L : 15_000L;
+            cancelVideoStop();
+            videoStopFuture = videoStopScheduler.schedule(() ->
+                Platform.runLater(() -> {
+                    if (vp.isRunning()) {
+                        vp.stop();
+                        System.out.println("[Chime] 동영상 차임벨 자동 종료 ("
+                            + stopMs / 1000 + "초)");
+                    }
+                }),
+                stopMs, java.util.concurrent.TimeUnit.MILLISECONDS
+            );
+        }
+        // duration 2(끝까지): YoutubePlayer 내부가 -stream_loop 없이 1사이클 재생 후 종료
+        // startLocalMp4는 기본 setCycleCount(INDEFINITE)이므로, 끝까지=무한반복 허용
+    }
+
+    private void cancelVideoStop() {
+        if (videoStopFuture != null && !videoStopFuture.isDone()) {
+            videoStopFuture.cancel(false);
+            videoStopFuture = null;
+        }
+    }
+
+    // ── ① WAV 재생 (javax.sound.sampled Clip) ────────────────
 
     private void playWavWithVolume(final String playFile,
                                    final int    playVolume,
@@ -409,7 +526,7 @@ public class ChimeController {
         wavThread.start();
     }
 
-    // ── 내부: wmplayer 재생 ──────────────────────────────────
+    // ── ③ wmplayer 폴백 (오디오 전용: mp3/wma/m4a 등) ───────
 
     private void playWithWmplayer(final String playFile, final int playDuration) {
         try {
@@ -426,7 +543,6 @@ public class ChimeController {
             pb.redirectErrorStream(true);
             chimeProcess = pb.start();
 
-            // duration 제한: 백그라운드 스레드에서 sleep 후 FX 스레드로 stopChime
             if (playDuration < 2) {
                 final int stopMs = (playDuration == 1) ? 30_000 : 15_000;
                 new Thread(() -> {
@@ -442,6 +558,32 @@ public class ChimeController {
     }
 
     // ── 유틸 ─────────────────────────────────────────────────
+
+    /**
+     * 파일명(또는 경로)이 동영상 확장자인지 확인.
+     */
+    private static boolean isVideoFile(String filePath) {
+        if (filePath == null || filePath.isEmpty()) return false;
+        int dot = filePath.lastIndexOf('.');
+        if (dot < 0) return false;
+        return VIDEO_EXTS.contains(filePath.substring(dot + 1).toLowerCase());
+    }
+
+    /** 다이얼로그 파일 필드 변경 시 재생 방식 힌트 갱신 */
+    private void updateModeHint(Label hint, String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            hint.setText("");
+        } else if (isVideoFile(filePath)) {
+            BackgroundPlayer.YoutubePlayer vp = host.getVideoPlayer();
+            hint.setText(vp != null
+                ? "🎬 동영상 → BackgroundPlayer (코인 페이스 연동)"
+                : "🎬 동영상 → wmplayer 폴백 (YoutubePlayer 미연결)");
+        } else if (filePath.toLowerCase().endsWith(".wav")) {
+            hint.setText("🔊 WAV → javax.sound Clip");
+        } else {
+            hint.setText("🎵 오디오 → wmplayer");
+        }
+    }
 
     private static Label lbl(String text) { return new Label(text); }
 
