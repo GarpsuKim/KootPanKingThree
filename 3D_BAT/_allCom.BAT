@@ -7,7 +7,6 @@ del  %CLASS_DIR%\*.CLASS
 CALL  %BAT_DIR%\0Com_AlarmController.BAT
 CALL  %BAT_DIR%\0Com_AppLogger.BAT
 CALL  %BAT_DIR%\0Com_AppRestarter.BAT
-CALL  %BAT_DIR%\0Com_BackgroundPlayer.BAT
 CALL  %BAT_DIR%\0Com_CaptureManager.BAT
 CALL  %BAT_DIR%\0Com_ChimeController.BAT
 CALL  %BAT_DIR%\0Com_GmailSender.BAT
@@ -19,5 +18,7 @@ CALL  %BAT_DIR%\0Com_NaverCalendarService.BAT
 CALL  %BAT_DIR%\0Com_PushSender.BAT
 CALL  %BAT_DIR%\0Com_TelegramBot.BAT
 CALL  %BAT_DIR%\5Com_FxGPUNeon.BAT
+CALL  %BAT_DIR%\0Com_BackgroundPlayer.BAT
+CALL  %BAT_DIR%\0Com_FxSplashWindow.BAT
 CALL  %BAT_DIR%\5Com_KootPanKingThree.BAT
 ECHO  ALL  COMPLETED
