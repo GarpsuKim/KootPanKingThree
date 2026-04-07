@@ -175,6 +175,8 @@ public class KootPanKingThree extends Application {
 
     // ── 시분초 행 pending ───────────────────────────────────────────────
     private boolean pendingDigitalShow        = true;
+    /** 팝업 메뉴 디지탈 체크항목 — setOnShowing 에서 상태 동기화 */
+    private javafx.scene.control.CheckMenuItem digitalMenuItem = null;
     private int     pendingDigitalFormatIndex = 0;
     private String  pendingDigitalFontFamily  = "Consolas";
     private double  pendingDigitalFontSize    = 20.0;
@@ -603,7 +605,10 @@ public class KootPanKingThree extends Application {
     void saveConfig() {
         // ── 공통 항목 (부모/자식 모두 저장) ──────────────────────────
 		config.setProperty("alwaysOnTop", String.valueOf(alwaysOnTop));
-        config.setProperty("showDigital", String.valueOf(showDigital));
+        // showDigital 은 AppState 실제값으로 저장 (legacy 인스턴스 필드 아님)
+        boolean _showDig = clockController != null
+            && FxGPUNeon.ClockController.getDigitalState(clockController);
+        config.setProperty("showDigital", String.valueOf(_showDig));
         config.setProperty("showNumbers", String.valueOf(showNumbers));
         config.setProperty("theme", theme);
         config.setProperty("opacity", String.valueOf(opacity));
@@ -710,6 +715,8 @@ public class KootPanKingThree extends Application {
                 config.setProperty("app.jsaPath", appRestarter.getCachedJsaPath());
 			}
 		}
+		// ── 디지탈 시계 설정 (digital.show / faceDate.show 등) ─────
+        saveDigitalConfig();
 		// ── 파일 저장 (각 인스턴스 자신의 ini 에 기록) ──────────────
         if (iniController != null) {
             iniController.save();
@@ -913,8 +920,9 @@ public class KootPanKingThree extends Application {
             // ── 시분초 / 날짜 pending → AppState 반영 ───────────────
             if (clockController != null) {
                 FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
-                // 마스터 스위치: showDigital/showFaceDate 를 동시에 반영
-                FxGPUNeon.ClockController.setDigitalState(clockController, pendingDigitalShow);
+                // 날짜·시분초는 개별 설정값으로 독립 반영 (master switch 사용 금지)
+                st.showDigital  = pendingDigitalShow;
+                st.showFaceDate = pendingFaceDateShow;
                 st.digitalFormatIndex = pendingDigitalFormatIndex;
                 st.digitalFontFamily  = pendingDigitalFontFamily;
                 st.digitalFontSize    = pendingDigitalFontSize;
@@ -925,9 +933,13 @@ public class KootPanKingThree extends Application {
                 st.faceDateFontFamily = pendingFaceDateFontFamily;
                 st.faceDateFontSize   = pendingFaceDateFontSize;
                 st.faceDateColorRgb   = pendingFaceDateColorRgb;
-                // Bug7: 날짜 스크롤 반영
                 st.faceDateScrollDir   = pendingFaceDateScrollDir;
                 st.faceDateScrollSpeed = pendingFaceDateScrollSpeed;
+                // 상태 적용 후 씬 재빌드
+                FxGPUNeon.ClockController.applyDigitalSettings(clockController);
+                // 팝업 메뉴 체크 상태 동기화
+                if (digitalMenuItem != null)
+                    digitalMenuItem.setSelected(getDigitalState());
             }
         }
 
@@ -1681,6 +1693,14 @@ public class KootPanKingThree extends Application {
             setDigitalState(on);
             saveConfig();
         });
+
+        // 필드에 저장 → onPopupShowing 에서 상태 동기화
+        digitalMenuItem = digitalItem;
+        // 팝업이 열릴 때마다 체크 상태를 실제 AppState 값으로 갱신
+        if (clockController != null) {
+            clockController.onPopupShowing = () ->
+                digitalMenuItem.setSelected(getDigitalState());
+        }
 
         javafx.scene.control.MenuItem digitalSettingsItem =
             new javafx.scene.control.MenuItem("디지탈 시계 설정");
@@ -2448,10 +2468,12 @@ public class KootPanKingThree extends Application {
             st.digitalScrollOffset = Double.NaN;
             st.faceScrollOffset    = Double.NaN;
             st.facePingPongDir     = 1;
-            // 화면 즉시 반영
-            boolean anyOn = st.showDigital || st.showFaceDate;
-            FxGPUNeon.ClockController.setDigitalState(clockController, anyOn);
-            if (anyOn) FxGPUNeon.ClockController.rebuildFaceDateTimeGroup(clockController);
+            // 화면 즉시 반영 — 개별 showDigital/showFaceDate 값을 그대로 사용
+            // (setDigitalState 호출 금지: 둘을 같은 값으로 덮어쓰므로)
+            FxGPUNeon.ClockController.applyDigitalSettings(clockController);
+            // 팝업 메뉴 체크 상태 동기화
+            if (digitalMenuItem != null)
+                digitalMenuItem.setSelected(getDigitalState());
         };
 
         // 모든 컨트롤에 즉시 적용 리스너
@@ -2527,7 +2549,7 @@ public class KootPanKingThree extends Application {
         // Bug7: 날짜 스크롤 저장
         config.setProperty("faceDate.scrollDir",   String.valueOf(st.faceDateScrollDir));
         config.setProperty("faceDate.scrollSpeed", String.valueOf(st.faceDateScrollSpeed));
-        saveConfig();
+        // saveConfig() 는 호출하지 않음 — 이 메서드가 saveConfig() 안에서 호출되므로 재귀 방지
     }
 
     // ══════════════════════════════════════════════════════════════════
