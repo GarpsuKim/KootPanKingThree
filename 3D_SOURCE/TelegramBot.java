@@ -61,7 +61,7 @@ public class TelegramBot {
         /** 다이얼로그 위치/폰트 등 준비 */
         // void prepareDialog(java.awt.Window dlg);
         /** 알람 목록에서 텔레그램 Chat ID 첫 번째 값 반환 (없으면 "") */
-        String getFirstAlarmTelegramChatId();
+        // String getFirstAlarmTelegramChatId();
 	}
     // ── 설정 필드 (외부에서 직접 읽기/쓰기) ──────────────────────
     // Google Calendar 서비스 (외부에서 주입)

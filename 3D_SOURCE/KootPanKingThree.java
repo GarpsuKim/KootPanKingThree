@@ -20,7 +20,7 @@ public class KootPanKingThree extends Application {
     static KootPanKingThree instance;  // FxGPUNeon 종료 콜백용
     static FxSplashWindow splashWindow; // 메인 윈도우
 	
-    AlarmController alarmController;
+    // AlarmController alarmController;
     private static Properties config = new Properties();
     private static IniController iniController ;
 	
@@ -54,16 +54,19 @@ public class KootPanKingThree extends Application {
             if (screenCapture == null) throw new IllegalStateException("screenCapture not initialized");
             return screenCapture.captureMonitor(i);
 		}
-		
         @Override public void shutdownPC() {
+			System.out.println("=======텔레그램 원격 종료");
             if (isChild) return;
             if (shutdownGuard != null) shutdownGuard.cancel();
             saveConfig();
             String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+			
+			
             gmail.sendShutdownNoticeSync(
                 "텔레그램 원격 종료 알림",
                 GmailSender.APP_SIGNATURE + "텔레그램 명령으로 PC가 종료됩니다.\n\n종료 시각: " + now
 			);
+			System.out.println("AppLogger.close");
             AppLogger.close();
             try {
                 Runtime.getRuntime().exec(new String[]{"shutdown", "-s", "-f", "-t", "0"});
@@ -72,8 +75,8 @@ public class KootPanKingThree extends Application {
 				AppLogger.logException(e);
 			}
 		}
-		
         @Override public void rebootPC() {
+			System.out.println("=======텔레그램 원격 재시작");
             if (isChild) return;
             if (shutdownGuard != null) shutdownGuard.cancel();
             saveConfig();
@@ -82,6 +85,7 @@ public class KootPanKingThree extends Application {
                 "텔레그램 원격 재시작 알림",
                 GmailSender.APP_SIGNATURE + "텔레그램 명령으로 PC가 재시작됩니다.\n\n재시작 시각: " + now
 			);
+			System.out.println("AppLogger.close");
             AppLogger.close();
             try {
                 Runtime.getRuntime().exec(new String[]{"shutdown", "-r", "-f", "-t", "0"});
@@ -89,7 +93,6 @@ public class KootPanKingThree extends Application {
                 System.out.println("[Reboot] " + e.getMessage());
 			}
 		}
-		
         @Override public void showImage(java.io.File imageFile) {
             if (screenCapture != null) {
                 screenCapture.showImageWindow(imageFile);
@@ -105,7 +108,7 @@ public class KootPanKingThree extends Application {
         @Override public void saveConfig() {
             KootPanKingThree.this.saveConfig();
 		}
-		
+		/*
         @Override public String getFirstAlarmTelegramChatId() {
             if (alarmController == null) return "";
             for (AlarmController.AlarmEntry a : alarmController.getAlarmList()) {
@@ -113,6 +116,7 @@ public class KootPanKingThree extends Application {
 			}
             return "";
 		}
+		*/
 	});
 	
     AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
