@@ -496,7 +496,8 @@ public class FxGPUNeon {
                     // 통합 페이스 디지탈 텍스처 갱신 (showDigital / showFaceDate 제어)
                     assembler.updateFaceDateTimeTextures();
                     // Bug1: transparentMode 일 때는 항상 숨김
-                    boolean dtVisible = (state.showDigital || state.showFaceDate) && !state.transparentMode;
+                    // showDigital 이 마스터 스위치 역할 (setDigitalState 가 둘을 동기화)
+                    boolean dtVisible = state.showDigital && !state.transparentMode;
                     assembler.faceDateTimeGroup.setVisible(dtVisible);
                 }			};
             timer.start();
@@ -768,12 +769,19 @@ public class FxGPUNeon {
             return cc.state.showDigital;
         }
 
-        /** 시분초 행 ON/OFF 설정. faceDateTimeGroup 표시는 날짜/시간 둘 다 고려. */
+        /** 디지탈 ON/OFF — 날짜 행·시분초 행 동시 제어 (팝업 메뉴 마스터 스위치).
+         *  OFF: 모든 디지탈 3D 객체를 씬에서 완전 제거 (렌더링 비용 0).
+         *  ON : buildFaceDateTimeGroup() 으로 재생성. */
         public static void setDigitalState(ClockController cc, boolean on) {
-            cc.state.showDigital = on;
-            // transparentMode 에서는 faceDateTimeGroup도 숨긴다 (Bug1+Bug2 통합 수정)
-            boolean groupVisible = (on || cc.state.showFaceDate) && !cc.state.transparentMode;
-            cc.assembler.faceDateTimeGroup.setVisible(groupVisible);
+            cc.state.showDigital  = on;
+            cc.state.showFaceDate = on;
+            if (on) {
+                // 씬에서 제거됐을 수 있으므로 항상 재빌드 (내부에서 coinGroup 에 추가)
+                cc.assembler.buildFaceDateTimeGroup();
+            } else {
+                // 모든 디지탈 객체를 씬 그래프에서 완전 제거
+                cc.assembler.removeDigitalGroup();
+            }
         }
 
         /** AppState 직접 접근 (KootPanKingThree 설정 다이얼로그용). */
@@ -945,7 +953,7 @@ public class FxGPUNeon {
 		
         // ── 시분초 행 (하단) ─────────────────────────────────────────
         /** 시분초 행 표시 ON/OFF */
-        boolean showDigital = false;
+        boolean showDigital = true;
         /** 시분초 표시 방식 인덱스 (0~3) */
         int digitalFormatIndex = 0;
         /** 시분초 폰트 패밀리 */
@@ -1128,6 +1136,16 @@ public class FxGPUNeon {
         private WritableImage faceTimeTexImg = null;
         private PhongMaterial faceDateMat    = null;
         private PhongMaterial faceTimeMat    = null;
+        // ── 5면체 측벽 ─ 날짜 박스 (뒷면 없음, 바탕 투명) ──────────
+        private Box          dateBoxTop    = null;
+        private Box          dateBoxBottom = null;
+        private Box          dateBoxLeft   = null;
+        private Box          dateBoxRight  = null;
+        // ── 5면체 측벽 ─ 시분초 박스 (뒷면 없음, 바탕 투명) ─────────
+        private Box          timeBoxTop    = null;
+        private Box          timeBoxBottom = null;
+        private Box          timeBoxLeft   = null;
+        private Box          timeBoxRight  = null;
 		
         // [추가] 배경 이미지 텍스처 스냅샷 캐시:
         //   applyBackgroundImage()가 호출될 때마다 512×512 Canvas를 새로 그리고 snapshot()하는 것은
@@ -1601,54 +1619,192 @@ public class FxGPUNeon {
             coinGroup.getChildren().remove(faceDateTimeGroup);
             faceDateTimeGroup.getChildren().clear();
 
-            double r     = AppState.BASE_COIN_RADIUS;
-            double faceZ = numberFrontZ();
+            double r = AppState.BASE_COIN_RADIUS;
 
-            // ── 날짜 박스 (상단) — 정적 렌더링 ──────────────────────
+            // ─────────────────────────────────────────────────────────────
+            //  Z 좌표 설계: "시계 바탕에 파고 들어가는" 음각 구조
+            //
+            //  카메라는 -Z 쪽에서 +Z 방향을 바라봄.
+            //  faceZ = -(BASE_COIN_HEIGHT/2 + 0.45) ≈ -9.45  (시계 앞면)
+            //
+            //  5면체 전면(카메라 쪽 개방) = faceZ 와 같은 레벨  → 튀어나오지 않음
+            //  5면체 뒷면                 = faceZ + depth       → 시계 안쪽으로 파고듦
+            //  텍스트 패널               = 뒷벽 바로 앞(카메라 방향)
+            // ─────────────────────────────────────────────────────────────
+            final double faceZ      = -(AppState.BASE_COIN_HEIGHT * 0.5 + 0.45); // -9.45
+            final double boxDepth   = 4.0;    // 파고드는 깊이 (faceZ → +Z 방향)
+            final double wallThick  = 1.1;    // 벽 두께
+            // 5면체 전면 중심 Z: faceZ 보다 wallThick/2 만큼 더 앞 → 전면 엣지가 faceZ 에 정렬
+            final double boxFrontZ  = faceZ - wallThick / 2.0;
+            // 5면체 전체 중심 Z
+            final double boxCenterZ = boxFrontZ + boxDepth / 2.0;
+            // 뒷벽 중심 Z
+            final double backCenterZ = boxFrontZ + boxDepth - wallThick / 2.0;
+            // 텍스트 패널 Z: 뒷벽 앞면에서 0.3 앞
+            final double textPanelZ = backCenterZ - wallThick / 2.0 - 0.3;
+
+            // ── 크기: 좌우로 넓고 상하로 낮은 형태 ──────────────────────
+            double bW    = r * 0.90;   // 넓이 (시계 반경의 90%)
+            double dateH = r * 0.18;   // 날짜 패널 높이
+            double timeH = r * 0.22;   // 시분초 패널 높이
+            double dateY = -r * 0.22;  // 날짜 Y 중심
+            double timeY =  r * 0.22;  // 시분초 Y 중심
+
+            // ── 시계 바탕과 동일한 재질 ──────────────────────────────────
+            // faceColor 를 그대로 사용. 안쪽 벽은 약간 어둡게 해 음각감 강화.
+            PhongMaterial wallMat = metal(darken(state.faceColor, 0.07), 0.50, 14);
+
+            // ══════════════════════════════════════════════════════════════
+            //  날짜 5면체 (date box) — 뒷면 없음, 바탕 투명
+            // ══════════════════════════════════════════════════════════════
+            double dHW = bW / 2.0, dHH = dateH / 2.0;
+
+            // 윗면 (top)
+            dateBoxTop = new Box(bW + wallThick * 2, wallThick, boxDepth);
+            dateBoxTop.setMaterial(wallMat);
+            dateBoxTop.setTranslateX(0);
+            dateBoxTop.setTranslateY(dateY - dHH - wallThick / 2.0);
+            dateBoxTop.setTranslateZ(boxCenterZ);
+            dateBoxTop.setMouseTransparent(true);
+
+            // 아랫면 (bottom)
+            dateBoxBottom = new Box(bW + wallThick * 2, wallThick, boxDepth);
+            dateBoxBottom.setMaterial(wallMat);
+            dateBoxBottom.setTranslateX(0);
+            dateBoxBottom.setTranslateY(dateY + dHH + wallThick / 2.0);
+            dateBoxBottom.setTranslateZ(boxCenterZ);
+            dateBoxBottom.setMouseTransparent(true);
+
+            // 왼쪽 (left)
+            dateBoxLeft = new Box(wallThick, dateH + wallThick * 2, boxDepth);
+            dateBoxLeft.setMaterial(wallMat);
+            dateBoxLeft.setTranslateX(-dHW - wallThick / 2.0);
+            dateBoxLeft.setTranslateY(dateY);
+            dateBoxLeft.setTranslateZ(boxCenterZ);
+            dateBoxLeft.setMouseTransparent(true);
+
+            // 오른쪽 (right)
+            dateBoxRight = new Box(wallThick, dateH + wallThick * 2, boxDepth);
+            dateBoxRight.setMaterial(wallMat);
+            dateBoxRight.setTranslateX(dHW + wallThick / 2.0);
+            dateBoxRight.setTranslateY(dateY);
+            dateBoxRight.setTranslateZ(boxCenterZ);
+            dateBoxRight.setMouseTransparent(true);
+
+            // ══════════════════════════════════════════════════════════════
+            //  시분초 5면체 (time box) — 뒷면 없음, 바탕 투명
+            // ══════════════════════════════════════════════════════════════
+            double tHW = bW / 2.0, tHH = timeH / 2.0;
+
+            timeBoxTop = new Box(bW + wallThick * 2, wallThick, boxDepth);
+            timeBoxTop.setMaterial(wallMat);
+            timeBoxTop.setTranslateX(0);
+            timeBoxTop.setTranslateY(timeY - tHH - wallThick / 2.0);
+            timeBoxTop.setTranslateZ(boxCenterZ);
+            timeBoxTop.setMouseTransparent(true);
+
+            timeBoxBottom = new Box(bW + wallThick * 2, wallThick, boxDepth);
+            timeBoxBottom.setMaterial(wallMat);
+            timeBoxBottom.setTranslateX(0);
+            timeBoxBottom.setTranslateY(timeY + tHH + wallThick / 2.0);
+            timeBoxBottom.setTranslateZ(boxCenterZ);
+            timeBoxBottom.setMouseTransparent(true);
+
+            timeBoxLeft = new Box(wallThick, timeH + wallThick * 2, boxDepth);
+            timeBoxLeft.setMaterial(wallMat);
+            timeBoxLeft.setTranslateX(-tHW - wallThick / 2.0);
+            timeBoxLeft.setTranslateY(timeY);
+            timeBoxLeft.setTranslateZ(boxCenterZ);
+            timeBoxLeft.setMouseTransparent(true);
+
+            timeBoxRight = new Box(wallThick, timeH + wallThick * 2, boxDepth);
+            timeBoxRight.setMaterial(wallMat);
+            timeBoxRight.setTranslateX(tHW + wallThick / 2.0);
+            timeBoxRight.setTranslateY(timeY);
+            timeBoxRight.setTranslateZ(boxCenterZ);
+            timeBoxRight.setMouseTransparent(true);
+
+            // ══════════════════════════════════════════════════════════════
+            //  텍스트 패널 (각 5면체 뒷벽 앞에 배치)
+            // ══════════════════════════════════════════════════════════════
+
+            // ── 날짜 텍스처 패널 ──────────────────────────────────────────
             int dtW = 512, dtH = 80;
             faceDateTexImg = new WritableImage(dtW, dtH);
             faceDateMat    = new PhongMaterial();
             faceDateMat.setDiffuseMap(faceDateTexImg);
-            faceDateMat.setSpecularColor(javafx.scene.paint.Color.WHITE);
-            faceDateMat.setSpecularPower(60);
+            // [BugFix-Text] TRANSPARENT는 diffuseMap 텍스처에 곱해져 글자까지 사라짐 → WHITE 필수
+            faceDateMat.setDiffuseColor(javafx.scene.paint.Color.WHITE);
+            faceDateMat.setSpecularColor(javafx.scene.paint.Color.color(0.04, 0.04, 0.04));
+            faceDateMat.setSpecularPower(2);
 
-            faceDateBox = new Box(r * 1.30, r * 0.28, 1.5);
+            faceDateBox = new Box(bW, dateH, 0.1);
             faceDateBox.setMaterial(faceDateMat);
             faceDateBox.setTranslateX(0);
-            faceDateBox.setTranslateY(-r * 0.22);
-            faceDateBox.setTranslateZ(faceZ);
+            faceDateBox.setTranslateY(dateY);
+            faceDateBox.setTranslateZ(textPanelZ);
             faceDateBox.setMouseTransparent(true);
 
-            // ── 시간 박스 (하단) — 스크롤 렌더링 (텍스처 폭 512px) ──
+            // ── 시분초 텍스처 패널 ────────────────────────────────────────
             int tmW = 512, tmH = 96;
             faceTimeTexImg = new WritableImage(tmW, tmH);
             faceTimeMat    = new PhongMaterial();
             faceTimeMat.setDiffuseMap(faceTimeTexImg);
-            faceTimeMat.setSpecularColor(javafx.scene.paint.Color.WHITE);
-            faceTimeMat.setSpecularPower(60);
+            faceTimeMat.setDiffuseColor(javafx.scene.paint.Color.WHITE);
+            faceTimeMat.setSpecularColor(javafx.scene.paint.Color.color(0.04, 0.04, 0.04));
+            faceTimeMat.setSpecularPower(2);
 
-            faceTimeBox = new Box(r * 1.30, r * 0.30, 1.5);
+            faceTimeBox = new Box(bW, timeH, 0.1);
             faceTimeBox.setMaterial(faceTimeMat);
             faceTimeBox.setTranslateX(0);
-            faceTimeBox.setTranslateY(r * 0.22);
-            faceTimeBox.setTranslateZ(faceZ);
+            faceTimeBox.setTranslateY(timeY);
+            faceTimeBox.setTranslateZ(textPanelZ);
             faceTimeBox.setMouseTransparent(false);
 
-            faceDateTimeGroup.getChildren().addAll(faceDateBox, faceTimeBox);
-            faceDateTimeGroup.setVisible(state.showDigital);
+            // ── Group 에 추가 ─────────────────────────────────────────────
+            faceDateTimeGroup.getChildren().addAll(
+                // 날짜 4면 테두리 (뒷면·바탕 없음 → 투명)
+                dateBoxTop, dateBoxBottom, dateBoxLeft, dateBoxRight,
+                // 시분초 4면 테두리 (뒷면·바탕 없음 → 투명)
+                timeBoxTop, timeBoxBottom, timeBoxLeft, timeBoxRight,
+                // 텍스트 패널
+                faceDateBox, faceTimeBox);
+
+            faceDateTimeGroup.setVisible(state.showDigital || state.showFaceDate);
             coinGroup.getChildren().add(faceDateTimeGroup);
 
             // 클릭 핸들러 재등록 (재빌드 후에도 유지)
             if (faceTimeClickCallback != null) setFaceTimeClickHandler(faceTimeClickCallback);
 
             // 스크롤 오프셋 리셋
-            state.faceScrollOffset = Double.NaN;
-            state.facePingPongDir  = 1;
-            // Bug7: 날짜 행 스크롤 오프셋도 리셋
-            state.faceDateScrollOffset = Double.NaN;
-            state.faceDatePingPongDir  = 1;
+            state.faceScrollOffset      = Double.NaN;
+            state.facePingPongDir       = 1;
+            state.faceDateScrollOffset  = Double.NaN;
+            state.faceDatePingPongDir   = 1;
 
             updateFaceDateTimeTextures();
+        }
+
+        /**
+         * 디지탈 OFF 시 faceDateTimeGroup 의 모든 자식을 제거하고
+         * coinGroup 에서도 분리한다. 렌더링 비용 완전 제거.
+         * ON 복구는 buildFaceDateTimeGroup() 재호출.
+         */
+        void removeDigitalGroup() {
+            faceDateTimeGroup.getChildren().clear();
+            coinGroup.getChildren().remove(faceDateTimeGroup);
+            // 텍스처/재질 참조 해제 → GC 가능
+            faceDateBox = null;  faceTimeBox = null;
+            faceDateTexImg = null; faceTimeTexImg = null;
+            faceDateMat = null;  faceTimeMat = null;
+            // 측벽 참조 해제
+            dateBoxTop = null; dateBoxBottom = null;
+            dateBoxLeft = null; dateBoxRight = null;
+            timeBoxTop = null; timeBoxBottom = null;
+            timeBoxLeft = null; timeBoxRight = null;
+            // 캔버스 캐시 해제
+            _dateCachedCanvas = null;
+            _timeCachedCanvas = null;
         }
 
         /**
@@ -1656,10 +1812,29 @@ public class FxGPUNeon {
          * rebuildNumbers() 끝에서 호출.
          */
         void updateFaceDateTimeZ() {
+            // buildAll() 에서 rebuildNumbers() → updateFaceDateTimeZ() 가
+            // buildFaceDateTimeGroup() 보다 먼저 호출될 수 있으므로 null 가드 필수
             if (faceDateBox == null || faceTimeBox == null) return;
-            double faceZ = numberFrontZ();
-            faceDateBox.setTranslateZ(faceZ);
-            faceTimeBox.setTranslateZ(faceZ);
+            final double faceZ       = -(AppState.BASE_COIN_HEIGHT * 0.5 + 0.45);
+            final double boxDepth    = 4.0;
+            final double wallThick   = 1.1;
+            final double boxFrontZ   = faceZ - wallThick / 2.0;
+            final double boxCenterZ  = boxFrontZ + boxDepth / 2.0;
+            final double backCenterZ = boxFrontZ + boxDepth - wallThick / 2.0;
+            final double textPanelZ  = backCenterZ - wallThick / 2.0 - 0.3;
+
+            faceDateBox.setTranslateZ(textPanelZ);
+            faceTimeBox.setTranslateZ(textPanelZ);
+
+            if (dateBoxTop    != null) dateBoxTop.setTranslateZ(boxCenterZ);
+            if (dateBoxBottom != null) dateBoxBottom.setTranslateZ(boxCenterZ);
+            if (dateBoxLeft   != null) dateBoxLeft.setTranslateZ(boxCenterZ);
+            if (dateBoxRight  != null) dateBoxRight.setTranslateZ(boxCenterZ);
+
+            if (timeBoxTop    != null) timeBoxTop.setTranslateZ(boxCenterZ);
+            if (timeBoxBottom != null) timeBoxBottom.setTranslateZ(boxCenterZ);
+            if (timeBoxLeft   != null) timeBoxLeft.setTranslateZ(boxCenterZ);
+            if (timeBoxRight  != null) timeBoxRight.setTranslateZ(boxCenterZ);
         }
 
         /** 매 프레임 날짜·시간 텍스처 갱신. AnimationTimer 에서 호출. */
@@ -1730,7 +1905,6 @@ public class FxGPUNeon {
                                     javafx.scene.paint.Color col,
                                     String fontFamily, double fontSize) {
             int W = (int) target.getWidth(), H = (int) target.getHeight();
-            // Bug4: Canvas 재사용
             if (_dateCachedCanvas == null
                     || (int) _dateCachedCanvas.getWidth()  != W
                     || (int) _dateCachedCanvas.getHeight() != H) {
@@ -1739,37 +1913,30 @@ public class FxGPUNeon {
             javafx.scene.canvas.Canvas c = _dateCachedCanvas;
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, W, H);
+            // 음각 효과는 3D 벽이 담당 → 텍스처는 투명 배경에 글자만
+
             gc.setFont(javafx.scene.text.Font.font(fontFamily, FontWeight.BOLD, fontSize));
             gc.setTextBaseline(VPos.CENTER);
-            gc.setFill(col);
 
-            // Bug7: 날짜 행 스크롤 처리
+            // ── X 위치 계산 (스크롤 처리) ────────────────────────────
+            double drawX;
             if (state.faceDateScrollDir == 0) {
-                // 고정: 중앙 정렬
+                drawX = W / 2.0;
                 gc.setTextAlign(TextAlignment.CENTER);
-                gc.fillText(text, W / 2.0, H / 2.0);
             } else {
                 javafx.scene.text.Text m = new javafx.scene.text.Text(text);
                 m.setFont(gc.getFont());
                 double tw = m.getLayoutBounds().getWidth();
-
                 if (state.faceDateScrollDir == 3) {
-                    // 핑퐁
                     if (Double.isNaN(state.faceDateScrollOffset)) state.faceDateScrollOffset = 0;
-                    double x = state.faceDateScrollOffset;
-                    gc.setTextAlign(TextAlignment.LEFT);
-                    gc.fillText(text, x, H / 2.0);
+                    drawX = state.faceDateScrollOffset;
                     state.faceDateScrollOffset += state.faceDatePingPongDir * state.faceDateScrollSpeed * 0.5;
                     if (state.faceDateScrollOffset + tw > W) { state.faceDateScrollOffset = W - tw; state.faceDatePingPongDir = -1; }
                     if (state.faceDateScrollOffset < 0)       { state.faceDateScrollOffset = 0;     state.faceDatePingPongDir =  1; }
                 } else {
-                    // 방향 1(우→좌) 또는 2(좌→우)
-                    if (Double.isNaN(state.faceDateScrollOffset)) {
+                    if (Double.isNaN(state.faceDateScrollOffset))
                         state.faceDateScrollOffset = (state.faceDateScrollDir == 1) ? W : -tw;
-                    }
-                    double x = state.faceDateScrollOffset;
-                    gc.setTextAlign(TextAlignment.LEFT);
-                    gc.fillText(text, x, H / 2.0);
+                    drawX = state.faceDateScrollOffset;
                     if (state.faceDateScrollDir == 1) {
                         state.faceDateScrollOffset -= state.faceDateScrollSpeed * 0.5;
                         if (state.faceDateScrollOffset + tw < 0) state.faceDateScrollOffset = W;
@@ -1778,7 +1945,13 @@ public class FxGPUNeon {
                         if (state.faceDateScrollOffset > W) state.faceDateScrollOffset = -tw;
                     }
                 }
+                gc.setTextAlign(TextAlignment.LEFT);
             }
+
+            // 그림자 없음 — 글자만 직접 렌더링
+            gc.setFill(col);
+            gc.fillText(text, drawX, H / 2.0);
+
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
             c.snapshot(sp, target);
@@ -1797,7 +1970,6 @@ public class FxGPUNeon {
             int texW = (int) target.getWidth();
             int texH = (int) target.getHeight();
 
-            // Bug4: Canvas 재사용 — 크기 동일 시 새 인스턴스 생성 생략
             if (_timeCachedCanvas == null
                     || (int) _timeCachedCanvas.getWidth()  != texW
                     || (int) _timeCachedCanvas.getHeight() != texH) {
@@ -1806,52 +1978,46 @@ public class FxGPUNeon {
             javafx.scene.canvas.Canvas c = _timeCachedCanvas;
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, texW, texH);
+            // 음각 효과는 3D 벽이 담당 → 텍스처는 투명 배경에 글자만
 
             double fs = Math.max(10, state.digitalFontSize > 0
                 ? state.digitalFontSize : texH * 0.7);
             gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, fs));
             gc.setTextBaseline(VPos.CENTER);
-            gc.setFill(col);
 
+            // ── X 위치 계산 (스크롤 처리) ────────────────────────────
             javafx.scene.text.Text m = new javafx.scene.text.Text(text);
             m.setFont(gc.getFont());
             double tw = m.getLayoutBounds().getWidth();
+            double drawX;
 
             if (state.digitalScrollDir == 0) {
-                // 고정: 중앙 정렬
+                drawX = texW / 2.0;
                 gc.setTextAlign(TextAlignment.CENTER);
-                gc.fillText(text, texW / 2.0, texH / 2.0);
             } else if (state.digitalScrollDir == 3) {
-                // 핑퐁
                 if (Double.isNaN(state.faceScrollOffset)) state.faceScrollOffset = 0;
-                double x = state.faceScrollOffset;
-                gc.setTextAlign(TextAlignment.LEFT);
-                gc.fillText(text, x, texH / 2.0);
+                drawX = state.faceScrollOffset;
                 state.faceScrollOffset += state.facePingPongDir * state.digitalScrollSpeed * 0.5;
                 if (state.faceScrollOffset + tw > texW) { state.faceScrollOffset = texW - tw; state.facePingPongDir = -1; }
                 if (state.faceScrollOffset < 0)          { state.faceScrollOffset = 0;         state.facePingPongDir =  1; }
-            } else {
-                // 방향 1(우→좌) 또는 2(좌→우): Bug3 수정
-                // 초기화: 텍스트 전체가 화면 바깥에서 시작해서 스크롤인 되도록 시작 위치 설정
-                if (Double.isNaN(state.faceScrollOffset)) {
-                    // 방향 1: 오른쪽 밖(texW)에서 왼쪽으로 진입
-                    // 방향 2: 왼쪽 밖(-tw)에서 오른쪽으로 진입
-                    state.faceScrollOffset = (state.digitalScrollDir == 1) ? texW : -tw;
-                }
-                double x = state.faceScrollOffset;
                 gc.setTextAlign(TextAlignment.LEFT);
-                gc.fillText(text, x, texH / 2.0);
+            } else {
+                if (Double.isNaN(state.faceScrollOffset))
+                    state.faceScrollOffset = (state.digitalScrollDir == 1) ? texW : -tw;
+                drawX = state.faceScrollOffset;
                 if (state.digitalScrollDir == 1) {
                     state.faceScrollOffset -= state.digitalScrollSpeed * 0.5;
-                    // Bug3: 텍스트 오른쪽 끝이 왼쪽 경계를 완전히 벗어나면 리셋
-                    // x + tw < 0 이면 보이지 않음 → texW 에서 다시 시작 (끊김 없음)
                     if (state.faceScrollOffset + tw < 0) state.faceScrollOffset = texW;
                 } else {
                     state.faceScrollOffset += state.digitalScrollSpeed * 0.5;
-                    // Bug3: 텍스트 왼쪽 끝이 오른쪽 경계를 완전히 벗어나면 리셋
                     if (state.faceScrollOffset > texW) state.faceScrollOffset = -tw;
                 }
+                gc.setTextAlign(TextAlignment.LEFT);
             }
+
+            // 그림자 없음 — 글자만 직접 렌더링
+            gc.setFill(col);
+            gc.fillText(text, drawX, texH / 2.0);
 
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);

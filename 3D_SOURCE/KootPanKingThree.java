@@ -174,7 +174,7 @@ public class KootPanKingThree extends Application {
     private double pendingRainbowIntervalSec = 0.5; // loadConfig에서 읽은 레인보우 인터벌
 
     // ── 시분초 행 pending ───────────────────────────────────────────────
-    private boolean pendingDigitalShow        = false;
+    private boolean pendingDigitalShow        = true;
     private int     pendingDigitalFormatIndex = 0;
     private String  pendingDigitalFontFamily  = "Consolas";
     private double  pendingDigitalFontSize    = 20.0;
@@ -533,7 +533,7 @@ public class KootPanKingThree extends Application {
             localMp4LastFile = config.getProperty("localmp4.lastFile", "");
             localMp4Volume   = Double.parseDouble(config.getProperty("localmp4.volume", "1.0"));
             // ── 시분초 행 설정 ────────────────────────────────────────
-            pendingDigitalShow        = Boolean.parseBoolean(config.getProperty("digital.show", "false"));
+            pendingDigitalShow        = Boolean.parseBoolean(config.getProperty("digital.show", "true"));
             pendingDigitalFormatIndex = Integer.parseInt(config.getProperty("digital.formatIndex", "0"));
             pendingDigitalFontFamily  = config.getProperty("digital.fontFamily", "Consolas");
             pendingDigitalFontSize    = Double.parseDouble(config.getProperty("digital.fontSize", "20"));
@@ -913,14 +913,14 @@ public class KootPanKingThree extends Application {
             // ── 시분초 / 날짜 pending → AppState 반영 ───────────────
             if (clockController != null) {
                 FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
-                st.showDigital        = pendingDigitalShow;
+                // 마스터 스위치: showDigital/showFaceDate 를 동시에 반영
+                FxGPUNeon.ClockController.setDigitalState(clockController, pendingDigitalShow);
                 st.digitalFormatIndex = pendingDigitalFormatIndex;
                 st.digitalFontFamily  = pendingDigitalFontFamily;
                 st.digitalFontSize    = pendingDigitalFontSize;
                 st.digitalColorRgb    = pendingDigitalColorRgb;
                 st.digitalScrollDir   = pendingDigitalScrollDir;
                 st.digitalScrollSpeed = pendingDigitalScrollSpeed;
-                st.showFaceDate       = pendingFaceDateShow;
                 st.faceDateFormatIndex= pendingFaceDateFormatIndex;
                 st.faceDateFontFamily = pendingFaceDateFontFamily;
                 st.faceDateFontSize   = pendingFaceDateFontSize;
@@ -1674,7 +1674,7 @@ public class KootPanKingThree extends Application {
 
         // ── 디지탈 시계 토글 + 설정 ──────────────────────────────
         javafx.scene.control.CheckMenuItem digitalItem =
-            new javafx.scene.control.CheckMenuItem("🕐 시계 면 디지탈 on/off");
+            new javafx.scene.control.CheckMenuItem("🕐 디지탈 on/off");
         digitalItem.setSelected(clockController != null && getDigitalState());
         digitalItem.setOnAction(e -> {
             boolean on = digitalItem.isSelected();
@@ -2225,7 +2225,6 @@ public class KootPanKingThree extends Application {
         if (clockController == null) return;
         FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
 
-        // Bug8: 다크모드 감지 → 배경/텍스트 색 결정
         boolean darkMode = isSystemDarkMode();
         String dlgBg      = darkMode ? "#2b2b2b" : "#ffffff";
         String dlgFg      = darkMode ? "#e0e0e0" : "#000000";
@@ -2236,7 +2235,6 @@ public class KootPanKingThree extends Application {
         String labelStyle  = String.format("-fx-text-fill:%s;", dlgFg);
         String headerStyle = String.format("-fx-font-weight:bold; -fx-font-size:13; -fx-text-fill:%s;", dlgFg);
         String rootStyle   = String.format("-fx-background-color:%s;", dlgBg);
-        String radioStyle  = String.format("-fx-text-fill:%s;", dlgFg);
 
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
@@ -2245,9 +2243,7 @@ public class KootPanKingThree extends Application {
 
         java.util.List<String> allFonts = getCachedFontFamilies();
 
-        // ══════════════════════════════════════════════════════════
-        //  날짜 행 섹션
-        // ══════════════════════════════════════════════════════════
+        // ═══════════════════════ 날짜 행 섹션 ════════════════════════
         javafx.scene.control.Label dateHeader = new javafx.scene.control.Label("● 날짜");
         dateHeader.setStyle(headerStyle);
 
@@ -2258,17 +2254,12 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.Label dateFmtLbl = new javafx.scene.control.Label("형식");
         dateFmtLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> dateFmtBox = new javafx.scene.control.ComboBox<>();
-        dateFmtBox.getItems().addAll(
-            "N월 N일, 요일",
-            "YYYY-MM-DD (요일)",
-            "MM/DD (요일)",
-            "N월 N일"
-        );
+        dateFmtBox.getItems().addAll("N월 N일, 요일", "YYYY-MM-DD (요일)", "MM/DD (요일)", "N월 N일");
         dateFmtBox.getSelectionModel().select(st.faceDateFormatIndex);
         dateFmtBox.setPrefWidth(170);
         dateFmtBox.setStyle(commonInputStyle);
 
-        javafx.scene.control.Label dateFontLbl  = new javafx.scene.control.Label("폰트");
+        javafx.scene.control.Label dateFontLbl = new javafx.scene.control.Label("폰트");
         dateFontLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> dateFontBox = new javafx.scene.control.ComboBox<>();
         dateFontBox.getItems().addAll(allFonts);
@@ -2292,15 +2283,7 @@ public class KootPanKingThree extends Application {
             javafx.scene.paint.Color.rgb((drgb>>16)&0xFF,(drgb>>8)&0xFF,drgb&0xFF,((drgb>>24)&0xFF)/255.0));
         dateColorPicker.setPrefWidth(130);
 
-        javafx.scene.layout.GridPane dateGrid = new javafx.scene.layout.GridPane();
-        dateGrid.setHgap(8); dateGrid.setVgap(6);
-        dateGrid.add(dateOnOff,    0, 0, 4, 1);
-        dateGrid.add(dateFmtLbl,   0, 1); dateGrid.add(dateFmtBox,      1, 1, 3, 1);
-        dateGrid.add(dateFontLbl,  0, 2); dateGrid.add(dateFontBox,     1, 2, 3, 1);
-        dateGrid.add(dateSizeLbl,  0, 3); dateGrid.add(dateSizeSpinner, 1, 3);
-        dateGrid.add(dateColorLbl, 2, 3); dateGrid.add(dateColorPicker, 3, 3);
-
-        // Bug7: 날짜 행 스크롤 방향 + 속도 UI
+        // 날짜 스크롤
         javafx.scene.control.Label dateScrollLbl = new javafx.scene.control.Label("스크롤");
         dateScrollLbl.setStyle(labelStyle);
         javafx.scene.control.ToggleGroup dateDirGroup = new javafx.scene.control.ToggleGroup();
@@ -2310,8 +2293,8 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.RadioButton drbPing  = new javafx.scene.control.RadioButton("핑퐁");
         drbFixed.setToggleGroup(dateDirGroup); drbRTL.setToggleGroup(dateDirGroup);
         drbLTR.setToggleGroup(dateDirGroup);   drbPing.setToggleGroup(dateDirGroup);
-        // Bug8: 라디오 버튼 다크모드 텍스트 색
-        for (javafx.scene.control.RadioButton rb : new javafx.scene.control.RadioButton[]{drbFixed,drbRTL,drbLTR,drbPing})
+        for (javafx.scene.control.RadioButton rb :
+                new javafx.scene.control.RadioButton[]{drbFixed,drbRTL,drbLTR,drbPing})
             rb.setStyle(labelStyle);
         switch (st.faceDateScrollDir) {
             case 0 -> drbFixed.setSelected(true);
@@ -2319,7 +2302,8 @@ public class KootPanKingThree extends Application {
             case 3 -> drbPing .setSelected(true);
             default-> drbRTL  .setSelected(true);
         }
-        javafx.scene.layout.HBox dateDirRow = new javafx.scene.layout.HBox(10, drbFixed, drbRTL, drbLTR, drbPing);
+        javafx.scene.layout.HBox dateDirRow =
+            new javafx.scene.layout.HBox(10, drbFixed, drbRTL, drbLTR, drbPing);
         javafx.scene.control.Label dateSpeedLbl = new javafx.scene.control.Label("속도");
         dateSpeedLbl.setStyle(labelStyle);
         javafx.scene.control.Slider dateSpeedSlider =
@@ -2329,17 +2313,21 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.Label dateSpeedVal =
             new javafx.scene.control.Label(String.format("%.1f", st.faceDateScrollSpeed));
         dateSpeedVal.setStyle(labelStyle);
-        dateSpeedSlider.valueProperty().addListener((ob, ov, nv) ->
+        dateSpeedSlider.valueProperty().addListener((ob,ov,nv) ->
             dateSpeedVal.setText(String.format("%.1f", nv.doubleValue())));
 
-        dateGrid.add(dateScrollLbl, 0, 4);
-        dateGrid.add(dateDirRow,    1, 4, 3, 1);
+        javafx.scene.layout.GridPane dateGrid = new javafx.scene.layout.GridPane();
+        dateGrid.setHgap(8); dateGrid.setVgap(6);
+        dateGrid.add(dateOnOff,    0, 0, 4, 1);
+        dateGrid.add(dateFmtLbl,   0, 1); dateGrid.add(dateFmtBox,      1, 1, 3, 1);
+        dateGrid.add(dateFontLbl,  0, 2); dateGrid.add(dateFontBox,     1, 2, 3, 1);
+        dateGrid.add(dateSizeLbl,  0, 3); dateGrid.add(dateSizeSpinner, 1, 3);
+        dateGrid.add(dateColorLbl, 2, 3); dateGrid.add(dateColorPicker, 3, 3);
+        dateGrid.add(dateScrollLbl, 0, 4); dateGrid.add(dateDirRow,     1, 4, 3, 1);
         dateGrid.add(dateSpeedLbl,  0, 5);
         dateGrid.add(new javafx.scene.layout.HBox(6, dateSpeedSlider, dateSpeedVal), 1, 5, 3, 1);
 
-        // ══════════════════════════════════════════════════════════
-        //  시분초 행 섹션
-        // ══════════════════════════════════════════════════════════
+        // ═══════════════════════ 시분초 행 섹션 ══════════════════════
         javafx.scene.control.Label timeHeader = new javafx.scene.control.Label("● 시분초");
         timeHeader.setStyle(headerStyle);
 
@@ -2351,16 +2339,12 @@ public class KootPanKingThree extends Application {
         timeFmtLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> timeFmtBox = new javafx.scene.control.ComboBox<>();
         timeFmtBox.getItems().addAll(
-            "HH:mm:SS 오전/오후",
-            "HH:mm 오전/오후 [요일]",
-            "HH:mm 오전/오후",
-            "HH:mm:SS"
-        );
+            "HH:mm:SS 오전/오후", "HH:mm 오전/오후 [요일]", "HH:mm 오전/오후", "HH:mm:SS");
         timeFmtBox.getSelectionModel().select(st.digitalFormatIndex);
         timeFmtBox.setPrefWidth(170);
         timeFmtBox.setStyle(commonInputStyle);
 
-        javafx.scene.control.Label timeFontLbl  = new javafx.scene.control.Label("폰트");
+        javafx.scene.control.Label timeFontLbl = new javafx.scene.control.Label("폰트");
         timeFontLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> timeFontBox = new javafx.scene.control.ComboBox<>();
         timeFontBox.getItems().addAll(allFonts);
@@ -2384,7 +2368,7 @@ public class KootPanKingThree extends Application {
             javafx.scene.paint.Color.rgb((trgb>>16)&0xFF,(trgb>>8)&0xFF,trgb&0xFF,((trgb>>24)&0xFF)/255.0));
         timeColorPicker.setPrefWidth(130);
 
-        // 스크롤 방향
+        // 시분초 스크롤
         javafx.scene.control.Label scrollLbl = new javafx.scene.control.Label("스크롤");
         scrollLbl.setStyle(labelStyle);
         javafx.scene.control.ToggleGroup dirGroup = new javafx.scene.control.ToggleGroup();
@@ -2394,8 +2378,8 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.RadioButton rbPing  = new javafx.scene.control.RadioButton("핑퐁");
         rbFixed.setToggleGroup(dirGroup); rbRTL.setToggleGroup(dirGroup);
         rbLTR.setToggleGroup(dirGroup);   rbPing.setToggleGroup(dirGroup);
-        // Bug8: 라디오 버튼 텍스트 색
-        for (javafx.scene.control.RadioButton rb : new javafx.scene.control.RadioButton[]{rbFixed,rbRTL,rbLTR,rbPing})
+        for (javafx.scene.control.RadioButton rb :
+                new javafx.scene.control.RadioButton[]{rbFixed,rbRTL,rbLTR,rbPing})
             rb.setStyle(labelStyle);
         switch (st.digitalScrollDir) {
             case 0 -> rbFixed.setSelected(true);
@@ -2403,9 +2387,8 @@ public class KootPanKingThree extends Application {
             case 3 -> rbPing .setSelected(true);
             default-> rbRTL  .setSelected(true);
         }
-        javafx.scene.layout.HBox dirRow = new javafx.scene.layout.HBox(10, rbFixed, rbRTL, rbLTR, rbPing);
-
-        // 스크롤 속도
+        javafx.scene.layout.HBox dirRow =
+            new javafx.scene.layout.HBox(10, rbFixed, rbRTL, rbLTR, rbPing);
         javafx.scene.control.Label speedLbl = new javafx.scene.control.Label("속도");
         speedLbl.setStyle(labelStyle);
         javafx.scene.control.Slider speedSlider =
@@ -2415,7 +2398,7 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.Label speedVal =
             new javafx.scene.control.Label(String.format("%.1f", st.digitalScrollSpeed));
         speedVal.setStyle(labelStyle);
-        speedSlider.valueProperty().addListener((ob, ov, nv) ->
+        speedSlider.valueProperty().addListener((ob,ov,nv) ->
             speedVal.setText(String.format("%.1f", nv.doubleValue())));
 
         javafx.scene.layout.GridPane timeGrid = new javafx.scene.layout.GridPane();
@@ -2429,165 +2412,94 @@ public class KootPanKingThree extends Application {
         timeGrid.add(speedLbl,     0, 5);
         timeGrid.add(new javafx.scene.layout.HBox(6, speedSlider, speedVal), 1, 5, 3, 1);
 
-        // ── 버튼 ──────────────────────────────────────────────────
-        javafx.scene.control.Button okBtn     = new javafx.scene.control.Button("확인");
-        javafx.scene.control.Button cancelBtn = new javafx.scene.control.Button("취소");
-        okBtn.setDefaultButton(true); cancelBtn.setCancelButton(true);
-        okBtn.setPrefWidth(80);       cancelBtn.setPrefWidth(80);
-
-        // ── Bug6: 실시간 미리보기 ────────────────────────────────
-        javafx.scene.control.Label previewLabel = new javafx.scene.control.Label("미리보기:");
-        previewLabel.setStyle("-fx-font-weight:bold; " + labelStyle);
-
-        // 날짜 미리보기 라벨
-        javafx.scene.control.Label datePreview = new javafx.scene.control.Label();
-        datePreview.setStyle(
-            "-fx-background-color:#1a1a2e; -fx-padding:6 14; -fx-background-radius:4;" +
-            "-fx-font-size:13; -fx-text-fill:#ff2222;");
-        datePreview.setMinWidth(340);
-
-        // 시간 미리보기 라벨
-        javafx.scene.control.Label timePreview = new javafx.scene.control.Label();
-        timePreview.setStyle(
-            "-fx-background-color:#1a1a2e; -fx-padding:6 14; -fx-background-radius:4;" +
-            "-fx-font-size:13; -fx-text-fill:#ffffff;");
-        timePreview.setMinWidth(340);
-
-        // 미리보기 갱신 로직 (날짜+시간)
-        Runnable updatePreview = () -> {
-            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
-            String[] wd = {"일","월","화","수","목","금","토"};
-            String dow = wd[now.getDayOfWeek().getValue() % 7];
-            int h24 = now.getHour(), h12 = h24 % 12 == 0 ? 12 : h24 % 12;
-            String ampm = h24 < 12 ? "오전" : "오후";
-
-            // 날짜 포맷
-            String dateStr;
-            switch (dateFmtBox.getSelectionModel().getSelectedIndex()) {
-                case 1 -> dateStr = String.format("%d-%02d-%02d (%s)", now.getYear(), now.getMonthValue(), now.getDayOfMonth(), dow);
-                case 2 -> dateStr = String.format("%02d/%02d (%s)", now.getMonthValue(), now.getDayOfMonth(), dow);
-                case 3 -> dateStr = String.format("%d월 %d일", now.getMonthValue(), now.getDayOfMonth());
-                default -> dateStr = String.format("%d월 %d일, %s", now.getMonthValue(), now.getDayOfMonth(), dow);
-            }
-            // 시간 포맷
-            String timeStr;
-            switch (timeFmtBox.getSelectionModel().getSelectedIndex()) {
-                case 1 -> timeStr = String.format("%02d:%02d %s [%s]", h12, now.getMinute(), ampm, dow);
-                case 2 -> timeStr = String.format("%02d:%02d %s", h12, now.getMinute(), ampm);
-                case 3 -> timeStr = String.format("%02d:%02d:%02d", h12, now.getMinute(), now.getSecond());
-                default -> timeStr = String.format("%02d:%02d:%02d %s", h12, now.getMinute(), now.getSecond(), ampm);
-            }
-
-            // 날짜 미리보기 폰트+색
-            javafx.scene.paint.Color dc = dateColorPicker.getValue();
-            String dcHex = String.format("#%02x%02x%02x",
-                (int)(dc.getRed()*255),(int)(dc.getGreen()*255),(int)(dc.getBlue()*255));
-            String dfont = dateFontBox.getValue() != null ? dateFontBox.getValue() : "Consolas";
-            int dsize = dateSizeSpinner.getValue();
-            datePreview.setText(dateStr);
-            datePreview.setStyle(String.format(
-                "-fx-background-color:#1a1a2e; -fx-padding:6 14; -fx-background-radius:4;" +
-                "-fx-font-family:'%s'; -fx-font-size:%d; -fx-text-fill:%s;", dfont, dsize, dcHex));
-
-            // 시간 미리보기 폰트+색
-            javafx.scene.paint.Color tc = timeColorPicker.getValue();
-            String tcHex = String.format("#%02x%02x%02x",
-                (int)(tc.getRed()*255),(int)(tc.getGreen()*255),(int)(tc.getBlue()*255));
-            String tfont = timeFontBox.getValue() != null ? timeFontBox.getValue() : "Consolas";
-            int tsize = timeSizeSpinner.getValue();
-            timePreview.setText(timeStr);
-            timePreview.setStyle(String.format(
-                "-fx-background-color:#1a1a2e; -fx-padding:6 14; -fx-background-radius:4;" +
-                "-fx-font-family:'%s'; -fx-font-size:%d; -fx-text-fill:%s;", tfont, tsize, tcHex));
-        };
-
-        // 미리보기 초기 갱신
-        updatePreview.run();
-
-        // 변경 시마다 미리보기 갱신
-        dateFmtBox.getSelectionModel().selectedIndexProperty().addListener((o,ov,nv) -> updatePreview.run());
-        dateFontBox.getSelectionModel().selectedItemProperty().addListener((o,ov,nv) -> updatePreview.run());
-        dateSizeSpinner.valueProperty().addListener((o,ov,nv) -> updatePreview.run());
-        dateColorPicker.valueProperty().addListener((o,ov,nv) -> updatePreview.run());
-        timeFmtBox.getSelectionModel().selectedIndexProperty().addListener((o,ov,nv) -> updatePreview.run());
-        timeFontBox.getSelectionModel().selectedItemProperty().addListener((o,ov,nv) -> updatePreview.run());
-        timeSizeSpinner.valueProperty().addListener((o,ov,nv) -> updatePreview.run());
-        timeColorPicker.valueProperty().addListener((o,ov,nv) -> updatePreview.run());
-
-        // 1초 타이머로 시간 미리보기 자동 갱신 (초침 표시 포맷 때문에 필요)
-        javafx.animation.Timeline previewTimer = new javafx.animation.Timeline(
-            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), e -> updatePreview.run()));
-        previewTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        previewTimer.play();
-        dlg.setOnHidden(e -> previewTimer.stop());
-
-        okBtn.setOnAction(e -> {
-            // 날짜 행
+        // ═══════════════════════ 즉시 적용 로직 ══════════════════════
+        // 확인 버튼 누르기 전이라도 값 변경 시 AppState에 즉시 반영 + 화면 갱신
+        Runnable applyNow = () -> {
+            // 날짜
             st.showFaceDate        = dateOnOff.isSelected();
             st.faceDateFormatIndex = dateFmtBox.getSelectionModel().getSelectedIndex();
-            st.faceDateFontFamily  = dateFontBox.getValue();
+            if (dateFontBox.getValue() != null) st.faceDateFontFamily = dateFontBox.getValue();
             st.faceDateFontSize    = dateSizeSpinner.getValue();
             javafx.scene.paint.Color dc = dateColorPicker.getValue();
             st.faceDateColorRgb = ((int)(dc.getOpacity()*255)<<24)
                 | ((int)(dc.getRed()*255)<<16) | ((int)(dc.getGreen()*255)<<8)
                 | (int)(dc.getBlue()*255);
-            // Bug7: 날짜 스크롤 저장
-            if (drbFixed.isSelected()) st.faceDateScrollDir = 0;
-            else if (drbLTR.isSelected()) st.faceDateScrollDir = 2;
-            else if (drbPing.isSelected()) st.faceDateScrollDir = 3;
-            else st.faceDateScrollDir = 1;
+            if      (drbFixed.isSelected()) st.faceDateScrollDir = 0;
+            else if (drbLTR  .isSelected()) st.faceDateScrollDir = 2;
+            else if (drbPing .isSelected()) st.faceDateScrollDir = 3;
+            else                            st.faceDateScrollDir = 1;
             st.faceDateScrollSpeed  = dateSpeedSlider.getValue();
             st.faceDateScrollOffset = Double.NaN;
             st.faceDatePingPongDir  = 1;
-
-            // 시분초 행
+            // 시분초
             st.showDigital        = timeOnOff.isSelected();
             st.digitalFormatIndex = timeFmtBox.getSelectionModel().getSelectedIndex();
-            st.digitalFontFamily  = timeFontBox.getValue();
+            if (timeFontBox.getValue() != null) st.digitalFontFamily = timeFontBox.getValue();
             st.digitalFontSize    = timeSizeSpinner.getValue();
             javafx.scene.paint.Color tc = timeColorPicker.getValue();
             st.digitalColorRgb = ((int)(tc.getOpacity()*255)<<24)
                 | ((int)(tc.getRed()*255)<<16) | ((int)(tc.getGreen()*255)<<8)
                 | (int)(tc.getBlue()*255);
-            if (rbFixed.isSelected()) st.digitalScrollDir = 0;
-            else if (rbLTR.isSelected()) st.digitalScrollDir = 2;
-            else if (rbPing.isSelected()) st.digitalScrollDir = 3;
-            else st.digitalScrollDir = 1;
+            if      (rbFixed.isSelected()) st.digitalScrollDir = 0;
+            else if (rbLTR  .isSelected()) st.digitalScrollDir = 2;
+            else if (rbPing .isSelected()) st.digitalScrollDir = 3;
+            else                           st.digitalScrollDir = 1;
             st.digitalScrollSpeed  = speedSlider.getValue();
             st.digitalScrollOffset = Double.NaN;
             st.faceScrollOffset    = Double.NaN;
             st.facePingPongDir     = 1;
+            // 화면 즉시 반영
+            boolean anyOn = st.showDigital || st.showFaceDate;
+            FxGPUNeon.ClockController.setDigitalState(clockController, anyOn);
+            if (anyOn) FxGPUNeon.ClockController.rebuildFaceDateTimeGroup(clockController);
+        };
 
-            // faceDateTimeGroup visibility 즉시 반영
-            FxGPUNeon.ClockController.setDigitalState(clockController, st.showDigital || st.showFaceDate);
+        // 모든 컨트롤에 즉시 적용 리스너
+        dateOnOff.setOnAction(e -> applyNow.run());
+        dateFmtBox.getSelectionModel().selectedIndexProperty()
+            .addListener((o,ov,nv) -> applyNow.run());
+        dateFontBox.getSelectionModel().selectedItemProperty()
+            .addListener((o,ov,nv) -> applyNow.run());
+        dateSizeSpinner.valueProperty().addListener((o,ov,nv) -> applyNow.run());
+        dateColorPicker.valueProperty().addListener((o,ov,nv) -> applyNow.run());
+        dateDirGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
+        dateSpeedSlider.valueProperty().addListener((o,ov,nv) -> applyNow.run());
 
+        timeOnOff.setOnAction(e -> applyNow.run());
+        timeFmtBox.getSelectionModel().selectedIndexProperty()
+            .addListener((o,ov,nv) -> applyNow.run());
+        timeFontBox.getSelectionModel().selectedItemProperty()
+            .addListener((o,ov,nv) -> applyNow.run());
+        timeSizeSpinner.valueProperty().addListener((o,ov,nv) -> applyNow.run());
+        timeColorPicker.valueProperty().addListener((o,ov,nv) -> applyNow.run());
+        dirGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
+        speedSlider.valueProperty().addListener((o,ov,nv) -> applyNow.run());
+
+        // ═══════════════════════ 버튼 행 ══════════════════════════
+        javafx.scene.control.Button okBtn     = new javafx.scene.control.Button("확인");
+        javafx.scene.control.Button cancelBtn = new javafx.scene.control.Button("취소");
+        okBtn.setDefaultButton(true); cancelBtn.setCancelButton(true);
+        okBtn.setPrefWidth(80);       cancelBtn.setPrefWidth(80);
+
+        okBtn.setOnAction(e -> {
+            applyNow.run();      // 마지막 상태 확정
             saveDigitalConfig();
             dlg.close();
         });
         cancelBtn.setOnAction(e -> dlg.close());
 
-        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(10, okBtn, cancelBtn);
+        javafx.scene.layout.HBox btnRow =
+            new javafx.scene.layout.HBox(10, okBtn, cancelBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
-
-        javafx.scene.control.Separator sep = new javafx.scene.control.Separator();
-
-        // Bug6: 미리보기 섹션
-        javafx.scene.control.Separator previewSep = new javafx.scene.control.Separator();
-        javafx.scene.layout.VBox previewBox = new javafx.scene.layout.VBox(4,
-            previewLabel,
-            new javafx.scene.layout.HBox(6, new javafx.scene.control.Label("날짜:"), datePreview),
-            new javafx.scene.layout.HBox(6, new javafx.scene.control.Label("시간:"), timePreview)
-        );
-        previewBox.setStyle("-fx-padding: 4 0 0 0;");
 
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(10);
         root.setPadding(new javafx.geometry.Insets(16, 18, 14, 18));
         root.setStyle(rootStyle);
         root.getChildren().addAll(
             dateHeader, dateGrid,
-            sep,
+            new javafx.scene.control.Separator(),
             timeHeader, timeGrid,
-            previewSep, previewBox,
+            new javafx.scene.control.Separator(),
             btnRow
         );
 
@@ -2595,6 +2507,7 @@ public class KootPanKingThree extends Application {
         dlg.sizeToScene();
         dlg.showAndWait();
     }
+
 
     private void saveDigitalConfig() {
         if (clockController == null) return;
