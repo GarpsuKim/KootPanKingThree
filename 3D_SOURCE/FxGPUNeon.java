@@ -987,11 +987,11 @@ public class FxGPUNeon {
         /** 시분초 폰트 패밀리 */
         String digitalFontFamily = "Consolas";
         /** 시분초 폰트 크기 */
-        double digitalFontSize   = 20.0;
+        double digitalFontSize   = 50.0;   // 기본 크기
         /** 시분초 글자 색 (0xAARRGGBB) */
         int digitalColorRgb = 0xFFFFFFFF;
         /** 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
-        int digitalScrollDir = 1;
+        int digitalScrollDir = 3;          // 핑퐁
         /** 핑퐁 전용 이동 방향 */
         int digitalPingPongDir = 1;
         /** 스크롤 속도 */
@@ -1005,9 +1005,9 @@ public class FxGPUNeon {
 
         // ── 날짜 행 스크롤 (Bug7 추가) ──────────────────────────────
         /** 날짜 행 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
-        int    faceDateScrollDir   = 0;
+        int    faceDateScrollDir   = 3;    // 핑퐁
         /** 날짜 행 스크롤 속도 */
-        double faceDateScrollSpeed = 1.5;
+        double faceDateScrollSpeed = 2.9;  // 기본 속도
         /** 날짜 행 스크롤 X 오프셋 (NaN=미초기화) */
         double faceDateScrollOffset = Double.NaN;
         /** 날짜 행 핑퐁 방향 */
@@ -1019,11 +1019,11 @@ public class FxGPUNeon {
         /** 날짜 표시 방식 인덱스 (0~3) */
         int faceDateFormatIndex = 0;
         /** 날짜 폰트 패밀리 */
-        String faceDateFontFamily = "Consolas";
+        String faceDateFontFamily = "HY견고딕";
         /** 날짜 폰트 크기 */
-        double faceDateFontSize = 20.0;
+        double faceDateFontSize = 60.0;    // 기본 크기
         /** 날짜 글자 색 (0xAARRGGBB) */
-        int faceDateColorRgb = 0xFFFF2222;
+        int faceDateColorRgb = 0xFF003333; // #003333 진한 청록
 
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
@@ -1958,7 +1958,7 @@ public class FxGPUNeon {
             if (coinBodyView != null) coinBodyView.setVisible(!state.interactiveResizing);
             if (backView != null) backView.setVisible(!state.interactiveResizing);
             if (imageLayerGroup != null) imageLayerGroup.setVisible(true);
-            numbersGroup.setVisible(state.showNumbers && !state.interactiveResizing);
+            if (numbersGroup != null) numbersGroup.setVisible(state.showNumbers && !state.interactiveResizing);
             if (faceView != null) {
                 faceView.setVisible(frontFaceVisible && state.backgroundImage == null && !state.interactiveResizing);
                 faceView.setOpacity(frontFaceVisible && state.backgroundImage == null ? 1.0 : 0.0);
@@ -2203,17 +2203,20 @@ public class FxGPUNeon {
                     Group numberNode = factory.createNumber(String.valueOf(n), fontSize);
                     numberNode.setTranslateX(x);
                     numberNode.setTranslateY(y);
-                    numberNode.setTranslateZ(-(AppState.BASE_COIN_HEIGHT * 0.5 + 7.2));
+                    // [B1-Fix] numberHeightScale에 따라 두께가 달라지므로
+                    // TranslateZ를 동적으로 계산. 숫자 중심 Z = -(COIN_H/2 + 7.2),
+                    // 앞면 Z = 중심 - halfThickness. 여기서 배치는 중심 기준이므로 7.2 고정.
+                    double numThickness = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
+                    numberNode.setTranslateZ(-(AppState.BASE_COIN_HEIGHT * 0.5 + 7.2 + numThickness * 0.5));
                     // [BugFix5] 새로 생성된 numberNode의 opacity를 명시적으로 1.0으로 초기화.
-                    // 이전 점멸 상태가 새 노드에 잔류하지 않도록 보장.
                     numberNode.setOpacity(1.0);
                     numbersGroup.getChildren().add(numberNode);
 				}
 			}
             coinGroup.getChildren().add(numbersGroup);
-            // [BugFix5] 그룹 자체 opacity도 1.0으로 초기화
+            // [B5-Fix] interactiveResizing 중에는 숫자를 숨겨야 함 + opacity 초기화
             numbersGroup.setOpacity(1.0);
-            numbersGroup.setVisible(state.showNumbers);
+            numbersGroup.setVisible(state.showNumbers && !state.interactiveResizing);
             applyNeonEffects();   // 숫자 재빌드 후 네온 상태 복원
             updateFaceDateTimeZ(); // 숫자 높이 변경 → faceDateTimeGroup Z 동기화
 		}
@@ -2841,15 +2844,36 @@ public class FxGPUNeon {
 		}
 		
         private Group fallbackTextNumber(String text, double fontSize) {
-            Text t = new Text(text);
-            t.setFont(Font.font(state.numberFont, FontWeight.BOLD, fontSize));
-            t.setFill(state.numberColor);
-            // #8: BoundsLike 불필요한 inner class 제거 — 지역 변수로 대체
-            double bw = t.getLayoutBounds().getWidth();
-            double bh = t.getLayoutBounds().getHeight();
-            Group g = new Group(t);
-            t.setTranslateX(-bw * 0.5);
-            t.setTranslateY(bh * 0.35);
+            // [B6/B7-Fix] 2D Text 노드 대신 PhongMaterial Box로 렌더링
+            // → restoreNumberDiffuseRecursive / applyRainbowColorRecursive 모두 적용됨
+            double boxW = fontSize * 1.1;
+            double boxH = fontSize * 1.2;
+            double boxD = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
+
+            // 텍스처 생성
+            int tw = (int) Math.max(32, boxW * 4);
+            int th = (int) Math.max(32, boxH * 4);
+            WritableImage texImg = new WritableImage(tw, th);
+            Canvas canvas = new Canvas(tw, th);
+            GraphicsContext gc = canvas.getGraphicsContext2D();
+            gc.setFill(Color.TRANSPARENT);
+            gc.clearRect(0, 0, tw, th);
+            gc.setFont(Font.font(state.numberFont, FontWeight.BOLD, th * 0.75));
+            gc.setFill(Color.WHITE);
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.setTextBaseline(VPos.CENTER);
+            gc.fillText(text, tw * 0.5, th * 0.5);
+            SnapshotParameters sp = new SnapshotParameters();
+            sp.setFill(Color.TRANSPARENT);
+            canvas.snapshot(sp, texImg);
+
+            PhongMaterial mat = extrudedMetalMaterial(state.numberColor, 0.06, 128);
+            mat.setDiffuseMap(texImg);
+
+            Box box = new Box(boxW, boxH, boxD);
+            box.setMaterial(mat);
+            box.setCullFace(CullFace.BACK);
+            Group g = new Group(box);
             return g;
 		}
 		

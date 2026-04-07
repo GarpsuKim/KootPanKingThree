@@ -1249,12 +1249,7 @@ public class FxSplashWindow {
 
 	private Menu buildOfficeMenu() {
 		Menu menu = makeMenu("업무도구", "업무 프로그램 실행");
-		populateOfficeMenuItems(menu);
-		return menu;
-	}
 
-	private void populateOfficeMenuItems(Menu menu) {
-		menu.getItems().clear();
 		menu.getItems().add(makeSectionHeader("Office"));
 
 		menu.getItems().add(makeRichMenuItem("📊", "Excel", null, null,
@@ -1268,20 +1263,15 @@ public class FxSplashWindow {
 
 		menu.getItems().add(makeSectionHeader("등록된 도구"));
 
-		// 채워진 슬롯 인덱스 목록 수집 (위/아래 이웃 슬롯 계산용)
-		java.util.List<Integer> filledSlots = new java.util.ArrayList<>();
 		for (int i = 0; i < OFFICE_SLOT_COUNT; i++) {
-			String n = clockHost != null ? clockHost.getConfig(slotNameKey(i), "") : "";
-			String p = clockHost != null ? clockHost.getConfig(slotPathKey(i), "") : "";
-			if (!n.isEmpty() && !p.isEmpty()) filledSlots.add(i);
-		}
-		for (int fi = 0; fi < filledSlots.size(); fi++) {
-			int slotIdx  = filledSlots.get(fi);
-			String name  = clockHost.getConfig(slotNameKey(slotIdx), "");
-			String path  = clockHost.getConfig(slotPathKey(slotIdx), "");
-			int prevSlot = fi > 0 ? filledSlots.get(fi - 1) : -1;
-			int nextSlot = fi < filledSlots.size() - 1 ? filledSlots.get(fi + 1) : -1;
-			menu.getItems().add(buildSlotSubMenu(menu, slotIdx, name, path, prevSlot, nextSlot));
+			String name = clockHost != null ? clockHost.getConfig(slotNameKey(i), "") : "";
+			String path = clockHost != null ? clockHost.getConfig(slotPathKey(i), "") : "";
+
+			if (!name.isEmpty() && !path.isEmpty()) {
+				final String p = path;
+				menu.getItems().add(makeRichMenuItem("📌", name, path, null,
+				() -> launchByPath(p)));
+			}
 		}
 
 		menu.getItems().add(makeSectionHeader("관리"));
@@ -1298,6 +1288,7 @@ public class FxSplashWindow {
 			menu.getItems().add(fullItem);
 		}
 
+		return menu;
 	}
 
 	/** 다음 빈 슬롯 인덱스 반환. 모두 찼으면 OFFICE_SLOT_COUNT 반환. */
@@ -1308,82 +1299,6 @@ public class FxSplashWindow {
 			if (name.isEmpty() || path.isEmpty()) return i;
 		}
 		return OFFICE_SLOT_COUNT;
-	}
-
-	/**
-	 * 등록된 슬롯 하나를 서브메뉴(Menu)로 생성한다. — Swing buildSlotMenu 와 동일한 구조
-	 *
-	 * 등록된 슬롯 : "📌 앱이름 ▶"  →  [▶ 실행]  [─]  [🗑️ 삭제]  [─]  [↑ 위로]  [↓ 아래로]
-	 *
-	 * 동작 후 populateOfficeMenuItems(officeMenu) + officeMenu.show() 로
-	 * 업무도구 메뉴를 다시 열어 준다.
-	 */
-	private Menu buildSlotSubMenu(Menu officeMenu, int slotIdx,
-			String name, String path, int prevSlot, int nextSlot) {
-
-		Menu slotMenu = makeMenu("📌 " + name, path);
-
-		// ── ▶ 실행 ────────────────────────────────────────────
-		slotMenu.getItems().add(makeRichMenuItem("▶", "실행",
-			path, null, () -> launchByPath(path)));
-
-		slotMenu.getItems().add(new SeparatorMenuItem());
-
-		// ── 🗑️ 삭제 ───────────────────────────────────────────
-		MenuItem delItem = makeRichMenuItem("🗑️", "삭제", "이 항목을 삭제합니다", null, () -> {
-			if (clockHost == null) { showNotReady(); return; }
-			Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-			confirm.initOwner(stage);
-			confirm.setTitle("업무도구 삭제");
-			confirm.setHeaderText(null);
-			confirm.setContentText("「" + name + "」 을 삭제하시겠습니까?");
-			confirm.setOnShown(ev ->
-				((Stage) confirm.getDialogPane().getScene().getWindow()).setAlwaysOnTop(true));
-			confirm.showAndWait().ifPresent(btn -> {
-				if (btn != ButtonType.OK) return;
-				clockHost.setMultipleConfigAndSave(slotNameKey(slotIdx), "", slotPathKey(slotIdx), "");
-				Platform.runLater(() -> {
-					populateOfficeMenuItems(officeMenu);
-					officeMenu.show();
-				});
-			});
-		});
-		slotMenu.getItems().add(delItem);
-
-		slotMenu.getItems().add(new SeparatorMenuItem());
-
-		// ── ↑ 위로 이동 ───────────────────────────────────────
-		MenuItem upItem = makeRichMenuItem("↑", "위로 이동", "목록에서 한 칸 위로", null, () -> {
-			swapSlots(slotIdx, prevSlot);
-			Platform.runLater(() -> {
-				populateOfficeMenuItems(officeMenu);
-				officeMenu.show();
-			});
-		});
-		upItem.setDisable(prevSlot < 0);
-		slotMenu.getItems().add(upItem);
-
-		// ── ↓ 아래로 이동 ─────────────────────────────────────
-		MenuItem downItem = makeRichMenuItem("↓", "아래로 이동", "목록에서 한 칸 아래로", null, () -> {
-			swapSlots(slotIdx, nextSlot);
-			Platform.runLater(() -> {
-				populateOfficeMenuItems(officeMenu);
-				officeMenu.show();
-			});
-		});
-		downItem.setDisable(nextSlot < 0);
-		slotMenu.getItems().add(downItem);
-
-		return slotMenu;
-	}
-
-	/** 작은 스타일 툴팁 */
-	private Tooltip makeSmallTooltip(String text) {
-		Tooltip t = new Tooltip(text);
-		t.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:11px;"
-			+ "-fx-background-color:rgba(255,245,251,0.95); -fx-text-fill:" + fgColor()
-			+ "; -fx-background-radius:8; -fx-border-color:" + borderColor() + "; -fx-border-radius:8;");
-		return t;
 	}
 
 

@@ -179,19 +179,19 @@ public class KootPanKingThree extends Application {
     private javafx.scene.control.CheckMenuItem digitalMenuItem = null;
     private int     pendingDigitalFormatIndex = 0;
     private String  pendingDigitalFontFamily  = "Consolas";
-    private double  pendingDigitalFontSize    = 20.0;
+    private double  pendingDigitalFontSize    = 50.0;
     private int     pendingDigitalColorRgb    = 0xFFFFFFFF;
-    private int     pendingDigitalScrollDir   = 1;
+    private int     pendingDigitalScrollDir   = 3;
     private double  pendingDigitalScrollSpeed = 1.5;
     // ── 날짜 행 pending ─────────────────────────────────────────────────
     private boolean pendingFaceDateShow       = true;
     private int     pendingFaceDateFormatIndex= 0;
-    private String  pendingFaceDateFontFamily = "Consolas";
-    private double  pendingFaceDateFontSize   = 20.0;
-    private int     pendingFaceDateColorRgb   = 0xFFFF2222;
+    private String  pendingFaceDateFontFamily = "HY견고딕";
+    private double  pendingFaceDateFontSize   = 60.0;
+    private int     pendingFaceDateColorRgb   = 0xFF003333;
     // Bug7: 날짜 스크롤 pending
-    private int     pendingFaceDateScrollDir   = 0;
-    private double  pendingFaceDateScrollSpeed = 1.5;
+    private int     pendingFaceDateScrollDir   = 3;
+    private double  pendingFaceDateScrollSpeed = 2.9;
 	
     boolean alwaysOnTop = true;
     boolean showDigital = true;
@@ -538,19 +538,19 @@ public class KootPanKingThree extends Application {
             pendingDigitalShow        = Boolean.parseBoolean(config.getProperty("digital.show", "true"));
             pendingDigitalFormatIndex = Integer.parseInt(config.getProperty("digital.formatIndex", "0"));
             pendingDigitalFontFamily  = config.getProperty("digital.fontFamily", "Consolas");
-            pendingDigitalFontSize    = Double.parseDouble(config.getProperty("digital.fontSize", "20"));
+            pendingDigitalFontSize    = Double.parseDouble(config.getProperty("digital.fontSize", "50"));
             pendingDigitalColorRgb    = Integer.parseInt(config.getProperty("digital.colorRgb", String.valueOf(0xFFFFFFFF)));
-            pendingDigitalScrollDir   = Integer.parseInt(config.getProperty("digital.scrollDir", "1"));
+            pendingDigitalScrollDir   = Integer.parseInt(config.getProperty("digital.scrollDir", "3"));
             pendingDigitalScrollSpeed = Double.parseDouble(config.getProperty("digital.scrollSpeed", "1.5"));
             // ── 날짜 행 설정 ─────────────────────────────────────────
             pendingFaceDateShow        = Boolean.parseBoolean(config.getProperty("faceDate.show", "true"));
             pendingFaceDateFormatIndex = Integer.parseInt(config.getProperty("faceDate.formatIndex", "0"));
-            pendingFaceDateFontFamily  = config.getProperty("faceDate.fontFamily", "Consolas");
-            pendingFaceDateFontSize    = Double.parseDouble(config.getProperty("faceDate.fontSize", "20"));
-            pendingFaceDateColorRgb    = Integer.parseInt(config.getProperty("faceDate.colorRgb", String.valueOf(0xFFFF2222)));
+            pendingFaceDateFontFamily  = config.getProperty("faceDate.fontFamily", "HY견고딕");
+            pendingFaceDateFontSize    = Double.parseDouble(config.getProperty("faceDate.fontSize", "60"));
+            pendingFaceDateColorRgb    = Integer.parseInt(config.getProperty("faceDate.colorRgb", String.valueOf(0xFF003333)));
             // Bug7: 날짜 스크롤 복원
-            pendingFaceDateScrollDir   = Integer.parseInt(config.getProperty("faceDate.scrollDir", "0"));
-            pendingFaceDateScrollSpeed = Double.parseDouble(config.getProperty("faceDate.scrollSpeed", "1.5"));
+            pendingFaceDateScrollDir   = Integer.parseInt(config.getProperty("faceDate.scrollDir", "3"));
+            pendingFaceDateScrollSpeed = Double.parseDouble(config.getProperty("faceDate.scrollSpeed", "2.9"));
         } catch (Exception ignored) {}
 
         try {
@@ -806,14 +806,7 @@ public class KootPanKingThree extends Application {
             @Override public void showConfigFile() { openConfigFile(); }
 
             @Override public void showAbout() {
-                Platform.runLater(() -> {
-                    javafx.scene.control.Alert a = new javafx.scene.control.Alert(
-                        javafx.scene.control.Alert.AlertType.INFORMATION);
-                    a.setTitle("About");
-                    a.setHeaderText(thisProgramName);
-                    a.setContentText("3D 코인 아날로그 시계 — KootPanKingThree\n개발: 김갑수 / 대한민국 서울");
-                    a.showAndWait();
-                });
+                Platform.runLater(() -> showAboutDialog());
             }
 
             @Override public String getConfigFilePath() {
@@ -1634,15 +1627,7 @@ public class KootPanKingThree extends Application {
         exitItem.setOnAction(e -> showExitDialog((javafx.stage.Stage) popup.getOwnerWindow()));
 
         javafx.scene.control.MenuItem aboutItem = new javafx.scene.control.MenuItem("About");
-        aboutItem.setOnAction(e -> {
-            javafx.scene.control.Alert a = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.INFORMATION);
-            a.initOwner((javafx.stage.Stage) popup.getOwnerWindow());
-            a.setTitle("About");
-            a.setHeaderText(thisProgramName);
-            a.setContentText("3D 코인 아날로그 시계 — KootPanKingThree\n개발: 김갑수 / 대한민국 서울");
-            a.showAndWait();
-        });
+        aboutItem.setOnAction(e -> showAboutDialog());
 
         javafx.scene.control.MenuItem mainWindowItem =
             new javafx.scene.control.MenuItem("MainWindow");
@@ -3482,6 +3467,86 @@ public class KootPanKingThree extends Application {
 		}
 	}
 	
+    /** About 다이얼로그 — 48초 카운트다운 후 자동 닫힘, 컬러 항목 + 블로그 링크 */
+    private void showAboutDialog() {
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initStyle(javafx.stage.StageStyle.UTILITY);
+        dlg.setAlwaysOnTop(true);
+        dlg.setResizable(false);
+
+        // ── 48초 카운트다운 타이틀 ──────────────────────────────
+        final int[] sec = {48};
+        dlg.setTitle(thisProgramName + "  —  " + sec[0] + "초 후 닫힘");
+
+        // ── 컬러 텍스트 항목 ────────────────────────────────────
+        javafx.scene.text.TextFlow tf = new javafx.scene.text.TextFlow();
+        tf.setPadding(new javafx.geometry.Insets(12, 16, 8, 16));
+        tf.setPrefWidth(460);
+
+        String[][] items = {
+            {"• 대리석 질감 아나로그 시계",                                         "#2aa198"},
+            {"• 자유 자재 시계 디자인",                                             "#268bd2"},
+            {"• 전세계 주요도시 시계",                                               "#6c71c4"},
+            {"• 준비중) 텔레그램, GMail, 네이버, 카카오톡 , 스마트 카메라, 실시간CCTV ...", "#b58900"},
+            {"• 김갑수 , 2026-3-18 , 대한민국 서울",                               "#dc322f"}
+        };
+        for (String[] row : items) {
+            javafx.scene.text.Text t = new javafx.scene.text.Text(row[0] + "\n");
+            t.setFill(javafx.scene.paint.Color.web(row[1]));
+            t.setStyle("-fx-font-family: 'Malgun Gothic'; -fx-font-size: 14px;");
+            tf.getChildren().add(t);
+        }
+
+        // ── 구분선 ────────────────────────────────────────────
+        javafx.scene.control.Separator sep = new javafx.scene.control.Separator();
+
+        // ── 블로그 링크 ──────────────────────────────────────
+        final String blogUrl = "https://blog.naver.com/garpsu/224213400580";
+        javafx.scene.control.Hyperlink link = new javafx.scene.control.Hyperlink(
+            "→ 자세한 안내 : " + blogUrl);
+        link.setStyle("-fx-font-family: 'Malgun Gothic'; -fx-font-size: 12px;");
+        link.setOnAction(ev -> {
+            try {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(blogUrl));
+            } catch (Exception ex) {
+                System.out.println("[About] 링크 열기 실패: " + ex.getMessage());
+            }
+        });
+
+        // ── OK 버튼 ───────────────────────────────────────────
+        javafx.scene.control.Button okBtn = new javafx.scene.control.Button("OK");
+        okBtn.setDefaultButton(true);
+
+        javafx.scene.layout.HBox linkBox = new javafx.scene.layout.HBox(link);
+        linkBox.setPadding(new javafx.geometry.Insets(4, 10, 2, 10));
+
+        javafx.scene.layout.HBox btnBox = new javafx.scene.layout.HBox(okBtn);
+        btnBox.setAlignment(javafx.geometry.Pos.CENTER);
+        btnBox.setPadding(new javafx.geometry.Insets(4, 10, 8, 10));
+
+        // ── 레이아웃 ─────────────────────────────────────────
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(tf, sep, linkBox, btnBox);
+        dlg.setScene(new javafx.scene.Scene(root));
+
+        // ── 카운트다운 타이머 ─────────────────────────────────
+        final javafx.animation.Timeline[] holder = {null};
+        Runnable doClose = () -> { if (holder[0] != null) holder[0].stop(); dlg.close(); };
+        okBtn.setOnAction(ev -> doClose.run());
+
+        javafx.animation.Timeline tl = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
+                sec[0]--;
+                dlg.setTitle(thisProgramName + "  —  " + sec[0] + "초 후 닫힘");
+                if (sec[0] <= 0) doClose.run();
+            }));
+        tl.setCycleCount(48);
+        holder[0] = tl;
+        dlg.setOnHidden(ev -> { if (holder[0] != null) holder[0].stop(); });
+
+        dlg.show();
+        tl.play();
+    }
+
     /** 일정 다이얼로그 — 300초 카운트다운 후 자동 닫힘 (초기화 3일 표시 및 팝업 메뉴 공유) */
     private void showScheduleDialog(String title, String content) {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
