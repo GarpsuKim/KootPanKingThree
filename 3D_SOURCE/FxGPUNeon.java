@@ -471,7 +471,7 @@ public class FxGPUNeon {
 					}
                     assembler.applyRootRotation();
 					
-                    LocalTime t = LocalTime.now();
+                    LocalTime t = LocalTime.now(state.timeZone);
                     double ns = t.getNano() / 1_000_000_000.0;
                     double sec = t.getSecond() + ns;
                     double min = t.getMinute() + sec / 60.0;
@@ -1043,7 +1043,13 @@ public class FxGPUNeon {
         String dialogBgColor    = "#ffffff";
         /** 설정창 메뉴 폰트. "System"이면 JavaFX 기본 폰트 사용. */
         String dialogFontFamily = "System";
-		
+
+        // ── 세계시계 타임존 / 도시명 ──────────────────────────────────
+        /** 세계시계용 타임존. 기본값은 시스템(Local). */
+        java.time.ZoneId timeZone  = java.time.ZoneId.systemDefault();
+        /** 날짜 앞에 표시할 도시명. 빈 문자열이면 표시 안 함. */
+        String cityPrefix = "";
+
         // ── 테마 프리셋 ──────────────────────────────────────────────
         enum Theme { GOLD, SILVER, COPPER, MIDNIGHT, ROSE_GOLD }
 		
@@ -1727,7 +1733,7 @@ public class FxGPUNeon {
             if (!state.showDigital && !state.showFaceDate) return;
             if (faceDateTexImg == null || faceTimeTexImg == null) return;
 
-            java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(state.timeZone);
             String[] wd = {"일","월","화","수","목","금","토"};
             String dow = wd[now.getDayOfWeek().getValue() % 7];
             int h24  = now.getHour();
@@ -1748,6 +1754,9 @@ public class FxGPUNeon {
                     default -> dateStr = String.format("%d월 %d일, %s",
                                     now.getMonthValue(), now.getDayOfMonth(), dow);
                 }
+                // 세계시계 도시명 prefix
+                if (state.cityPrefix != null && !state.cityPrefix.isEmpty())
+                    dateStr = state.cityPrefix + " " + dateStr;
                 int drgb = state.faceDateColorRgb;
                 javafx.scene.paint.Color dcol = javafx.scene.paint.Color.rgb(
                     (drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF,
