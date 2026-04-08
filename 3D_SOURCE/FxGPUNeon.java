@@ -303,9 +303,6 @@ public class FxGPUNeon {
             header.setDisable(true);
             header.setStyle("-fx-opacity:1; -fx-text-fill:#555555; -fx-font-weight:bold;");
 			
-            MenuItem menuSetup = new MenuItem("메인 시계 설정");
-            menuSetup.setOnAction(e -> toggleSetup());
-			
             menuSwing.setSelected(!state.paused);
             menuSwing.setOnAction(e -> {
                 state.paused = !menuSwing.isSelected();
@@ -315,14 +312,14 @@ public class FxGPUNeon {
                 menuSwing.setSelected(!state.paused);
                 if (onPopupShowing != null) onPopupShowing.run();
             });
-			
-            // 그래픽 항목 먼저
+
+            // header + 흔들림만 추가.
+            // 중앙고정·디지탈on/off·디지탈시계설정·메인시계설정·separator 는
+            // appMenuBuilder(KootPanKingThree.addAppMenuItems) 가 순서대로 추가한다.
             popup.getItems().addAll(
                 header,
                 new javafx.scene.control.SeparatorMenuItem(),
-                menuSwing,
-                menuSetup,
-                new javafx.scene.control.SeparatorMenuItem()
+                menuSwing
 			);
             // 앱 제어 항목은 KootPanKingThree 가 추가
             if (appMenuBuilder != null) appMenuBuilder.accept(popup);
@@ -351,6 +348,9 @@ public class FxGPUNeon {
 			}
 		}
 		
+        /** 메인 시계 설정 패널 열기 — KootPanKingThree 등 외부에서 호출 가능. */
+        public void openSetup() { toggleSetup(); }
+
         // ── 종료 확인 다이얼로그 ─────────────────────────────────────
         void confirmExit() {
             Stage dialog = new Stage();
@@ -1761,12 +1761,12 @@ public class FxGPUNeon {
                                     now.getMonthValue(), now.getDayOfMonth(), dow);
                     case 3  -> dateStr = String.format("%d월 %d일",
                                     now.getMonthValue(), now.getDayOfMonth());
-                    default -> dateStr = String.format("%d월 %d일, %s",
+                    default -> dateStr = String.format("%d월 %d일 %s",
                                     now.getMonthValue(), now.getDayOfMonth(), dow);
                 }
                 // 세계시계 도시명 prefix
                 if (state.cityPrefix != null && !state.cityPrefix.isEmpty())
-                    dateStr = state.cityPrefix + " " + dateStr;
+                    dateStr = "(" + state.cityPrefix + ") " + dateStr;
                 int drgb = state.faceDateColorRgb;
                 javafx.scene.paint.Color dcol = javafx.scene.paint.Color.rgb(
                     (drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF,

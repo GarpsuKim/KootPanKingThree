@@ -1252,11 +1252,110 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
 	private void addAppMenuItems(javafx.scene.control.ContextMenu popup) {
 		enhancePopupMenuNeon(popup);
 		restoreParentPopupTextVisible(popup);
-		
-        // ── chimeController 초기화 (Stage 확정된 이후 최초 1회) ──
-        if (chimeController == null) {
-            javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
-            chimeController = new ChimeController(owner, new ChimeController.HostCallback() {
+
+		// ── chimeController 최초 초기화 ─────────────────────────────────
+		initChimeControllerIfNeeded((javafx.stage.Stage) popup.getOwnerWindow());
+
+		// ── 서브메뉴 구성 ───────────────────────────────────────────────
+		javafx.scene.control.MenuItem chimeItem    = buildChimeMenuItem();
+		javafx.scene.control.Menu     phoneCam     = buildPhoneCamMenu(popup);
+		javafx.scene.control.Menu     ytMenu       = buildYtMenu(popup);
+		javafx.scene.control.Menu     localMp4Menu = buildLocalMp4Menu(popup);
+		javafx.scene.control.Menu     cctv         = buildCctvMenu(popup);
+		javafx.scene.control.Menu     gmailMenu    = buildGmailMenu(popup);
+		javafx.scene.control.Menu     kakaoMenu    = buildKakaoMenu();
+		javafx.scene.control.Menu     telegramMenu = buildTelegramMenu(popup);
+		javafx.scene.control.Menu     lifeMenu     = buildLifeMenu(popup);
+		javafx.scene.control.Menu     system       = buildSystemMenu(popup);
+
+		// ── Top-5 항목 생성 (child 시계 포함 표시) ──────────────────────
+
+		// [중앙 고정]
+		javafx.scene.control.MenuItem centerItem =
+			new javafx.scene.control.MenuItem("📌 중앙 고정");
+		centerItem.setOnAction(e -> resetToCenter());
+
+		// [디지탈 on/off]
+		javafx.scene.control.CheckMenuItem digitalItem =
+			new javafx.scene.control.CheckMenuItem("🕐 디지탈 on/off");
+		digitalItem.setSelected(clockController != null && getDigitalState());
+		digitalItem.setOnAction(e -> {
+			setDigitalState(digitalItem.isSelected());
+			saveConfig();
+		});
+		digitalMenuItem = digitalItem;
+		if (clockController != null) {
+			clockController.onPopupShowing = () ->
+				digitalMenuItem.setSelected(getDigitalState());
+		}
+
+		// [디지탈 시계 설정]
+		javafx.scene.control.MenuItem digitalSettingsItem =
+			new javafx.scene.control.MenuItem("디지탈 시계 설정");
+		digitalSettingsItem.setOnAction(e ->
+			showDigitalSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow()));
+
+		// [메인 시계 설정]
+		javafx.scene.control.MenuItem menuSetup =
+			new javafx.scene.control.MenuItem("메인 시계 설정");
+		menuSetup.setOnAction(e -> {
+			if (clockController != null) clockController.openSetup();
+		});
+
+		// ── 팝업 조립 ────────────────────────────────────────────────────
+		// [흔들림] 은 FxGPUNeon.buildGraphicsMenu() 가 이미 추가함
+
+		// Top-5 + separator
+		popup.getItems().addAll(
+			centerItem, digitalItem, digitalSettingsItem, menuSetup,
+			new javafx.scene.control.SeparatorMenuItem()
+		);
+
+		// [세계 시계] — 로컬 시계만
+		if (!isChild) {
+			popup.getItems().addAll(
+				buildWorldClockMenu(),
+				new javafx.scene.control.SeparatorMenuItem()
+			);
+		}
+
+		// 미디어 배경
+		popup.getItems().addAll(
+			phoneCam, ytMenu, localMp4Menu, cctv,
+			new javafx.scene.control.SeparatorMenuItem()
+		);
+
+		// 차임벨
+		popup.getItems().addAll(
+			chimeItem,
+			new javafx.scene.control.SeparatorMenuItem()
+		);
+
+		// 커뮤니케이션
+		popup.getItems().addAll(
+			gmailMenu, kakaoMenu, telegramMenu,
+			new javafx.scene.control.SeparatorMenuItem()
+		);
+
+		// 생활도구
+		popup.getItems().addAll(
+			lifeMenu,
+			new javafx.scene.control.SeparatorMenuItem()
+		);
+
+		// 시스템
+		popup.getItems().add(system);
+
+		applyNeonStylesRecursively(popup.getItems());
+		restoreParentPopupTextVisible(popup);
+		emphasizePopupProgramTitle(popup);
+		enhancePopupSubMenusMacOnly(popup);
+	}
+
+	// ── chimeController 초기화 (Stage 확정 후 최초 1회) ───────────────────
+	private void initChimeControllerIfNeeded(javafx.stage.Stage owner) {
+		if (chimeController != null) return;
+        chimeController = new ChimeController(owner, new ChimeController.HostCallback() {
                 @Override public boolean isChild()               { return isChild; }
                 @Override public java.time.ZoneId getTimeZone() { return timeZone; }
                 @Override public void startRainbow(int durationSec) {
@@ -1327,8 +1426,10 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
                 if (digitalMenuItem != null)
 				digitalMenuItem.setSelected(getDigitalState());
 			}
-		}
-		
+	}
+
+	// ── 차임벨 메뉴 아이템 ──────────────────────────────────────────────
+	private javafx.scene.control.MenuItem buildChimeMenuItem() {
         // ── 차임벨 메뉴 아이템 ────────────────────────────────
         javafx.scene.control.MenuItem chimeItem =
 		new javafx.scene.control.MenuItem("🔔 차임벨 설정...");
@@ -1340,8 +1441,12 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
 		});
 		
         javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 스마트폰 카메라");
-		
-        // ── YouTube 실시간 세계도시 메뉴 ─────────────────────────────
+		return chimeItem;
+	}
+
+	// ── YouTube 실시간 세계도시 메뉴 ─────────────────────────────────────
+	private javafx.scene.control.Menu buildYtMenu(
+			javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu ytMenu = new javafx.scene.control.Menu("▶ YouTube 실시간 세계도시");
 		
         java.util.List<String[]> ytList = BackgroundPlayer.YoutubePlayer.loadStreamIni(SETTINGS_DIR);
@@ -1417,7 +1522,12 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
         ytMenu.setOnShowing(ev ->
 		ytStopItem.setDisable(ytPlayer == null || !ytPlayer.isRunning()));
 		
-        // ── 로컬 MP4 배경 재생 메뉴 ────────────────────────────────
+		return ytMenu;
+	}
+
+	// ── 로컬 MP4 배경 재생 메뉴 ──────────────────────────────────────────
+	private javafx.scene.control.Menu buildLocalMp4Menu(
+			javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu localMp4Menu =
 		new javafx.scene.control.Menu("📂 로컬 MP4 배경 재생");
 		
@@ -1518,6 +1628,13 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
             mp4StopItem.setDisable(ytPlayer == null || !ytPlayer.isRunning());
 		});
 		
+		return localMp4Menu;
+	}
+
+	// ── 스마트폰 카메라 메뉴 ────────────────────────────────────────────
+	private javafx.scene.control.Menu buildPhoneCamMenu(
+			javafx.scene.control.ContextMenu popup) {
+        javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 스마트폰 카메라");
 		
         javafx.scene.control.MenuItem camStart      = new javafx.scene.control.MenuItem("▶ 폰 카메라 연결");
         javafx.scene.control.MenuItem camSnapshot   = new javafx.scene.control.MenuItem("📸 이미지 저장");
@@ -1746,6 +1863,12 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
             camGuide
 		);
 		
+		return phoneCam;
+	}
+
+	// ── ITS 교통 CCTV 메뉴 ──────────────────────────────────────────────
+	private javafx.scene.control.Menu buildCctvMenu(
+			javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu cctv = new javafx.scene.control.Menu("🚦 ITS 교통 CCTV");
 		
         // ── (A) API 키 설정 ──────────────────────────────────────────────
@@ -1948,7 +2071,12 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
             cctvGuide
 		);
 		
-        // ── Gmail / Calendar 메뉴 (3)(4) ────────────────────────────────
+		return cctv;
+	}
+
+	// ── Gmail / Calendar 메뉴 ────────────────────────────────────────────
+	private javafx.scene.control.Menu buildGmailMenu(
+			javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu gmailMenu = new javafx.scene.control.Menu("📧 Gmail / Calendar");
 		
         // 기존 항목
@@ -1988,6 +2116,11 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
             naverCfg
 		);
 		
+		return gmailMenu;
+	}
+
+	// ── 카카오톡 메뉴 ────────────────────────────────────────────────────
+	private javafx.scene.control.Menu buildKakaoMenu() {
         javafx.scene.control.Menu kakaoMenu = new javafx.scene.control.Menu("카카오톡...");
         kakaoMenu.getItems().addAll(
             menuItem("카카오 로그인됨"),
@@ -1995,7 +2128,12 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
             menuItem("설정 안내...")
 		);
 		
-        // ── 텔레그램 (tg 직접 접근 가능) ────────────────────────
+		return kakaoMenu;
+	}
+
+	// ── 텔레그램 메뉴 ────────────────────────────────────────────────────
+	private javafx.scene.control.Menu buildTelegramMenu(
+			javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu telegramMenu = new javafx.scene.control.Menu("텔레그램");
         javafx.scene.control.MenuItem tgSettings = new javafx.scene.control.MenuItem("텔레그램 설정...");
         javafx.scene.control.MenuItem tgHelp     = new javafx.scene.control.MenuItem("텔레그램 설정 안내");
@@ -2003,7 +2141,12 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
         tgHelp.setOnAction(e ->     tg.showTelegramHelp((javafx.stage.Stage) popup.getOwnerWindow()));
         telegramMenu.getItems().addAll(tgSettings, tgHelp);
 		
-        // ── 시스템 ───────────────────────────────────────────────
+		return telegramMenu;
+	}
+
+	// ── 시스템 메뉴 ─────────────────────────────────────────────────────
+	private javafx.scene.control.Menu buildSystemMenu(
+			javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu system = new javafx.scene.control.Menu("시스템...");
         javafx.scene.control.MenuItem logItem = new javafx.scene.control.MenuItem("Log");
         logItem.setOnAction(e -> openLogFile());
@@ -2063,66 +2206,11 @@ private void applyNeonStyle(javafx.scene.control.MenuItem item) {
             exitItem
 		);
 		
-        // ── 생활도구 ─────────────────────────────────────────────
-        javafx.scene.control.Menu lifeMenu = buildLifeMenu(popup);
-		
-        // ── 디지탈 시계 토글 + 설정 ──────────────────────────────
-        javafx.scene.control.CheckMenuItem digitalItem =
-		new javafx.scene.control.CheckMenuItem("🕐 디지탈 on/off");
-        digitalItem.setSelected(clockController != null && getDigitalState());
-        digitalItem.setOnAction(e -> {
-            boolean on = digitalItem.isSelected();
-            setDigitalState(on);
-            saveConfig();
-		});
-		
-        // 필드에 저장 → onPopupShowing 에서 상태 동기화
-        digitalMenuItem = digitalItem;
-        // 팝업이 열릴 때마다 체크 상태를 실제 AppState 값으로 갱신
-        if (clockController != null) {
-            clockController.onPopupShowing = () ->
-			digitalMenuItem.setSelected(getDigitalState());
-		}
-		
-        javafx.scene.control.MenuItem digitalSettingsItem =
-		new javafx.scene.control.MenuItem("디지탈 시계 설정");
-        digitalSettingsItem.setOnAction(e ->
-		showDigitalSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow()));
-		
-        // ── 중앙 고정 (최상단) ────────────────────────────────────
-        javafx.scene.control.MenuItem centerItem = new javafx.scene.control.MenuItem("📌 중앙 고정");
-        centerItem.setOnAction(e -> resetToCenter());
-		
-        // 세계시계 서브메뉴 (로컬 시계에만 표시)
-        if (!isChild) {
-            popup.getItems().addAll(
-                buildWorldClockMenu(),
-			new javafx.scene.control.SeparatorMenuItem());
-		}
-		
-        popup.getItems().addAll(
-            centerItem,
-            new javafx.scene.control.SeparatorMenuItem(),
-            phoneCam, ytMenu, localMp4Menu, cctv,
-            new javafx.scene.control.SeparatorMenuItem(),
-            digitalItem,
-            digitalSettingsItem,
-            new javafx.scene.control.SeparatorMenuItem(),
-            chimeItem,
-            new javafx.scene.control.SeparatorMenuItem(),
-            gmailMenu, kakaoMenu, telegramMenu,
-            new javafx.scene.control.SeparatorMenuItem(),
-            lifeMenu,
-            new javafx.scene.control.SeparatorMenuItem(),
-            system
-		);
-		applyNeonStylesRecursively(popup.getItems());
-		restoreParentPopupTextVisible(popup);
-		emphasizePopupProgramTitle(popup);
-		enhancePopupSubMenusMacOnly(popup);
+		return system;
 	}
-	
-	//  addAppMenuItems *******************
+
+	//  ──────────────────────────── 서브메뉴 팩토리 끝 ────────────────────────────
+
 	
 	private void restoreParentPopupTextVisible(javafx.scene.control.ContextMenu popup) {
 		if (popup == null) return;
