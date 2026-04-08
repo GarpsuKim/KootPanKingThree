@@ -11,11 +11,122 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.application.Application;
+import javafx.animation.Animation;
+import javafx.animation.ScaleTransition;
 import javafx.application.Platform;
+import javafx.scene.Node;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuItem;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 public class KootPanKingThree extends Application {
-    private static final String thisProgramName = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
+	// ─────────────────────────────────────────────────────────────
+	// 팝업의 "서브메뉴(Menu)"만 mac 스타일 적용
+	// 부모 ContextMenu 는 절대 수정하지 않음
+	// ─────────────────────────────────────────────────────────────
+	
+	private static final String SUBMENU_MAC_CAPTION_STYLE =
+    "-fx-background-color: rgba(255,255,255,0.01);" +
+    "-fx-text-fill: #1f1f1f;" +
+    "-fx-font-size: 13px;" +
+    "-fx-font-weight: normal;";
+	
+	private static final String SUBMENU_MAC_ITEM_NORMAL_STYLE =
+    "-fx-background-color: rgba(255,255,255,0.96);" +
+    "-fx-text-fill: #1f1f1f;" +
+    "-fx-font-size: 13px;" +
+    "-fx-background-radius: 10;" +
+    "-fx-padding: 7 16 7 16;";
+	
+	private static final String SUBMENU_MAC_ITEM_HOVER_STYLE =
+    "-fx-background-color: linear-gradient(to bottom, #4da3ff 0%, #0a84ff 100%);" +
+    "-fx-text-fill: white;" +
+    "-fx-font-size: 13px;" +
+    "-fx-background-radius: 10;" +
+    "-fx-padding: 7 16 7 16;";
+	
+	private void enhancePopupSubMenusMacOnly(javafx.scene.control.ContextMenu popup) {
+		if (popup == null) return;
+		
+		for (javafx.scene.control.MenuItem item : popup.getItems()) {
+			if (item instanceof javafx.scene.control.Menu subMenu) {
+				styleMacSubMenuRecursive(subMenu);
+			}
+		}
+		
+		popup.setOnShown(ev -> javafx.application.Platform.runLater(() -> {
+			for (javafx.scene.control.MenuItem item : popup.getItems()) {
+				if (item instanceof javafx.scene.control.Menu subMenu) {
+					wireMacSubMenuRecursive(subMenu);
+				}
+			}
+		}));
+	}
+	
+	private void styleMacSubMenuRecursive(javafx.scene.control.Menu menu) {
+		if (menu == null) return;
+		
+		menu.setStyle(SUBMENU_MAC_CAPTION_STYLE);
+		
+		for (javafx.scene.control.MenuItem child : menu.getItems()) {
+			if (child instanceof javafx.scene.control.SeparatorMenuItem) continue;
+			
+			if (child instanceof javafx.scene.control.Menu nested) {
+				nested.setStyle(SUBMENU_MAC_CAPTION_STYLE);
+				styleMacSubMenuRecursive(nested);
+				} else {
+				child.setStyle(SUBMENU_MAC_ITEM_NORMAL_STYLE);
+			}
+		}
+	}
+	
+	private void wireMacSubMenuRecursive(javafx.scene.control.Menu menu) {
+		if (menu == null) return;
+		
+		javafx.scene.Node menuNode = menu.getStyleableNode();
+		if (menuNode != null && menuNode.getProperties().putIfAbsent("macSubmenuCaptionWired", Boolean.TRUE) == null) {
+			menuNode.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_ENTERED, e -> {
+				menu.setStyle(
+					"-fx-background-color: rgba(255,255,255,0.16);" +
+					"-fx-text-fill: #111111;" +
+					"-fx-font-size: 13px;" +
+					"-fx-font-weight: normal;" +
+					"-fx-background-radius: 8;"
+				);
+			});
+			menuNode.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> {
+				menu.setStyle(SUBMENU_MAC_CAPTION_STYLE);
+			});
+		}
+		
+		for (javafx.scene.control.MenuItem child : menu.getItems()) {
+			if (child instanceof javafx.scene.control.SeparatorMenuItem) continue;
+			
+			javafx.scene.Node node = child.getStyleableNode();
+			if (node != null && node.getProperties().putIfAbsent("macSubmenuItemWired", Boolean.TRUE) == null) {
+				child.setStyle(SUBMENU_MAC_ITEM_NORMAL_STYLE);
+				
+				node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_ENTERED, e -> {
+					child.setStyle(SUBMENU_MAC_ITEM_HOVER_STYLE);
+					node.setScaleX(1.01);
+					node.setScaleY(1.01);
+				});
+				
+				node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> {
+					child.setStyle(SUBMENU_MAC_ITEM_NORMAL_STYLE);
+					node.setScaleX(1.0);
+					node.setScaleY(1.0);
+				});
+			}
+			
+			if (child instanceof javafx.scene.control.Menu nested) {
+				wireMacSubMenuRecursive(nested);
+			}
+		}
+	}
+	
+	private static final String thisProgramName = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
 	
     static KootPanKingThree instance;  // FxGPUNeon 종료 콜백용
     static FxSplashWindow splashWindow; // 메인 윈도우
@@ -123,7 +234,7 @@ public class KootPanKingThree extends Application {
     AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     CaptureManager screenCapture;             // 화면 캡처
     FxGPUNeon.ClockController clockController; // FX 시계 컨트롤러 (카메라 프레임 주입용)
-
+	
     // ── 세계시계 자식 창 목록 ─────────────────────────────────────────
     private static class ChildClock {
         final Stage stage;
@@ -131,8 +242,8 @@ public class KootPanKingThree extends Application {
         final String cityName;
         ChildClock(Stage s, FxGPUNeon.ClockController c, String n) {
             stage = s; controller = c; cityName = n;
-        }
-    }
+		}
+	}
     private final java.util.List<ChildClock> childClocks = new java.util.ArrayList<>();
     private String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
 	
@@ -195,12 +306,15 @@ public class KootPanKingThree extends Application {
     private int     pendingDigitalColorRgb    = 0xFFFFFFFF;
     private int     pendingDigitalScrollDir   = 3;
     private double  pendingDigitalScrollSpeed = 1.5;
+    private boolean pendingDigitalNeon       = false;
     // ── 날짜 행 pending ─────────────────────────────────────────────────
     private boolean pendingFaceDateShow       = true;
     private int     pendingFaceDateFormatIndex= 0;
     private String  pendingFaceDateFontFamily = "HY견고딕";
     private double  pendingFaceDateFontSize   = 60.0;
     private int     pendingFaceDateColorRgb   = 0xFF003333;
+    private boolean pendingFaceDateNeon      = false;
+    private FxGPUNeon.AppState.NeonBlinkStyle pendingDigitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.NONE;
     // Bug7: 날짜 스크롤 pending
     private int     pendingFaceDateScrollDir   = 3;
     private double  pendingFaceDateScrollSpeed = 2.9;
@@ -554,12 +668,20 @@ public class KootPanKingThree extends Application {
             pendingDigitalColorRgb    = Integer.parseInt(config.getProperty("digital.colorRgb", String.valueOf(0xFFFFFFFF)));
             pendingDigitalScrollDir   = Integer.parseInt(config.getProperty("digital.scrollDir", "3"));
             pendingDigitalScrollSpeed = Double.parseDouble(config.getProperty("digital.scrollSpeed", "1.5"));
+            pendingDigitalNeon        = Boolean.parseBoolean(config.getProperty("digital.neon", "false"));
             // ── 날짜 행 설정 ─────────────────────────────────────────
             pendingFaceDateShow        = Boolean.parseBoolean(config.getProperty("faceDate.show", "true"));
             pendingFaceDateFormatIndex = Integer.parseInt(config.getProperty("faceDate.formatIndex", "0"));
             pendingFaceDateFontFamily  = config.getProperty("faceDate.fontFamily", "HY견고딕");
             pendingFaceDateFontSize    = Double.parseDouble(config.getProperty("faceDate.fontSize", "60"));
             pendingFaceDateColorRgb    = Integer.parseInt(config.getProperty("faceDate.colorRgb", String.valueOf(0xFF003333)));
+            pendingFaceDateNeon      = Boolean.parseBoolean(config.getProperty("faceDate.neon", "false"));
+            try {
+                pendingDigitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.valueOf(
+                    config.getProperty("digital.neonBlinkStyle", "NONE"));
+            } catch (Exception ignored) {
+                pendingDigitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.NONE;
+            }
             // Bug7: 날짜 스크롤 복원
             pendingFaceDateScrollDir   = Integer.parseInt(config.getProperty("faceDate.scrollDir", "3"));
             pendingFaceDateScrollSpeed = Double.parseDouble(config.getProperty("faceDate.scrollSpeed", "2.9"));
@@ -890,7 +1012,7 @@ public class KootPanKingThree extends Application {
             {"🇺🇸 LA",      "America/Los_Angeles", "LA"},
             {"🇧🇷 상파울루","America/Sao_Paulo",   "상파울루"},
             {"🇦🇺 시드니",  "Australia/Sydney",    "시드니"},
-        };
+		};
         for (String[] c : cities) {
             javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(c[0]);
             final String zoneStr  = c[1];
@@ -898,47 +1020,238 @@ public class KootPanKingThree extends Application {
             final String prefix   = c[2]; // 시계 날짜 prefix (한글/영문만)
             item.setOnAction(e -> openChildClock(menuName, java.time.ZoneId.of(zoneStr), prefix));
             menu.getItems().add(item);
-        }
+		}
         return menu;
-    }
-
-        // ── 세계시계 자식 창 열기 ────────────────────────────────────────────
+	}
+	
+	// ── 세계시계 자식 창 열기 ────────────────────────────────────────────
     private void openChildClock(String cityName, java.time.ZoneId zoneId, String clockPrefix) {
         // 이미 열려있으면 앞으로
         for (ChildClock existing : childClocks) {
             if (existing.cityName.equals(cityName)) {
                 existing.stage.toFront();
                 return;
-            }
-        }
+			}
+		}
         Stage childStage = new Stage();
-
+		
         // 자식 시계 메뉴 빌더 — 최소 항목만 (차임벨/카메라/YouTube 없음)
         java.util.function.Consumer<javafx.scene.control.ContextMenu> childMenu = popup -> {
             javafx.scene.control.MenuItem closeItem =
-                new javafx.scene.control.MenuItem("✕ " + cityName + " 닫기");
+			new javafx.scene.control.MenuItem("✕ " + cityName + " 닫기");
             closeItem.setOnAction(e -> childStage.close());
             popup.getItems().addAll(
-                new javafx.scene.control.SeparatorMenuItem(), closeItem);
-        };
-
+			new javafx.scene.control.SeparatorMenuItem(), closeItem);
+		};
+		
         FxGPUNeon.ClockController cc = new FxGPUNeon.ClockController(
-            childStage, startArg1, startArg2, startArg3, childMenu);
+		childStage, startArg1, startArg2, startArg3, childMenu);
         cc.start();
-
+		
         // ── 타임존 + 도시명 주입 ─────────────────────────────────────
         FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(cc);
         if (st != null) {
             st.timeZone   = zoneId;
             st.cityPrefix = clockPrefix; // 날짜 앞에 도시명 표시 (이모지 없는 한글명)
-        }
-
+		}
+		
         childStage.setOnCloseRequest(e ->
-            childClocks.removeIf(c -> c.cityName.equals(cityName)));
+		childClocks.removeIf(c -> c.cityName.equals(cityName)));
         childClocks.add(new ChildClock(childStage, cc, cityName));
-    }
+	}
+	
+	
+    private static final String POPUP_NEON_STYLE = """
+    -fx-background-color: linear-gradient(to bottom, rgba(255,105,180,0.95), rgba(255,182,193,0.92));
+    -fx-border-color: #ff5fa2;
+    -fx-border-width: 1.8;
+    -fx-background-insets: 0;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-padding: 6;
+    -fx-effect: dropshadow(gaussian, rgba(255,105,180,0.70), 24, 0.45, 0, 0);
+    """;
+	
+    private static final String MENU_ITEM_NORMAL_STYLE = """
+    -fx-text-fill: black;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-background-color: transparent;
+    """;
+	
+    private static final String MENU_ITEM_HOVER_STYLE = """
+    -fx-text-fill: black;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-background-color: linear-gradient(to right, rgba(255,255,255,0.38), rgba(255,255,255,0.12));
+    -fx-effect: dropshadow(gaussian, rgba(255,255,255,0.55), 16, 0.35, 0, 0);
+    """;
+	
+private static final String MENU_ITEM_DISABLED_STYLE = """
+    -fx-text-fill: rgba(0,0,0,0.65);
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-background-color: transparent;
+    -fx-opacity: 1.0;
+""";	
+	
+    private static final String MENU_CAPTION_STYLE = """
+    -fx-text-fill: black;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    """;
+	private static final String MENU_TITLE_STYLE = """
+    -fx-text-fill: #111111;
+    -fx-font-size: 15px;
+    -fx-font-weight: 900;
+    -fx-background-color: linear-gradient(to right, rgba(255,255,255,0.45), rgba(255,255,255,0.18));
+    -fx-background-radius: 9;
+    -fx-border-color: rgba(255,255,255,0.85);
+    -fx-border-radius: 9;
+    -fx-padding: 6 10 6 10;
+    -fx-effect: dropshadow(gaussian, rgba(255,255,255,0.55), 14, 0.30, 0, 0);
+    """;
+	private void enhancePopupMenuNeon(javafx.scene.control.ContextMenu popup) {
+		popup.setStyle(POPUP_NEON_STYLE);
+		applyNeonStylesRecursively(popup.getItems());
+		popup.setOnShown(ev -> Platform.runLater(() -> {
+			// disabled 항목 글자 흰색으로 강제 표시
+			javafx.scene.Scene sc = popup.getScene();
+			if (sc != null) {
+				String css = "data:text/css," +
+                java.net.URLEncoder.encode(
+                    ".menu-item { -fx-opacity: 1.0; }" +
+                    ".menu-item > .label { -fx-text-fill: black; }" +
+                    ".menu-item:disabled { -fx-opacity: 1.0; }" +
+                    ".menu-item:disabled > .label { -fx-text-fill: rgba(0,0,0,0.65); }" +
+                    ".menu > .label { -fx-text-fill: black; }" +
+                    ".menu > .arrow, .menu-item > .arrow { -fx-background-color: black; }",
+                    java.nio.charset.StandardCharsets.UTF_8
+				);
+				if (!sc.getStylesheets().contains(css)) {
+					sc.getStylesheets().add(css);
+				}
+			}
+			wirePopupPulseEffects(popup);
+		}));
+	}
+	
+	/*
+		private void enhancePopupMenuNeon(javafx.scene.control.ContextMenu popup) {
+        popup.setStyle(POPUP_NEON_STYLE);
+        applyNeonStylesRecursively(popup.getItems());
+        popup.setOnShown(ev -> Platform.runLater(() -> wirePopupPulseEffects(popup)));
+		}
+	*/
+    private void applyNeonStylesRecursively(java.util.List<javafx.scene.control.MenuItem> items) {
+        for (javafx.scene.control.MenuItem item : items) {
+            if (item == null) continue;
+            applyNeonStyle(item);
+            if (item instanceof javafx.scene.control.Menu subMenu) {
+                subMenu.setStyle(MENU_CAPTION_STYLE);
+                applyNeonStylesRecursively(subMenu.getItems());
+			}
+		}
+	}
+private void applyNeonStyle(javafx.scene.control.MenuItem item) {
+    if (item instanceof javafx.scene.control.SeparatorMenuItem) return;
+    if (Boolean.TRUE.equals(item.getProperties().get("popupProgramTitle"))) return;
 
-        private void addAppMenuItems(javafx.scene.control.ContextMenu popup) {
+    // 현재 상태에 맞는 초기 스타일 적용
+    item.setStyle(item.isDisable() ? MENU_ITEM_DISABLED_STYLE : MENU_ITEM_NORMAL_STYLE);
+
+    // disable 상태가 바뀔 때마다 자동으로 스타일 갱신
+    item.disableProperty().addListener((obs, wasDisabled, isNowDisabled) ->
+        item.setStyle(isNowDisabled ? MENU_ITEM_DISABLED_STYLE : MENU_ITEM_NORMAL_STYLE)
+    );
+}
+/*
+    private void applyNeonStyle(javafx.scene.control.MenuItem item) {
+        if (item instanceof javafx.scene.control.SeparatorMenuItem) return;
+        item.setStyle(MENU_ITEM_NORMAL_STYLE);
+	}
+*/	
+    private void wirePopupPulseEffects(javafx.scene.control.ContextMenu popup) {
+        for (javafx.scene.control.MenuItem item : popup.getItems()) {
+            wireMenuItemPulseRecursively(item);
+		}
+	}
+	
+    private void wireMenuItemPulseRecursively(javafx.scene.control.MenuItem item) {
+        if (item == null || item instanceof javafx.scene.control.SeparatorMenuItem) return;
+        if (Boolean.TRUE.equals(item.getProperties().get("popupProgramTitle"))) return;
+		
+        javafx.scene.Node node = item.getStyleableNode();
+        if (node != null && node.getProperties().putIfAbsent("neonPulseWired", Boolean.TRUE) == null) {
+            node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_ENTERED, e -> {
+                item.setStyle(MENU_ITEM_HOVER_STYLE);
+                startPulse(item);
+			});
+            node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> {
+                // item.setStyle(MENU_ITEM_NORMAL_STYLE);
+				item.setStyle(item.isDisable() ? MENU_ITEM_DISABLED_STYLE : MENU_ITEM_NORMAL_STYLE);
+				stopPulse(item);
+			});
+		}
+		
+        if (item instanceof javafx.scene.control.Menu subMenu) {
+            javafx.scene.Node submenuNode = subMenu.getStyleableNode();
+            if (submenuNode != null && submenuNode.getProperties().putIfAbsent("neonMenuCaptionStyled", Boolean.TRUE) == null) {
+                subMenu.setStyle(MENU_CAPTION_STYLE);
+			}
+            for (javafx.scene.control.MenuItem child : subMenu.getItems()) {
+                wireMenuItemPulseRecursively(child);
+			}
+		}
+	}
+	
+    private void startPulse(javafx.scene.control.MenuItem item) {
+        javafx.animation.ScaleTransition oldPulse =
+		(javafx.animation.ScaleTransition) item.getProperties().get("pulseTransition");
+        if (oldPulse != null) oldPulse.stop();
+		
+        javafx.scene.Node node = item.getStyleableNode();
+        if (node == null) return;
+		
+        javafx.animation.ScaleTransition pulse =
+		new javafx.animation.ScaleTransition(javafx.util.Duration.millis(560), node);
+        pulse.setFromX(1.0);
+        pulse.setFromY(1.0);
+        pulse.setToX(1.08);
+        pulse.setToY(1.08);
+        pulse.setAutoReverse(true);
+        pulse.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        pulse.play();
+        item.getProperties().put("pulseTransition", pulse);
+	}
+	
+    private void stopPulse(javafx.scene.control.MenuItem item) {
+        javafx.animation.ScaleTransition pulse =
+		(javafx.animation.ScaleTransition) item.getProperties().get("pulseTransition");
+        if (pulse != null) {
+            pulse.stop();
+            item.getProperties().remove("pulseTransition");
+		}
+		
+        javafx.scene.Node node = item.getStyleableNode();
+        if (node != null) {
+            node.setScaleX(1.0);
+            node.setScaleY(1.0);
+		}
+	}
+	
+
+	private void emphasizePopupProgramTitle(javafx.scene.control.ContextMenu popup) {
+		if (popup == null || popup.getItems().isEmpty()) return;
+		javafx.scene.control.MenuItem first = popup.getItems().get(0);
+		if (first == null || first instanceof javafx.scene.control.SeparatorMenuItem) return;
+		first.getProperties().put("popupProgramTitle", Boolean.TRUE);
+		first.setStyle(MENU_TITLE_STYLE);
+	}
+
+	private void addAppMenuItems(javafx.scene.control.ContextMenu popup) {
+		enhancePopupMenuNeon(popup);
+		restoreParentPopupTextVisible(popup);
 		
         // ── chimeController 초기화 (Stage 확정된 이후 최초 1회) ──
         if (chimeController == null) {
@@ -1521,55 +1834,59 @@ public class KootPanKingThree extends Application {
 		new javafx.scene.control.MenuItem("▶ CCTV 목록 조회 및 연결");
         cctvConnectItem.setDisable(itsCctv == null || getItsCctv().getApiKey().isEmpty());
 		
-        cctvConnectItem.setOnAction(e -> {
-            if (isChild) return;
-            ItsCctvManager mgr = getItsCctv();
-            if (mgr.getApiKey().isEmpty()) {
-                javafx.scene.control.Alert warn = new javafx.scene.control.Alert(
-				javafx.scene.control.Alert.AlertType.WARNING);
-                warn.setTitle("ITS CCTV");
-                warn.setContentText("먼저 API 키를 설정하세요.");
-                warn.showAndWait();
-                return;
-			}
-            cctvConnectItem.setDisable(true);
-            cctvConnectItem.setText("⏳ 조회 중...");
-			
-            mgr.fetchList(
-                () -> {
-                    cctvConnectItem.setDisable(false);
-                    cctvConnectItem.setText("▶ CCTV 목록 조회 및 연결");
-                    java.util.List<ItsCctvManager.CctvItem> fetched = mgr.getItems();
-                    if (fetched.isEmpty()) {
-                        javafx.scene.control.Alert warn = new javafx.scene.control.Alert(
-						javafx.scene.control.Alert.AlertType.WARNING);
-                        warn.setTitle("ITS CCTV");
-                        warn.setContentText("조회된 CCTV가 없습니다.");
-                        warn.showAndWait();
-                        return;
-					}
-                    javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
-                    ItsCctvManager.CctvItem selected =
-					showCctvSelectDialog(owner, fetched, mgr);
-                    if (selected == null) return;
-                    int idx = fetched.indexOf(selected);
-                    stopCamera();
-                    startItsCctv();
-                    mgr.select(idx);
-                    saveConfig();
-				},
-                err -> {
-                    cctvConnectItem.setDisable(false);
-                    cctvConnectItem.setText("▶ CCTV 목록 조회 및 연결");
-                    javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
-					javafx.scene.control.Alert.AlertType.ERROR);
-                    alert.setTitle("ITS CCTV 오류");
-                    alert.setContentText("CCTV 조회 실패:\n" + err
-					+ "\n\nAPI 키와 네트워크 연결을 확인하세요.");
-                    alert.showAndWait();
+		
+		
+        cctvConnectItem.setOnAction(e -> 
+			{
+				if (isChild) return;
+				ItsCctvManager mgr = getItsCctv();
+				if (mgr.getApiKey().isEmpty()) {
+					javafx.scene.control.Alert warn = new javafx.scene.control.Alert(
+					javafx.scene.control.Alert.AlertType.WARNING);
+					warn.setTitle("ITS CCTV");
+					warn.setContentText("먼저 API 키를 설정하세요.");
+					warn.showAndWait();
+					return;
 				}
-			);
-		});
+				cctvConnectItem.setDisable(true);
+				cctvConnectItem.setText("⏳ 조회 중...");
+				
+				mgr.fetchList(
+					() -> {
+						cctvConnectItem.setDisable(false);
+						cctvConnectItem.setText("▶ CCTV 목록 조회 및 연결");
+						java.util.List<ItsCctvManager.CctvItem> fetched = mgr.getItems();
+						if (fetched.isEmpty()) {
+							javafx.scene.control.Alert warn = new javafx.scene.control.Alert(
+							javafx.scene.control.Alert.AlertType.WARNING);
+							warn.setTitle("ITS CCTV");
+							warn.setContentText("조회된 CCTV가 없습니다.");
+							warn.showAndWait();
+							return;
+						}
+						javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
+						ItsCctvManager.CctvItem selected =
+						showCctvSelectDialog(owner, fetched, mgr);
+						if (selected == null) return;
+						int idx = fetched.indexOf(selected);
+						stopCamera();
+						startItsCctv();
+						mgr.select(idx);
+						saveConfig();
+					},
+					err -> {
+						cctvConnectItem.setDisable(false);
+						cctvConnectItem.setText("▶ CCTV 목록 조회 및 연결");
+						javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+						javafx.scene.control.Alert.AlertType.ERROR);
+						alert.setTitle("ITS CCTV 오류");
+						alert.setContentText("CCTV 조회 실패:\n" + err
+						+ "\n\nAPI 키와 네트워크 연결을 확인하세요.");
+						alert.showAndWait();
+					}
+				);
+			}
+		);
 		
         // ── (C) 이전 / 다음 카메라 ──────────────────────────────────────
         javafx.scene.control.MenuItem cctvPrev =
@@ -1780,9 +2097,9 @@ public class KootPanKingThree extends Application {
         if (!isChild) {
             popup.getItems().addAll(
                 buildWorldClockMenu(),
-                new javafx.scene.control.SeparatorMenuItem());
-        }
-
+			new javafx.scene.control.SeparatorMenuItem());
+		}
+		
         popup.getItems().addAll(
             centerItem,
             new javafx.scene.control.SeparatorMenuItem(),
@@ -1799,6 +2116,29 @@ public class KootPanKingThree extends Application {
             new javafx.scene.control.SeparatorMenuItem(),
             system
 		);
+		applyNeonStylesRecursively(popup.getItems());
+		restoreParentPopupTextVisible(popup);
+		emphasizePopupProgramTitle(popup);
+		enhancePopupSubMenusMacOnly(popup);
+	}
+	
+	//  addAppMenuItems *******************
+	
+	private void restoreParentPopupTextVisible(javafx.scene.control.ContextMenu popup) {
+		if (popup == null) return;
+		
+		for (MenuItem item : popup.getItems()) {
+			if (item instanceof javafx.scene.control.SeparatorMenuItem) continue;
+			if (Boolean.TRUE.equals(item.getProperties().get("popupProgramTitle"))) continue;
+			
+			String old = item.getStyle();
+			if (old == null) old = "";
+			
+			item.setStyle(old
+				+ "-fx-text-fill: black;"
+				+ "-fx-font-weight: bold;"
+				+ "-fx-opacity: 1.0;");
+		}
 	}
 	
     // ── SplashWindow ClockHostCallback용 메뉴 빌더 ──────────────
@@ -2316,6 +2656,9 @@ public class KootPanKingThree extends Application {
     void showDigitalSettingsDialog(javafx.stage.Stage owner) {
         if (clockController == null) return;
         FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+        st.neonFaceDate = pendingFaceDateNeon;
+        st.neonFaceTime = pendingDigitalNeon;
+        st.digitalNeonBlinkStyle = pendingDigitalNeonBlinkStyle;
 		
         boolean darkMode = isSystemDarkMode();
         String dlgBg      = darkMode ? "#2b2b2b" : "#ffffff";
@@ -2342,6 +2685,9 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.CheckBox dateOnOff = new javafx.scene.control.CheckBox("표시");
         dateOnOff.setSelected(st.showFaceDate);
         dateOnOff.setStyle(labelStyle);
+        javafx.scene.control.CheckBox dateNeonOn = new javafx.scene.control.CheckBox("네온 효과");
+        dateNeonOn.setSelected(st.neonFaceDate);
+        dateNeonOn.setStyle(labelStyle);
 		
         javafx.scene.control.Label dateFmtLbl = new javafx.scene.control.Label("형식");
         dateFmtLbl.setStyle(labelStyle);
@@ -2410,7 +2756,8 @@ public class KootPanKingThree extends Application {
 		
         javafx.scene.layout.GridPane dateGrid = new javafx.scene.layout.GridPane();
         dateGrid.setHgap(8); dateGrid.setVgap(6);
-        dateGrid.add(dateOnOff,    0, 0, 4, 1);
+        dateGrid.add(dateOnOff,    0, 0, 2, 1);
+        dateGrid.add(dateNeonOn,   2, 0, 2, 1);
         dateGrid.add(dateFmtLbl,   0, 1); dateGrid.add(dateFmtBox,      1, 1, 3, 1);
         dateGrid.add(dateFontLbl,  0, 2); dateGrid.add(dateFontBox,     1, 2, 3, 1);
         dateGrid.add(dateSizeLbl,  0, 3); dateGrid.add(dateSizeSpinner, 1, 3);
@@ -2426,6 +2773,9 @@ public class KootPanKingThree extends Application {
         javafx.scene.control.CheckBox timeOnOff = new javafx.scene.control.CheckBox("표시");
         timeOnOff.setSelected(st.showDigital);
         timeOnOff.setStyle(labelStyle);
+        javafx.scene.control.CheckBox timeNeonOn = new javafx.scene.control.CheckBox("네온 효과");
+        timeNeonOn.setSelected(st.neonFaceTime);
+        timeNeonOn.setStyle(labelStyle);
 		
         javafx.scene.control.Label timeFmtLbl = new javafx.scene.control.Label("형식");
         timeFmtLbl.setStyle(labelStyle);
@@ -2495,7 +2845,8 @@ public class KootPanKingThree extends Application {
 		
         javafx.scene.layout.GridPane timeGrid = new javafx.scene.layout.GridPane();
         timeGrid.setHgap(8); timeGrid.setVgap(6);
-        timeGrid.add(timeOnOff,    0, 0, 4, 1);
+        timeGrid.add(timeOnOff,    0, 0, 2, 1);
+        timeGrid.add(timeNeonOn,   2, 0, 2, 1);
         timeGrid.add(timeFmtLbl,   0, 1); timeGrid.add(timeFmtBox,      1, 1, 3, 1);
         timeGrid.add(timeFontLbl,  0, 2); timeGrid.add(timeFontBox,     1, 2, 3, 1);
         timeGrid.add(timeSizeLbl,  0, 3); timeGrid.add(timeSizeSpinner, 1, 3);
@@ -2503,12 +2854,35 @@ public class KootPanKingThree extends Application {
         timeGrid.add(scrollLbl,    0, 4); timeGrid.add(dirRow,          1, 4, 3, 1);
         timeGrid.add(speedLbl,     0, 5);
         timeGrid.add(new javafx.scene.layout.HBox(6, speedSlider, speedVal), 1, 5, 3, 1);
+
+        // ═══════════════════════ 디지탈 네온 점멸 ══════════════════════
+        javafx.scene.control.Label blinkHeader = new javafx.scene.control.Label("● 디지탈 네온 점멸");
+        blinkHeader.setStyle(headerStyle);
+        javafx.scene.control.ToggleGroup blinkGroup = new javafx.scene.control.ToggleGroup();
+        javafx.scene.control.RadioButton blinkNone   = new javafx.scene.control.RadioButton("없음 (항상 켜짐)");
+        javafx.scene.control.RadioButton blinkPulse  = new javafx.scene.control.RadioButton("부드러운 맥박");
+        javafx.scene.control.RadioButton blinkSharp  = new javafx.scene.control.RadioButton("날카로운 깜빡임");
+        javafx.scene.control.RadioButton blinkRandom = new javafx.scene.control.RadioButton("불규칙 깜빡임");
+        for (javafx.scene.control.RadioButton rb :
+                new javafx.scene.control.RadioButton[]{blinkNone, blinkPulse, blinkSharp, blinkRandom}) {
+            rb.setToggleGroup(blinkGroup);
+            rb.setStyle(labelStyle);
+        }
+        switch (st.digitalNeonBlinkStyle) {
+            case PULSE -> blinkPulse.setSelected(true);
+            case SHARP -> blinkSharp.setSelected(true);
+            case RANDOM -> blinkRandom.setSelected(true);
+            default -> blinkNone.setSelected(true);
+        }
+        javafx.scene.layout.HBox blinkRow1 = new javafx.scene.layout.HBox(14, blinkNone, blinkPulse);
+        javafx.scene.layout.HBox blinkRow2 = new javafx.scene.layout.HBox(14, blinkSharp, blinkRandom);
 		
         // ═══════════════════════ 즉시 적용 로직 ══════════════════════
         // 확인 버튼 누르기 전이라도 값 변경 시 AppState에 즉시 반영 + 화면 갱신
         Runnable applyNow = () -> {
             // 날짜
             st.showFaceDate        = dateOnOff.isSelected();
+            st.neonFaceDate      = dateNeonOn.isSelected();
             st.faceDateFormatIndex = dateFmtBox.getSelectionModel().getSelectedIndex();
             if (dateFontBox.getValue() != null) st.faceDateFontFamily = dateFontBox.getValue();
             st.faceDateFontSize    = dateSizeSpinner.getValue();
@@ -2525,6 +2899,7 @@ public class KootPanKingThree extends Application {
             st.faceDatePingPongDir  = 1;
             // 시분초
             st.showDigital        = timeOnOff.isSelected();
+            st.neonFaceTime     = timeNeonOn.isSelected();
             st.digitalFormatIndex = timeFmtBox.getSelectionModel().getSelectedIndex();
             if (timeFontBox.getValue() != null) st.digitalFontFamily = timeFontBox.getValue();
             st.digitalFontSize    = timeSizeSpinner.getValue();
@@ -2540,6 +2915,10 @@ public class KootPanKingThree extends Application {
             st.digitalScrollOffset = Double.NaN;
             st.faceScrollOffset    = Double.NaN;
             st.facePingPongDir     = 1;
+            if (blinkPulse.isSelected()) st.digitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.PULSE;
+            else if (blinkSharp.isSelected()) st.digitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.SHARP;
+            else if (blinkRandom.isSelected()) st.digitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.RANDOM;
+            else st.digitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.NONE;
             // 화면 즉시 반영 — 개별 showDigital/showFaceDate 값을 그대로 사용
             // (setDigitalState 호출 금지: 둘을 같은 값으로 덮어쓰므로)
             FxGPUNeon.ClockController.applyDigitalSettings(clockController);
@@ -2550,6 +2929,7 @@ public class KootPanKingThree extends Application {
 		
         // 모든 컨트롤에 즉시 적용 리스너
         dateOnOff.setOnAction(e -> applyNow.run());
+        dateNeonOn.setOnAction(e -> applyNow.run());
         dateFmtBox.getSelectionModel().selectedIndexProperty()
 		.addListener((o,ov,nv) -> applyNow.run());
         dateFontBox.getSelectionModel().selectedItemProperty()
@@ -2560,6 +2940,7 @@ public class KootPanKingThree extends Application {
         dateSpeedSlider.valueProperty().addListener((o,ov,nv) -> applyNow.run());
 		
         timeOnOff.setOnAction(e -> applyNow.run());
+        timeNeonOn.setOnAction(e -> applyNow.run());
         timeFmtBox.getSelectionModel().selectedIndexProperty()
 		.addListener((o,ov,nv) -> applyNow.run());
         timeFontBox.getSelectionModel().selectedItemProperty()
@@ -2568,6 +2949,7 @@ public class KootPanKingThree extends Application {
         timeColorPicker.valueProperty().addListener((o,ov,nv) -> applyNow.run());
         dirGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
         speedSlider.valueProperty().addListener((o,ov,nv) -> applyNow.run());
+        blinkGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
 		
         // ═══════════════════════ 버튼 행 ══════════════════════════
         javafx.scene.control.Button okBtn     = new javafx.scene.control.Button("확인");
@@ -2594,6 +2976,8 @@ public class KootPanKingThree extends Application {
             new javafx.scene.control.Separator(),
             timeHeader, timeGrid,
             new javafx.scene.control.Separator(),
+            blinkHeader, blinkRow1, blinkRow2,
+            new javafx.scene.control.Separator(),
             btnRow
 		);
 		
@@ -2611,6 +2995,8 @@ public class KootPanKingThree extends Application {
         config.setProperty("digital.fontFamily",  st.digitalFontFamily);
         config.setProperty("digital.fontSize",    String.valueOf((int) st.digitalFontSize));
         config.setProperty("digital.colorRgb",    String.valueOf(st.digitalColorRgb));
+        config.setProperty("digital.neon",        String.valueOf(st.neonFaceTime));
+        config.setProperty("digital.neonBlinkStyle", String.valueOf(st.digitalNeonBlinkStyle));
         config.setProperty("digital.scrollDir",   String.valueOf(st.digitalScrollDir));
         config.setProperty("digital.scrollSpeed", String.valueOf(st.digitalScrollSpeed));
         config.setProperty("faceDate.show",        String.valueOf(st.showFaceDate));
@@ -2618,6 +3004,7 @@ public class KootPanKingThree extends Application {
         config.setProperty("faceDate.fontFamily",  st.faceDateFontFamily);
         config.setProperty("faceDate.fontSize",    String.valueOf((int) st.faceDateFontSize));
         config.setProperty("faceDate.colorRgb",    String.valueOf(st.faceDateColorRgb));
+        config.setProperty("faceDate.neon",       String.valueOf(st.neonFaceDate));
         // Bug7: 날짜 스크롤 저장
         config.setProperty("faceDate.scrollDir",   String.valueOf(st.faceDateScrollDir));
         config.setProperty("faceDate.scrollSpeed", String.valueOf(st.faceDateScrollSpeed));
@@ -3708,7 +4095,7 @@ public class KootPanKingThree extends Application {
         tgMain.sendShutdownNoticeSync(); // 종료 알림 1회
         gmail.sendShutdownNoticeSync();
 	}
-
+	
     public static void main(String[] args) {
         AppLogger.init();
         AppLogger.writeToFile("[ " + thisProgramName + " ] [main] 시작");

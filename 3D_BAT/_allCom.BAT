@@ -19,5 +19,7 @@ CALL  %BAT_DIR%\0Com_TelegramBot.BAT
 CALL  %BAT_DIR%\5Com_FxGPUNeon.BAT
 CALL  %BAT_DIR%\0Com_BackgroundPlayer.BAT
 CALL  %BAT_DIR%\0Com_FxSplashWindow.BAT
+rem   CALL  %BAT_DIR%\0Com_AppPopupMenuBuilder
 CALL  %BAT_DIR%\5Com_KootPanKingThree.BAT
+CALL  %BAT_DIR%\0Com_AppPopupMenuBuilder
 ECHO  ALL  COMPLETED

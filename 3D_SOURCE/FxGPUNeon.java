@@ -990,6 +990,8 @@ public class FxGPUNeon {
         double digitalFontSize   = 50.0;   // 기본 크기
         /** 시분초 글자 색 (0xAARRGGBB) */
         int digitalColorRgb = 0xFFFFFFFF;
+        /** 시분초 네온 효과 ON/OFF */
+        boolean neonFaceTime = false;
         /** 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
         int digitalScrollDir = 3;          // 핑퐁
         /** 핑퐁 전용 이동 방향 */
@@ -1024,6 +1026,9 @@ public class FxGPUNeon {
         double faceDateFontSize = 60.0;    // 기본 크기
         /** 날짜 글자 색 (0xAARRGGBB) */
         int faceDateColorRgb = 0xFF003333; // #003333 진한 청록
+        /** 날짜 네온 효과 ON/OFF */
+        boolean neonFaceDate = false;
+        NeonBlinkStyle digitalNeonBlinkStyle = NeonBlinkStyle.NONE;
 
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
@@ -1635,6 +1640,11 @@ public class FxGPUNeon {
             return -(AppState.BASE_COIN_HEIGHT * 0.5 + 7.2 + thickness * 0.5 + 1.0);
         }
 
+        /** 날짜/시분초 디지탈 패널은 손 네온보다 앞, 베젤보다 뒤에 둔다. */
+        private double digitalFrontZ() {
+            return -20.15;
+        }
+
         /**
          * 코인 앞면에 날짜(상단)·시간(하단)을 표시하는 두 개의 Box를 생성.
          * buildAll() / numberHeightScale 변경 시 호출. coinGroup 에 추가.
@@ -1647,7 +1657,7 @@ public class FxGPUNeon {
 
             double r = AppState.BASE_COIN_RADIUS;
             // 텍스트 패널 Z: 시계 앞면(-9.45)보다 앞에 배치해 가려지지 않게 함
-            final double textPanelZ = -(AppState.BASE_COIN_HEIGHT * 0.5 + 0.45) - 0.5; // ≈ -9.95
+            final double textPanelZ = digitalFrontZ();
 
             double bW    = r * 0.90;
             double dateH = r * 0.18;
@@ -1722,7 +1732,7 @@ public class FxGPUNeon {
          */
         void updateFaceDateTimeZ() {
             if (faceDateBox == null || faceTimeBox == null) return;
-            final double textPanelZ = -(AppState.BASE_COIN_HEIGHT * 0.5 + 0.45) - 0.5;
+            final double textPanelZ = digitalFrontZ();
             faceDateBox.setTranslateZ(textPanelZ);
             faceTimeBox.setTranslateZ(textPanelZ);
         }
@@ -1784,6 +1794,124 @@ public class FxGPUNeon {
             }
         }
 
+        private double computeBlinkOpacity(AppState.NeonBlinkStyle style) {
+            switch (style) {
+                case NONE -> { return 1.0; }
+                case PULSE -> {
+                    state.neonFlickerPhase += state.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
+                    if (state.neonFlickerPhase >= 2.0 * Math.PI) state.neonFlickerPhase -= 2.0 * Math.PI;
+                    double wave = 0.5 + 0.5 * Math.sin(state.neonFlickerPhase);
+                    return AppState.clamp(1.0 - state.neonFlickerDepth * (1.0 - wave), 0.0, 1.0);
+                }
+                case SHARP -> {
+                    state.neonFlickerPhase += state.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
+                    if (state.neonFlickerPhase >= 2.0 * Math.PI) state.neonFlickerPhase -= 2.0 * Math.PI;
+                    double norm = state.neonFlickerPhase / (2.0 * Math.PI);
+                    return (norm < 0.70) ? 1.0 : AppState.clamp(1.0 - state.neonFlickerDepth, 0.0, 1.0);
+                }
+                case RANDOM -> {
+                    if (state.neonRandomCounter <= 0) {
+                        state.neonRandomOn = !state.neonRandomOn;
+                        int base = (int) (60.0 / Math.max(0.2, state.neonFlickerSpeed));
+                        if (state.neonRandomOn) state.neonRandomCounter = base + (int) (Math.random() * base);
+                        else state.neonRandomCounter = Math.max(1, base / 4 + (int) (Math.random() * base / 4));
+                    }
+                    state.neonRandomCounter--;
+                    return state.neonRandomOn ? 1.0 : AppState.clamp(1.0 - state.neonFlickerDepth, 0.0, 1.0);
+                }
+                default -> { return 1.0; }
+            }
+        }
+
+        private javafx.scene.paint.Color neonCoreColor(javafx.scene.paint.Color base) {
+            double maxc = Math.max(base.getRed(), Math.max(base.getGreen(), base.getBlue()));
+            if (maxc < 0.35) {
+                // 아주 어두운 색(#003333 등)은 그대로 쓰면 네온이 거의 안 보인다.
+                return javafx.scene.paint.Color.color(
+                    Math.min(1.0, base.getRed()   * 0.35 + 0.70),
+                    Math.min(1.0, base.getGreen() * 0.35 + 0.88),
+                    Math.min(1.0, base.getBlue()  * 0.35 + 0.88),
+                    1.0
+                );
+            }
+            return javafx.scene.paint.Color.color(
+                Math.min(1.0, base.getRed()   * 0.55 + 0.52),
+                Math.min(1.0, base.getGreen() * 0.55 + 0.52),
+                Math.min(1.0, base.getBlue()  * 0.55 + 0.52),
+                1.0
+            );
+        }
+
+        private javafx.scene.paint.Color mixColor(
+                javafx.scene.paint.Color a,
+                javafx.scene.paint.Color b,
+                double t,
+                double alpha) {
+            double u = AppState.clamp(t, 0.0, 1.0);
+            return javafx.scene.paint.Color.color(
+                a.getRed()   * (1.0 - u) + b.getRed()   * u,
+                a.getGreen() * (1.0 - u) + b.getGreen() * u,
+                a.getBlue()  * (1.0 - u) + b.getBlue()  * u,
+                alpha
+            );
+        }
+
+        private void drawFaceTextWithOptionalNeon(
+                javafx.scene.canvas.GraphicsContext gc,
+                String text,
+                double x,
+                double y,
+                javafx.scene.text.TextAlignment align,
+                javafx.scene.paint.Color color,
+                boolean neonOn) {
+            gc.setTextAlign(align);
+
+            if (!neonOn) {
+                gc.setFill(color);
+                gc.fillText(text, x, y);
+                return;
+            }
+
+            double blink = computeBlinkOpacity(state.digitalNeonBlinkStyle);
+            javafx.scene.paint.Color core = neonCoreColor(color);
+
+            // 네온이 켜지면 중심 텍스트 자체도 밝아져야 점멸이 눈에 들어온다.
+            double fillMix = 0.58 + 0.42 * blink;
+            javafx.scene.paint.Color fillColor = mixColor(color, core, fillMix, 1.0);
+            javafx.scene.paint.Color lineColor = mixColor(color, core, 0.82 + 0.18 * blink, 1.0);
+
+            javafx.scene.effect.DropShadow outerGlow = new javafx.scene.effect.DropShadow(
+                javafx.scene.effect.BlurType.GAUSSIAN,
+                javafx.scene.paint.Color.color(core.getRed(), core.getGreen(), core.getBlue(), 0.42 * blink),
+                5.5,
+                0.35,
+                0, 0
+            );
+            javafx.scene.effect.DropShadow innerGlow = new javafx.scene.effect.DropShadow(
+                javafx.scene.effect.BlurType.GAUSSIAN,
+                javafx.scene.paint.Color.color(core.getRed(), core.getGreen(), core.getBlue(), 0.90 * blink),
+                2.2,
+                0.18,
+                0, 0
+            );
+            innerGlow.setInput(outerGlow);
+
+            gc.setEffect(innerGlow);
+            gc.setStroke(lineColor);
+            gc.setLineWidth(0.95);
+            gc.strokeText(text, x, y);
+            gc.setFill(fillColor);
+            gc.fillText(text, x, y);
+            gc.setEffect(null);
+
+            // 코어 라인을 한 번 더 얇게 덮어 네온 튜브 중심선을 또렷하게 만든다.
+            gc.setStroke(mixColor(core, javafx.scene.paint.Color.WHITE, 0.35, 0.95));
+            gc.setLineWidth(0.36);
+            gc.strokeText(text, x, y);
+            gc.setFill(fillColor);
+            gc.fillText(text, x, y);
+        }
+
         // Bug4: renderFaceText / renderFaceTimeScrolled 에서 매 프레임 Canvas 를 생성하면
         // GC 부담이 크다. 크기가 동일하면 같은 Canvas 인스턴스를 재사용한다.
         private javafx.scene.canvas.Canvas _dateCachedCanvas  = null;
@@ -1841,9 +1969,13 @@ public class FxGPUNeon {
                 gc.setTextAlign(TextAlignment.LEFT);
             }
 
-            // 그림자 없음 — 글자만 직접 렌더링
-            gc.setFill(col);
-            gc.fillText(text, drawX, H / 2.0);
+            // 얇은 네온 + 본문 렌더링
+            drawFaceTextWithOptionalNeon(
+                gc, text, drawX, H / 2.0,
+                state.faceDateScrollDir == 0 ? javafx.scene.text.TextAlignment.CENTER : javafx.scene.text.TextAlignment.LEFT,
+                col,
+                state.neonFaceDate
+            );
 
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
@@ -1908,9 +2040,13 @@ public class FxGPUNeon {
                 gc.setTextAlign(TextAlignment.LEFT);
             }
 
-            // 그림자 없음 — 글자만 직접 렌더링
-            gc.setFill(col);
-            gc.fillText(text, drawX, texH / 2.0);
+            // 얇은 네온 + 본문 렌더링
+            drawFaceTextWithOptionalNeon(
+                gc, text, drawX, texH / 2.0,
+                state.digitalScrollDir == 0 ? javafx.scene.text.TextAlignment.CENTER : javafx.scene.text.TextAlignment.LEFT,
+                col,
+                state.neonFaceTime
+            );
 
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
