@@ -148,7 +148,7 @@ public class TelegramBot {
 	// ── 폴링 시작 / 중지 ─────────────────────────────────────────
     /** 폴링 시작. 어느 스레드에서든 호출 가능. */
     public void startPolling() {
-        System.out.println("[TelegramBot] startPolling() : before");
+        // System.out.println("[TelegramBot] startPolling() : before");
         stopPolling(); // 기존 스케줄러 정리
 		if (botToken.isEmpty()){
 			System.out.println("[TelegramBot] botToken.isEmpty()");
@@ -166,13 +166,13 @@ public class TelegramBot {
             return t;
 		});
         pollScheduler.scheduleAtFixedRate(() -> {
-	        System.out.println("[TelegramBot] pollScheduler.scheduleAtFixedRate ");
+	        // System.out.println("[TelegramBot] pollScheduler.scheduleAtFixedRate ");
             try { poll(); }
             catch (Exception e) {
                 System.out.println("[Telegram] 폴링 예외: " + e.getMessage());
 			}
 		}, 0, 5, TimeUnit.SECONDS);
-        System.out.println("[Telegram] 폴링 시작 (5초 간격)");
+        // System.out.println("[Telegram] 폴링 시작 (5초 간격)");
 	}
     /** 폴링 중지. 어느 스레드에서든 호출 가능. */
     public void stopPolling() {

@@ -5,10 +5,12 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-public class KootPanKingThree extends Application {
+public class KootPanKingThree  {
 	// public static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
     // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     // public static Properties config = new Properties();
+    public static MainWindow mainWindow ;	
+	
     public static IniController iniController ;
 	public static String APP_DIR = "";
 	public static String SETTINGS_DIR = IniController.getDefaultSettingsDir();
@@ -25,6 +27,7 @@ public class KootPanKingThree extends Application {
 	public static KootPanKingThreeApp app ;
 	public static Kakao kakao = new Kakao();
 	
+	/*
 	@Override
     public void start(Stage stage) {
 		System.out.println("[start(Stage stage)-------000]");
@@ -33,6 +36,7 @@ public class KootPanKingThree extends Application {
         this.app.startInstance(stage, getParameters().getRaw());
 		System.out.println("[start(Stage stage)-------999]");
 	}
+	*/
 	private static void showStartupScheduleTextLater() {
 		new Thread(() -> {
 			try {
@@ -243,7 +247,7 @@ public class KootPanKingThree extends Application {
 		KakaoSetup();
 		try {
 			System.out.println("[(Application.launch)-------000]");
-			Application.launch(KootPanKingThree.class, args);
+			Application.launch(MainWindow.class);
 			System.out.println("[(Application.launch)-------999]");
 			} finally {
 			System.out.println("[Launcher] bye bye");

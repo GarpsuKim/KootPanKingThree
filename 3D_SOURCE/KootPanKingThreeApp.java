@@ -128,7 +128,7 @@ public class KootPanKingThreeApp {
 	
 	private static final String thisProgramName = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
 	
-	private FxSplashWindow splashWindow; // 인스턴스별 메인 윈도우
+	private MainWindow mainWindow; // 인스턴스별 메인 윈도우
 	
     // AlarmController alarmController;
     private Properties config = new Properties();
@@ -156,17 +156,7 @@ public class KootPanKingThreeApp {
     private String theCityName = "Local";
 	
     // ── 세계시계 자식 창 목록 ─────────────────────────────────────────
-    private class ChildClock {
-        final Stage stage;
-        final FxGPUNeon.ClockController controller;
-        final String cityName;
-        ChildClock(Stage s, FxGPUNeon.ClockController c, String n) {
-            stage = s; controller = c; cityName = n;
-			theCityName = cityName;
-			System.out.println ("■[ChildClock]");
-		}
-	}
-    private final java.util.List<ChildClock> childClocks = new java.util.ArrayList<>();
+    private final java.util.Map<String, Stage> childStages = new java.util.LinkedHashMap<>();
     private String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
 	
     // ── 스마트폰 카메라 ────────────────────────────────────────────
@@ -498,7 +488,7 @@ public class KootPanKingThreeApp {
             showNumbers = Boolean.parseBoolean(config.getProperty("showNumbers", "true"));
             theme = config.getProperty("theme", "Light");
             opacity = Float.parseFloat(config.getProperty("opacity", "1.0"));
-            theCityName = config.getProperty("cityName", "Local");
+            // theCityName = config.getProperty("cityName", "Local");
             String tz = config.getProperty("timeZone", "local");
             timeZone = tz.equals("local") ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(tz);
             showInterval = Integer.parseInt(config.getProperty("showInterval", "0"));
@@ -658,6 +648,39 @@ public class KootPanKingThreeApp {
 				);
 			}
 		} catch (Exception ignored) {}
+		
+		if (clockController != null) {
+			applyCityContextToClock(null);
+		}
+	}
+	
+	
+    private void applyCityContextToClock(String clockPrefix) {
+        if (clockController == null) return;
+		
+        FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+        if (st == null) return;
+		
+        st.timeZone = (this.timeZone != null)
+		? this.timeZone
+		: java.time.ZoneId.systemDefault();
+		
+        if (clockPrefix != null && !clockPrefix.trim().isEmpty()) {
+            st.cityPrefix = clockPrefix.trim();
+			} else if (theCityName != null && !"Local".equalsIgnoreCase(theCityName.trim())) {
+            st.cityPrefix = theCityName.trim();
+			} else {
+            st.cityPrefix = "";
+		}
+		
+        this.timeZone = st.timeZone;
+        this.theCityName = (st.cityPrefix == null || st.cityPrefix.trim().isEmpty())
+		? "Local"
+		: st.cityPrefix.trim();
+		
+        System.out.println("[applyCityContextToClock] theCityName = [" + theCityName + "]");
+        System.out.println("[applyCityContextToClock] timeZone = [" + st.timeZone + "]");
+        System.out.println("[applyCityContextToClock] cityPrefix = [" + st.cityPrefix + "]");
 	}
 	
     void saveConfig() {
@@ -672,8 +695,20 @@ public class KootPanKingThreeApp {
 			config.setProperty("showNumbers", String.valueOf(showNumbers));
 			config.setProperty("theme", theme);
 			config.setProperty("opacity", String.valueOf(opacity));
-			config.setProperty("cityName", theCityName);
-			config.setProperty("timeZone", timeZone.getId());
+			// config.setProperty("cityName", theCityName);
+			
+			// ★ 저장은 앱 필드가 아니라 실제 시계 상태(AppState) 기준으로 한다.
+			java.time.ZoneId saveZone = timeZone;
+			if (clockController != null) {
+				FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+				if (st != null && st.timeZone != null) {
+					saveZone = st.timeZone;
+				}
+			}
+			config.setProperty("timeZone", saveZone.getId());
+			
+			System.out.println("[saveConfig] theCityName = [" + theCityName + "]");
+			System.out.println("[saveConfig] saveZone = [" + saveZone + "]");
 			config.setProperty("showInterval", String.valueOf(showInterval));
 			config.setProperty("animInterval", String.valueOf(animInterval));
 			config.setProperty("fontName", numberFont.getFamily());
@@ -813,30 +848,35 @@ public class KootPanKingThreeApp {
 	}
 	public void startInstance(Stage stage, java.util.List<String> rawArgs) {
 		
-		System.out.println ("■[startInstance]");
+		System.out.println ("■[startInstance]1");
+		System.out.println ("■[startInstance]2");
+		System.out.println ("■[startInstance]3");
+		System.out.println ("■[startInstance]4");
+		System.out.println ("■[startInstance]5");
 		
         String arg1 = rawArgs.size() > 0 ? rawArgs.get(0) : "default1";
         String arg2 = rawArgs.size() > 1 ? rawArgs.get(1) : "default2";
         String arg3 = rawArgs.size() > 2 ? rawArgs.get(2) : "default3";
         startArg1 = arg1; startArg2 = arg2; startArg3 = arg3; // openChildClock()에서 재사용
 		
-        // ── 1. SplashWindow 생성 (시계보다 먼저) ─────────────────
-        Stage splashStage = new Stage();
-        splashWindow = new FxSplashWindow(splashStage);
-        splashWindow.log(thisProgramName + " 초기화 중...");
+        // ── 1. mainWindow 생성 (시계보다 먼저) ─────────────────
+        // Stage mainStage = new Stage();
+        // mainWindow = new MainWindow(mainStage);
+        // mainWindow.log(thisProgramName + " 초기화 중...");
 		
         // ── 2. 시계 생성 ─────────────────────────────────────────
         clockController =
 		new FxGPUNeon.ClockController(stage, arg1, arg2, arg3, this::addAppMenuItems);
         clockController.start();
+        applyCityContextToClock(null);
 		
         // ── 3. 디지탈 시계 더블클릭 → 설정 다이얼로그 ────────────
         clockController.setOnDigitalSettingsRequest(() ->
             Platform.runLater(() ->
 			showDigitalSettingsDialog((javafx.stage.Stage) stage)));
-			
+/*			
 			// ── 4. ClockHostCallback 주입 ─────────────────────────────
-			splashWindow.setClockHost(new FxSplashWindow.ClockHostCallback() {
+			mainWindow.setClockHost(new MainWindow.ClockHostCallback() {
 				
 				@Override public javafx.scene.control.Menu buildGlobalMenu() {
 					return buildWorldClockMenu();
@@ -918,11 +958,16 @@ public class KootPanKingThreeApp {
 				@Override public void moveToTopRight() { resetToCenter(); }
 			});
 			
-			splashWindow.log("시계 초기화 완료.");
+*/
+if (mainWindow != null) {
+				if (mainWindow != null) {
+				mainWindow.log("시계 초기화 완료.");
+			}
+			}
 	}
 	
     /** 앱 제어 메뉴 항목을 팝업에 추가 — KootPanKingThree 전담 */
-    /** 세계시계 서브메뉴 — popup과 SplashWindow 양쪽에서 공유 */
+    /** 세계시계 서브메뉴 — popup과 mainWindow 양쪽에서 공유 */
     private javafx.scene.control.Menu buildWorldClockMenu() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("🌍 세계시계");
         // {메뉴 표시명, ZoneId, 시계 날짜 prefix (이모지 없음 — Canvas 렌더 호환)}
@@ -956,49 +1001,41 @@ public class KootPanKingThreeApp {
 	
 	// ── 세계시계 자식 창 열기 ────────────────────────────────────────────
     private void openChildClock(String cityName, java.time.ZoneId zoneId, String clockPrefix) {
-        for (ChildClock existing : childClocks) {
-            if (existing.cityName.equals(cityName)) {
-                existing.stage.toFront();
-                return;
-			}
-		}
-		System.out.println ("■[openChildClock]-1");
+		System.out.println("■[openChildClock]-1");
+		System.out.println("cityName = [" + cityName + "]");
+		System.out.println("ZoneId = [" + zoneId + "]");
+		System.out.println("clockPrefix = [" + clockPrefix + "]");
+
+        Stage existingStage = childStages.get(cityName);
+        if (existingStage != null) {
+            existingStage.toFront();
+            existingStage.requestFocus();
+            return;
+        }
+
         Stage childStage = new Stage();
-        String safeName = cityName.replaceAll("[\\/:*?\"<>|\s]+", "_");
+        String safeName = cityName.replaceAll("[\\/:*?\"<>|\\s]+", "_");
         String childConfigFile = SETTINGS_DIR + "clock_settings_" + safeName + ".ini";
-		theCityName = cityName;
-		
+
         java.io.File childIni = new java.io.File(childConfigFile);
         if (!childIni.exists()) {
             saveConfig();
             java.util.Properties copy = new java.util.Properties();
             copy.putAll(this.config);
-            copy.setProperty("cityName", cityName);
+            copy.setProperty("cityName", clockPrefix);
             copy.setProperty("timeZone", zoneId.getId());
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(childIni)) {
                 copy.store(fos, "KootPanKingThree Child Settings");
-				} catch (Exception ex) {
+            } catch (Exception ex) {
                 AppLogger.logException(ex);
-			}
-		}
-		
-        KootPanKingThreeApp childApp = new KootPanKingThreeApp(childConfigFile, cityName, zoneId);
+            }
+        }
+
+        KootPanKingThreeApp childApp = new KootPanKingThreeApp(childConfigFile, clockPrefix, zoneId);
         childApp.startInstance(childStage, java.util.Arrays.asList(startArg1, startArg2, startArg3));
-		
-        if (childApp.clockController != null) {
-            FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(childApp.clockController);
-            if (st != null) {
-                st.timeZone = zoneId;
-                st.cityPrefix = clockPrefix;
-			}
-		}
-		
-        childStage.setOnCloseRequest(e -> {
-			System.out.println(" cityName = [" + cityName + "]");
-			System.out.println(" theCityName = [" + theCityName + "]");
-		childClocks.removeIf(c -> c.cityName.equals(cityName));});
-		
-        childClocks.add(new ChildClock(childStage, childApp.clockController, cityName));
+
+        childStages.put(cityName, childStage);
+        childStage.setOnCloseRequest(e -> childStages.remove(cityName));
 	}  //  openChildClock
 	
 	
@@ -2114,9 +2151,9 @@ public class KootPanKingThreeApp {
         javafx.scene.control.MenuItem mainWindowItem =
 		new javafx.scene.control.MenuItem("MainWindow");
         mainWindowItem.setOnAction(e -> {
-            if (splashWindow != null) {
-                splashWindow.getStage().show();
-                splashWindow.getStage().toFront();
+            if (mainWindow != null) {
+                mainWindow.getStage().show();
+                mainWindow.getStage().toFront();
 			}
 		});
 		
@@ -2144,7 +2181,7 @@ public class KootPanKingThreeApp {
 				clockController.getStage().close();
 			}
 			
-            if (splashWindow != null) splashWindow.getStage().hide();
+            if (mainWindow != null) mainWindow.getStage().hide();
 		});
 		
         javafx.scene.control.MenuItem restartItem = new javafx.scene.control.MenuItem("Restart");
@@ -2193,8 +2230,8 @@ public class KootPanKingThreeApp {
 		}
 	}
 	
-    // ── SplashWindow ClockHostCallback용 메뉴 빌더 ──────────────
-    /** Gmail/Calendar 메뉴 — FxSplashWindow ClockHostCallback 에서 호출 */
+    // ── mainWindow ClockHostCallback용 메뉴 빌더 ──────────────
+    /** Gmail/Calendar 메뉴 — MainWindow ClockHostCallback 에서 호출 */
     private javafx.scene.control.Menu buildGmailMenu() {
         javafx.scene.control.Menu menu =
 		new javafx.scene.control.Menu("📧 Gmail / Calendar");
@@ -2227,7 +2264,7 @@ public class KootPanKingThreeApp {
         return menu;
 	}
 	
-    /** 카카오톡 메뉴 — FxSplashWindow ClockHostCallback 에서 호출 */
+    /** 카카오톡 메뉴 — MainWindow ClockHostCallback 에서 호출 */
     private javafx.scene.control.Menu buildKakaoMenuFx() {
         javafx.scene.control.Menu menu =
 		new javafx.scene.control.Menu("카카오톡...");
@@ -2238,7 +2275,7 @@ public class KootPanKingThreeApp {
         return menu;
 	}
 	
-    /** 텔레그램 메뉴 — FxSplashWindow ClockHostCallback 에서 호출 */
+    /** 텔레그램 메뉴 — MainWindow ClockHostCallback 에서 호출 */
     private javafx.scene.control.Menu buildTelegramMenuFx() {
         javafx.scene.control.Menu menu =
 		new javafx.scene.control.Menu("텔레그램");
@@ -2247,12 +2284,12 @@ public class KootPanKingThreeApp {
         javafx.scene.control.MenuItem help =
 		new javafx.scene.control.MenuItem("텔레그램 설정 안내");
         settings.setOnAction(e -> {
-            if (splashWindow != null)
-			tg.showTelegramDialog(splashWindow.getStage());
+            if (mainWindow != null)
+			tg.showTelegramDialog(mainWindow.getStage());
 		});
         help.setOnAction(e -> {
-            if (splashWindow != null)
-			tg.showTelegramHelp(splashWindow.getStage());
+            if (mainWindow != null)
+			tg.showTelegramHelp(mainWindow.getStage());
 		});
         menu.getItems().addAll(settings, help);
         return menu;

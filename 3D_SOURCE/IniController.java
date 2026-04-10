@@ -34,7 +34,7 @@ public final class IniController {
         this.appDir = appDir;
         this.settingsDir = settingsDir;
         this.configFilePath = configFilePath;
-        this.cityName = cityName != null ? cityName : "";
+        this.cityName = cityName != null ? cityName : "Local";
         System.out.println("[IniController] appDir = [" + appDir + "]");    
         System.out.println("[IniController] settingsDir = [" + settingsDir + "]");    
         System.out.println("[IniController] configFilePath = [" + configFilePath + "]");    
