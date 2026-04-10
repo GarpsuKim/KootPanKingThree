@@ -1,2 +1,2 @@
 @echo off
-call "%~dp0com.bat" BackgroundPlayer
+call "%~dp0com.bat" BackgroundPlayer  -Xlint

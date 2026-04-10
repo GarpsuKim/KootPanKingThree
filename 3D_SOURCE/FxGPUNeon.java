@@ -3405,7 +3405,9 @@ public class FxGPUNeon {
             // 항상 primary 모니터 중앙으로 먼저 이동했다가 튀어오는 현상이 발생한다.
             // owner 없이 alwaysOnTop만 유지하면 위치를 show() 이전에 자유롭게 지정할 수 있다.
             s.setAlwaysOnTop(true);
-            s.setResizable(false);
+            s.setResizable(true);
+            s.setMinWidth(980);
+            s.setMinHeight(860);
             s.setTitle("KootPanKingThree 설정");
 			
             VBox root = new VBox(8);
@@ -3670,6 +3672,8 @@ public class FxGPUNeon {
 			});
             root.getChildren().add(new HBox(8, plain("상하"), swingX, swingXLabel));
 			
+            addDigitalSettingsSection(root);
+
             // ── 배경 이미지 / 슬라이드쇼 (통합) ─────────────────────────
             root.getChildren().add(section("● 배경 이미지 / 슬라이드쇼"));
 			
@@ -3901,9 +3905,8 @@ public class FxGPUNeon {
 			});
 			
             // 설정창 내용이 많아졌으므로 세로 스크롤 추가 + 최소 너비 보장
-            // root 최소 너비 480px → 라디오 버튼/슬라이더 행이 잘리지 않음
-            root.setMinWidth(480);
-            root.setPrefWidth(480);
+            root.setMinWidth(920);
+            root.setPrefWidth(920);
 			
             ScrollPane scroll = new ScrollPane(root);
             scroll.setFitToWidth(true);
@@ -3920,7 +3923,7 @@ public class FxGPUNeon {
             scroll.setMaxHeight(maxH);
 			
             VBox container = new VBox(titleBar, scroll);
-            Scene sc = new Scene(container);
+            Scene sc = new Scene(container, 980, 860);
             s.setScene(sc);
             s.sizeToScene();
 			
@@ -3948,6 +3951,219 @@ public class FxGPUNeon {
             return s;
 		}
 		
+
+        private void addDigitalSettingsSection(VBox root) {
+            root.getChildren().add(section("● 디지탈 시계 설정"));
+
+            java.util.List<String> allFonts = javafx.scene.text.Font.getFamilies();
+
+            Label note = plain("날짜 행과 시분초 행의 모든 설정을 메인 설정으로 통합했습니다.");
+            note.setStyle(note.getStyle() + " -fx-font-style:italic;");
+            root.getChildren().add(note);
+
+            GridPane dateGrid = new GridPane();
+            dateGrid.setHgap(10);
+            dateGrid.setVgap(8);
+
+            CheckBox dateOnOff = checkbox("날짜 표시", state.showFaceDate, v -> {
+                state.showFaceDate = v;
+                refreshDigitalSection();
+            });
+            CheckBox dateNeonOn = checkbox("날짜 네온", state.neonFaceDate, v -> {
+                state.neonFaceDate = v;
+                assembler.updateFaceDateTimeTextures();
+                refreshDigitalSection();
+            });
+
+            ComboBox<String> dateFmtBox = new ComboBox<>();
+            dateFmtBox.getItems().addAll("N월 N일, 요일", "YYYY-MM-DD (요일)", "MM/DD (요일)", "N월 N일");
+            dateFmtBox.getSelectionModel().select(state.faceDateFormatIndex);
+            dateFmtBox.setPrefWidth(220);
+            dateFmtBox.valueProperty().addListener((ob, ov, nv) -> {
+                state.faceDateFormatIndex = Math.max(0, dateFmtBox.getSelectionModel().getSelectedIndex());
+                refreshDigitalSection();
+            });
+
+            ComboBox<String> dateFontBox = new ComboBox<>();
+            dateFontBox.getItems().addAll(allFonts);
+            dateFontBox.setValue(state.faceDateFontFamily);
+            dateFontBox.setPrefWidth(260);
+            dateFontBox.valueProperty().addListener((ob, ov, nv) -> {
+                if (nv != null) {
+                    state.faceDateFontFamily = nv;
+                    refreshDigitalSection();
+                }
+            });
+
+            Spinner<Integer> dateSizeSpinner = new Spinner<>(8, 120, (int) state.faceDateFontSize);
+            dateSizeSpinner.setEditable(true);
+            dateSizeSpinner.valueProperty().addListener((ob, ov, nv) -> {
+                if (nv != null) {
+                    state.faceDateFontSize = nv;
+                    refreshDigitalSection();
+                }
+            });
+
+            int drgb = state.faceDateColorRgb;
+            ColorPicker dateColorPicker = new ColorPicker(
+                Color.rgb((drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF, ((drgb >> 24) & 0xFF) / 255.0));
+            dateColorPicker.setOnAction(e -> {
+                Color c = dateColorPicker.getValue();
+                state.faceDateColorRgb =
+                    (((int) Math.round(c.getOpacity() * 255)) << 24) |
+                    (((int) Math.round(c.getRed() * 255)) << 16) |
+                    (((int) Math.round(c.getGreen() * 255)) << 8) |
+                    ((int) Math.round(c.getBlue() * 255));
+                refreshDigitalSection();
+            });
+
+            ToggleGroup dateDirGroup = new ToggleGroup();
+            RadioButton drbFixed = neonRadio("고정", dateDirGroup, state.faceDateScrollDir == 0);
+            RadioButton drbRTL   = neonRadio("우→좌", dateDirGroup, state.faceDateScrollDir == 1);
+            RadioButton drbLTR   = neonRadio("좌→우", dateDirGroup, state.faceDateScrollDir == 2);
+            RadioButton drbPing  = neonRadio("핑퐁", dateDirGroup, state.faceDateScrollDir == 3);
+            dateDirGroup.selectedToggleProperty().addListener((ob, ov, nv) -> {
+                if (nv == drbFixed) state.faceDateScrollDir = 0;
+                else if (nv == drbLTR) state.faceDateScrollDir = 2;
+                else if (nv == drbPing) state.faceDateScrollDir = 3;
+                else state.faceDateScrollDir = 1;
+                state.faceDateScrollOffset = Double.NaN;
+                refreshDigitalSection();
+            });
+            HBox dateDirRow = new HBox(10, drbFixed, drbRTL, drbLTR, drbPing);
+            dateDirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+            Slider dateSpeedSlider = slider(0.2, 6.0, state.faceDateScrollSpeed);
+            Label dateSpeedVal = value(String.format("%.1f", state.faceDateScrollSpeed));
+            dateSpeedSlider.valueProperty().addListener((ob, ov, nv) -> {
+                state.faceDateScrollSpeed = nv.doubleValue();
+                dateSpeedVal.setText(String.format("%.1f", state.faceDateScrollSpeed));
+            });
+
+            dateGrid.add(dateOnOff, 0, 0);
+            dateGrid.add(dateNeonOn, 1, 0);
+            dateGrid.add(plain("날짜 형식"), 0, 1); dateGrid.add(dateFmtBox, 1, 1, 3, 1);
+            dateGrid.add(plain("날짜 폰트"), 0, 2); dateGrid.add(dateFontBox, 1, 2, 3, 1);
+            dateGrid.add(plain("날짜 크기"), 0, 3); dateGrid.add(dateSizeSpinner, 1, 3);
+            dateGrid.add(plain("날짜 색상"), 2, 3); dateGrid.add(dateColorPicker, 3, 3);
+            dateGrid.add(plain("날짜 스크롤"), 0, 4); dateGrid.add(dateDirRow, 1, 4, 3, 1);
+            dateGrid.add(plain("날짜 속도"), 0, 5); dateGrid.add(dateSpeedSlider, 1, 5, 2, 1); dateGrid.add(dateSpeedVal, 3, 5);
+            root.getChildren().add(dateGrid);
+
+            GridPane timeGrid = new GridPane();
+            timeGrid.setHgap(10);
+            timeGrid.setVgap(8);
+
+            CheckBox timeOnOff = checkbox("시분초 표시", state.showDigital, v -> {
+                state.showDigital = v;
+                refreshDigitalSection();
+            });
+            CheckBox timeNeonOn = checkbox("시분초 네온", state.neonFaceTime, v -> {
+                state.neonFaceTime = v;
+                assembler.updateFaceDateTimeTextures();
+                refreshDigitalSection();
+            });
+
+            ComboBox<String> timeFmtBox = new ComboBox<>();
+            timeFmtBox.getItems().addAll("HH:mm:ss", "hh:mm:ss a", "HH:mm", "hh:mm a");
+            timeFmtBox.getSelectionModel().select(state.digitalFormatIndex);
+            timeFmtBox.setPrefWidth(220);
+            timeFmtBox.valueProperty().addListener((ob, ov, nv) -> {
+                state.digitalFormatIndex = Math.max(0, timeFmtBox.getSelectionModel().getSelectedIndex());
+                refreshDigitalSection();
+            });
+
+            ComboBox<String> timeFontBox = new ComboBox<>();
+            timeFontBox.getItems().addAll(allFonts);
+            timeFontBox.setValue(state.digitalFontFamily);
+            timeFontBox.setPrefWidth(260);
+            timeFontBox.valueProperty().addListener((ob, ov, nv) -> {
+                if (nv != null) {
+                    state.digitalFontFamily = nv;
+                    refreshDigitalSection();
+                }
+            });
+
+            Spinner<Integer> timeSizeSpinner = new Spinner<>(8, 120, (int) state.digitalFontSize);
+            timeSizeSpinner.setEditable(true);
+            timeSizeSpinner.valueProperty().addListener((ob, ov, nv) -> {
+                if (nv != null) {
+                    state.digitalFontSize = nv;
+                    refreshDigitalSection();
+                }
+            });
+
+            int trgb = state.digitalColorRgb;
+            ColorPicker timeColorPicker = new ColorPicker(
+                Color.rgb((trgb >> 16) & 0xFF, (trgb >> 8) & 0xFF, trgb & 0xFF, ((trgb >> 24) & 0xFF) / 255.0));
+            timeColorPicker.setOnAction(e -> {
+                Color c = timeColorPicker.getValue();
+                state.digitalColorRgb =
+                    (((int) Math.round(c.getOpacity() * 255)) << 24) |
+                    (((int) Math.round(c.getRed() * 255)) << 16) |
+                    (((int) Math.round(c.getGreen() * 255)) << 8) |
+                    ((int) Math.round(c.getBlue() * 255));
+                refreshDigitalSection();
+            });
+
+            ToggleGroup timeDirGroup = new ToggleGroup();
+            RadioButton trbFixed = neonRadio("고정", timeDirGroup, state.digitalScrollDir == 0);
+            RadioButton trbRTL   = neonRadio("우→좌", timeDirGroup, state.digitalScrollDir == 1);
+            RadioButton trbLTR   = neonRadio("좌→우", timeDirGroup, state.digitalScrollDir == 2);
+            RadioButton trbPing  = neonRadio("핑퐁", timeDirGroup, state.digitalScrollDir == 3);
+            timeDirGroup.selectedToggleProperty().addListener((ob, ov, nv) -> {
+                if (nv == trbFixed) state.digitalScrollDir = 0;
+                else if (nv == trbLTR) state.digitalScrollDir = 2;
+                else if (nv == trbPing) state.digitalScrollDir = 3;
+                else state.digitalScrollDir = 1;
+                state.digitalScrollOffset = Double.NaN;
+                state.faceScrollOffset = Double.NaN;
+                refreshDigitalSection();
+            });
+            HBox timeDirRow = new HBox(10, trbFixed, trbRTL, trbLTR, trbPing);
+            timeDirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+            Slider timeSpeedSlider = slider(0.2, 6.0, state.digitalScrollSpeed);
+            Label timeSpeedVal = value(String.format("%.1f", state.digitalScrollSpeed));
+            timeSpeedSlider.valueProperty().addListener((ob, ov, nv) -> {
+                state.digitalScrollSpeed = nv.doubleValue();
+                timeSpeedVal.setText(String.format("%.1f", state.digitalScrollSpeed));
+            });
+
+            ComboBox<String> digitalBlinkBox = new ComboBox<>();
+            digitalBlinkBox.getItems().addAll("NONE", "PULSE", "SHARP", "RANDOM");
+            digitalBlinkBox.setValue(String.valueOf(state.digitalNeonBlinkStyle));
+            digitalBlinkBox.setPrefWidth(160);
+            digitalBlinkBox.valueProperty().addListener((ob, ov, nv) -> {
+                if (nv != null) {
+                    state.digitalNeonBlinkStyle = AppState.NeonBlinkStyle.valueOf(nv);
+                    refreshDigitalSection();
+                }
+            });
+
+            timeGrid.add(timeOnOff, 0, 0);
+            timeGrid.add(timeNeonOn, 1, 0);
+            timeGrid.add(plain("시분초 형식"), 0, 1); timeGrid.add(timeFmtBox, 1, 1, 3, 1);
+            timeGrid.add(plain("시분초 폰트"), 0, 2); timeGrid.add(timeFontBox, 1, 2, 3, 1);
+            timeGrid.add(plain("시분초 크기"), 0, 3); timeGrid.add(timeSizeSpinner, 1, 3);
+            timeGrid.add(plain("시분초 색상"), 2, 3); timeGrid.add(timeColorPicker, 3, 3);
+            timeGrid.add(plain("시분초 스크롤"), 0, 4); timeGrid.add(timeDirRow, 1, 4, 3, 1);
+            timeGrid.add(plain("시분초 속도"), 0, 5); timeGrid.add(timeSpeedSlider, 1, 5, 2, 1); timeGrid.add(timeSpeedVal, 3, 5);
+            timeGrid.add(plain("디지탈 네온 점멸"), 0, 6); timeGrid.add(digitalBlinkBox, 1, 6);
+            root.getChildren().add(timeGrid);
+        }
+
+        private void refreshDigitalSection() {
+            assembler.updateFaceDateTimeTextures();
+            boolean visible = (state.showDigital || state.showFaceDate) && !state.transparentMode;
+            assembler.faceDateTimeGroup.setVisible(visible);
+            if (state.showDigital || state.showFaceDate) {
+                assembler.buildFaceDateTimeGroup();
+            } else {
+                assembler.removeDigitalGroup();
+            }
+        }
+
         /** [...] 버튼 클릭 → 설정창 외관(배경색·메뉴 폰트) 변경 팝업 */
         private void openAppearanceDialog(Stage owner) {
             Stage popup = new Stage();

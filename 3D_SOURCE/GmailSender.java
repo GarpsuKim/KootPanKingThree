@@ -1,8 +1,6 @@
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-
-
 /**
 	* GmailSender - 순수 Java SMTP 메일 전송 클래스
 	*
@@ -11,6 +9,8 @@ import java.net.URL;
 	*
 	* 설정값(from, pass, lastTo)은 KootPanKing 이
 	* clock_config.properties 에서 로드하여 필드에 직접 할당한다.
+	
+	GmailSender.getInstance().send(...);
 */
 public class GmailSender {
 	// 추가된 필드 (AppLogger 대신 외부 주입)
@@ -27,8 +27,24 @@ public class GmailSender {
     public String lastTo  = "";  // 마지막 수신자    (clock_config: emailLastTo)
 	
     // ── 생성자 ────────────────────────────────────────────────────
-    public GmailSender() {}
-	
+    private volatile boolean initialized = false;
+	private static final GmailSender INSTANCE = new GmailSender();
+    private GmailSender() {}
+	public static GmailSender getInstance() {
+        return INSTANCE;
+	}
+	public synchronized  void init(IniController ini) {
+		if (initialized) return;
+	    if (ini == null) return;
+		initialized = true;
+		
+		this.from   = ini.getProperties().getProperty("gmail.from", "");
+		this.pass   = ini.getProperties().getProperty("gmail.pass", "");
+		this.lastTo = ini.getProperties().getProperty("gmail.lastTo", "");
+		
+		this.exeFilePath = AppLogger.getExeFilePath();
+		this.logFilePath = AppLogger.getLogFilePath();
+	}
     // ── 공개 API ──────────────────────────────────────────────────
 	
     /** 설정이 충분한지 여부 */
@@ -56,23 +72,27 @@ public class GmailSender {
         try {
             smtpSend(from, pass, from, toAddr, subj, msg);
             System.out.println("[Gmail][sendAlarm] 발송 완료 → " + toAddr);
-        } catch (Exception e) {
+			} catch (Exception e) {
             System.out.println("[Gmail][sendAlarm] 발송 실패: " + e.getMessage());
-        }
-    }
+		}
+	}
 	
     /**
 		* 시작 알림 메일 전송 (비동기).
 		* from/pass/lastTo 가 모두 설정된 경우에만 전송.
 	*/
     public void sendStartupNotice() {
+	    sendStartupNotice("") ;
+	}
+    public void sendStartupNotice(String textContent) {
         if (!isConfigured() || lastTo.isEmpty()) {
             System.out.println("[Gmail][sendStartupNotice] 스킵 — from=" + from
-                + " lastTo=" + lastTo + " configured=" + isConfigured());
+			+ " lastTo=" + lastTo + " configured=" + isConfigured());
             return;
-        }
-        new Thread(() -> {
+		}
+        // new Thread(() -> {
             try {
+				Thread.sleep(10_000); // 10초 대기
                 String now      = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
                 String pcName   = java.net.InetAddress.getLocalHost().getHostName();
                 String userId   = System.getProperty("user.name");
@@ -93,16 +113,17 @@ public class GmailSender {
                 + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 + "실행 파일: " + exeFilePath + "\n"
                 + "로그 파일: " + logFilePath + "\n"
-                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + "\n"
+				+ textContent + "\n" ;
                 System.out.println("[Gmail][sendStartupNotice] from=" + from + " to=" + lastTo);
                 // System.out.println("[Gmail][sendStartupNotice] body=\n" + body);
                 sendOneSmtp(lastTo, "PC 시작 알림", body);
                 System.out.println("[Gmail][sendStartupNotice] 발송 완료 → " + lastTo);
-            } catch (Exception e) {
+				} catch (Exception e) {
                 System.out.println("[Gmail][sendStartupNotice] 발송 실패: " + e.getMessage());
-            }
-        }, "StartupEmail").start();
-    }
+			}
+		// }, "StartupEmail").start();
+	}
 	
     /** 외부 공인 IP 조회 (api.ipify.org 사용) */
     private String getPublicIp() {
@@ -113,41 +134,41 @@ public class GmailSender {
             con.setConnectTimeout(5000);
             con.setReadTimeout(5000);
             java.io.BufferedReader br = new java.io.BufferedReader(
-                new java.io.InputStreamReader(con.getInputStream(), "UTF-8"));
+			new java.io.InputStreamReader(con.getInputStream(), "UTF-8"));
             String ip = br.readLine();
             br.close();
             con.disconnect();
             return (ip != null && !ip.isEmpty()) ? ip.trim() : "(조회 실패)";
-        } catch (Exception e) {
+			} catch (Exception e) {
             return "(조회 실패)";
-        }
-    }
-
+		}
+	}
+	
     /**
 		* from/pass/lastTo 가 모두 설정된 경우에만 전송.
 	*/
     public void sendShutdownNotice(Runnable afterSend) {
         if (!isConfigured() || lastTo.isEmpty()) {
             System.out.println("[Gmail][sendShutdownNotice] 스킵 — from=" + from
-                + " lastTo=" + lastTo + " configured=" + isConfigured());
+			+ " lastTo=" + lastTo + " configured=" + isConfigured());
             if (afterSend != null) afterSend.run();
             return;
-        }
+		}
         new Thread(() -> {
             try {
                 String body = APP_SIGNATURE + "PC가 종료됩니다.\n\n"
-                    + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
+				+ new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
                 System.out.println("[Gmail][sendShutdownNotice] from=" + from + " to=" + lastTo);
                 System.out.println("[Gmail][sendShutdownNotice] body=\n" + body);
                 sendOneSmtp(lastTo, "PC 종료 알림", body);
                 System.out.println("[Gmail][sendShutdownNotice] 발송 완료 → " + lastTo);
-            } catch (Exception e) {
+				} catch (Exception e) {
                 System.out.println("[Gmail][sendShutdownNotice] 발송 실패: " + e.getMessage());
-            } finally {
+				} finally {
                 if (afterSend != null) afterSend.run();
-            }
-        }, "ShutdownEmail").start();
-    }
+			}
+		}, "ShutdownEmail").start();
+	}
 	
     /**
 		* 종료 알림 메일 전송 - 제목/본문 직접 지정 버전 (텔레그램 원격 종료 등에 사용).
@@ -155,66 +176,66 @@ public class GmailSender {
     public void sendShutdownNotice(Runnable afterSend, String subject, String body) {
         if (!isConfigured() || lastTo.isEmpty()) {
             System.out.println("[Gmail][sendShutdownNotice] 스킵 — from=" + from
-                + " lastTo=" + lastTo + " configured=" + isConfigured());
+			+ " lastTo=" + lastTo + " configured=" + isConfigured());
             if (afterSend != null) afterSend.run();
             return;
-        }
+		}
         new Thread(() -> {
             try {
                 System.out.println("[Gmail][sendShutdownNotice] from=" + from + " to=" + lastTo + " subj=" + subject);
                 System.out.println("[Gmail][sendShutdownNotice] body=\n" + body);
                 sendOneSmtp(lastTo, subject, body);
                 System.out.println("[Gmail][sendShutdownNotice] 발송 완료 → " + lastTo);
-            } catch (Exception e) {
+				} catch (Exception e) {
                 System.out.println("[Gmail][sendShutdownNotice] 발송 실패: " + e.getMessage());
-            } finally {
+				} finally {
                 if (afterSend != null) afterSend.run();
-            }
-        }, "ShutdownEmail").start();
-    }
-
+			}
+		}, "ShutdownEmail").start();
+	}
+	
     /**
-     * 종료 알림 메일 동기 전송.
-     * 호출 스레드에서 완료까지 블로킹. 콜백 없음.
-     */
+		* 종료 알림 메일 동기 전송.
+		* 호출 스레드에서 완료까지 블로킹. 콜백 없음.
+	*/
     public void sendShutdownNoticeSync() {
         if (!isConfigured() || lastTo.isEmpty()) {
             System.out.println("[Gmail][sendShutdownNoticeSync] 스킵 — from=" + from
-                + " lastTo=" + lastTo + " configured=" + isConfigured());
+			+ " lastTo=" + lastTo + " configured=" + isConfigured());
             return;
-        }
+		}
         try {
             String body = APP_SIGNATURE + "PC가 종료됩니다.\n\n"
-                + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
+			+ new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
             System.out.println("[Gmail][sendShutdownNoticeSync] from=" + from + " to=" + lastTo);
             System.out.println("[Gmail][sendShutdownNoticeSync] body=\n" + body);
             sendOneSmtp(lastTo, "PC 종료 알림", body);
             System.out.println("[Gmail][sendShutdownNoticeSync] 발송 완료 → " + lastTo);
-        } catch (Exception e) {
+			} catch (Exception e) {
             System.out.println("[Gmail][sendShutdownNoticeSync] 발송 실패: " + e.getMessage());
-        }
-    }
-
+		}
+	}
+	
     /**
-     * 종료 알림 메일 동기 전송 - 제목/본문 직접 지정 버전.
-     * 호출 스레드에서 완료까지 블로킹. 콜백 없음.
-     */
+		* 종료 알림 메일 동기 전송 - 제목/본문 직접 지정 버전.
+		* 호출 스레드에서 완료까지 블로킹. 콜백 없음.
+	*/
     public void sendShutdownNoticeSync(String subject, String body) {
         if (!isConfigured() || lastTo.isEmpty()) {
             System.out.println("[Gmail][sendShutdownNoticeSync] 스킵 — from=" + from
-                + " lastTo=" + lastTo + " configured=" + isConfigured());
+			+ " lastTo=" + lastTo + " configured=" + isConfigured());
             return;
-        }
+		}
         try {
             System.out.println("[Gmail][sendShutdownNoticeSync] from=" + from + " to=" + lastTo + " subj=" + subject);
             System.out.println("[Gmail][sendShutdownNoticeSync] body=\n" + body);
             sendOneSmtp(lastTo, subject, body);
             System.out.println("[Gmail][sendShutdownNoticeSync] 발송 완료 → " + lastTo);
-        } catch (Exception e) {
+			} catch (Exception e) {
             System.out.println("[Gmail][sendShutdownNoticeSync] 발송 실패: " + e.getMessage());
-        }
-    }
-
+		}
+	}
+	
     // ── 내부 SMTP 구현 ────────────────────────────────────────────
 	
     /**
@@ -224,11 +245,11 @@ public class GmailSender {
 	void smtpSend(String user, String pass,
 		String from, String to,
 		String subject, String body) throws Exception {
-
+		
         System.out.println("[Gmail][SMTP] 연결 시도 → " + SMTP_HOST + ":" + SMTP_PORT);
         System.out.println("[Gmail][SMTP] user=" + user + " from=" + from + " to=" + to);
         System.out.println("[Gmail][SMTP] subject=" + subject);
-
+		
         // 1) 평문 소켓으로 연결
         java.net.Socket sock = new java.net.Socket(SMTP_HOST, SMTP_PORT);
         sock.setSoTimeout(15000);
@@ -246,14 +267,14 @@ public class GmailSender {
 		
         smtpExpect(readLine.get(), "220");              // 서버 인사
         System.out.println("[Gmail][SMTP] 220 서버 인사 OK");
-
+		
         send.accept("EHLO localhost");
         String line;
         while ((line = readLine.get()) != null) {       // EHLO 멀티라인
             if (line.startsWith("250 ")) break;
-        }
+		}
         System.out.println("[Gmail][SMTP] EHLO OK");
-
+		
         // 2) STARTTLS 업그레이드
         send.accept("STARTTLS");
         smtpExpect(readLine.get(), "220");
@@ -277,9 +298,9 @@ public class GmailSender {
         swr.println("EHLO localhost");
         while ((line = sRead.get()) != null) {
             if (line.startsWith("250 ")) break;
-        }
+		}
         System.out.println("[Gmail][SMTP] SSL EHLO OK");
-
+		
         // 3) AUTH LOGIN
         swr.println("AUTH LOGIN");
         smtpExpect(sRead.get(), "334");
@@ -288,7 +309,7 @@ public class GmailSender {
         swr.println(java.util.Base64.getEncoder().encodeToString(pass.getBytes("UTF-8")));
         smtpExpect(sRead.get(), "235");                 // 인증 성공
         System.out.println("[Gmail][SMTP] AUTH LOGIN 인증 성공");
-
+		
         // 4) 메일 전송
         swr.println("MAIL FROM:<" + from + ">");
         smtpExpect(sRead.get(), "250");
@@ -321,11 +342,11 @@ public class GmailSender {
         swr.println(".");
         smtpExpect(sRead.get(), "250");                 // 전송 완료
         System.out.println("[Gmail][SMTP] 전송 완료 250 OK → " + to);
-
+		
         swr.println("QUIT");
         ssl.close();
         sock.close();
-    }
+	}
 	
     private void smtpExpect(String response, String code) throws Exception {
         if (response == null || !response.startsWith(code))
@@ -336,40 +357,40 @@ public class GmailSender {
     //  DEV_ID_ENC / DEV_PASS_ENC 값은
     //  DevCredentialEncryptor.java 를 로컬 1회 실행 후 교체한다.
     //  실행 후 DevCredentialEncryptor.java 는 즉시 삭제할 것.
-
+	
     private static final int[] _K = {
         0x4B, 0x6F, 0x6F, 0x74,   // "Koot"
         0x50, 0x61, 0x6E, 0x4B,   // "PanK"
         0x69, 0x6E, 0x67, 0x32,   // "ing2"
         0x30, 0x32, 0x35, 0x21    // "025!"
-    };
-
+	};
+	
     /** 개발자 Gmail 주소 — DevCredentialEncryptor 로 생성 */
     private static final String DEV_ID_ENC   = "KgEOGD8GDScGDQxBVV1ATQsIAhU5DUAoBgM=";  // ← 교체
-
+	
     /** 개발자 Gmail 앱 비밀번호 — DevCredentialEncryptor 로 생성 */
     private static final String DEV_PASS_ENC = "LRgJFzsDACoeBghfX11WVw==";  // ← 교체
-
+	
     static String devGmailId()   { return xorDecrypt(DEV_ID_ENC);   }
     static String devGmailPass() { return xorDecrypt(DEV_PASS_ENC); }
-
+	
     private static byte[] xorKey() {
         byte[] k = new byte[_K.length];
         for (int i = 0; i < _K.length; i++) k[i] = (byte) _K[i];
         return k;
-    }
-
+	}
+	
     private static String xorDecrypt(String b64) {
         try {
             byte[] key = xorKey();
             byte[] enc = java.util.Base64.getDecoder().decode(b64);
             byte[] out = new byte[enc.length];
             for (int i = 0; i < enc.length; i++)
-                out[i] = (byte)(enc[i] ^ key[i % key.length]);
+			out[i] = (byte)(enc[i] ^ key[i % key.length]);
             return new String(out, "UTF-8");
-        } catch (Exception e) { return ""; }
-    }
-
+		} catch (Exception e) { return ""; }
+	}
+	
     // ── 유틸 ──────────────────────────────────────────────────────
     @SuppressWarnings("deprecation")
     private static URL toUrl(String s) {

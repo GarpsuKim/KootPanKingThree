@@ -1,24 +1,24 @@
 /*
-System.out.println 이 아닌 경우를 일단 찾아봐 전부 다
+	System.out.println 이 아닌 경우를 일단 찾아봐 전부 다
 
 
-찾아보면, System.out.println(...) 말고도 실제로 쓰는 출력/기록 방식이 몇 가지 있다.
-지금 업로드된 파일들 기준으로 정리하면 이렇다.
+	찾아보면, System.out.println(...) 말고도 실제로 쓰는 출력/기록 방식이 몇 가지 있다.
+	지금 업로드된 파일들 기준으로 정리하면 이렇다.
 
-첫째, System.err.println(...) 와 e.printStackTrace(...)
-AppLogger.init() 실패 처리에서 originalErr.println(...)를 직접 쓰고, 같은 구간에서 e.printStackTrace(originalErr)도 호출한다. 즉, 초기화 실패류는 표준 에러로 직접 보낸다.
+	첫째, System.err.println(...) 와 e.printStackTrace(...)
+	AppLogger.init() 실패 처리에서 originalErr.println(...)를 직접 쓰고, 같은 구간에서 e.printStackTrace(originalErr)도 호출한다. 즉, 초기화 실패류는 표준 에러로 직접 보낸다.
 
-둘째, java.util.logging.Logger 방식
-FxGPUNeon에는 private static final Logger LOG = Logger.getLogger(...)가 있고, 배경 이미지 로드 실패 때 LOG.log(Level.WARNING, ...)를 쓴다. 즉 여기만큼은 System.out.println이 아니라 JDK 로거를 병행한다.
+	둘째, java.util.logging.Logger 방식
+	FxGPUNeon에는 private static final Logger LOG = Logger.getLogger(...)가 있고, 배경 이미지 로드 실패 때 LOG.log(Level.WARNING, ...)를 쓴다. 즉 여기만큼은 System.out.println이 아니라 JDK 로거를 병행한다.
 
-셋째, AppLogger 직접 기록 API
-AppLogger.writeToFile(...), AppLogger.writeToFile(..., true)처럼 콘솔이 아니라 파일에 직접 쓰는 방식이 있다. 그리고 예외용으로 AppLogger.logException(e)도 곳곳에서 호출된다. 예를 들어 KootPanKingThree의 종료/초기화 예외 처리, FxGPUNeon의 다이얼로그 종료/이미지 처리 실패에서 이 방식이 쓰인다.
+	셋째, AppLogger 직접 기록 API
+	AppLogger.writeToFile(...), AppLogger.writeToFile(..., true)처럼 콘솔이 아니라 파일에 직접 쓰는 방식이 있다. 그리고 예외용으로 AppLogger.logException(e)도 곳곳에서 호출된다. 예를 들어 KootPanKingThree의 종료/초기화 예외 처리, FxGPUNeon의 다이얼로그 종료/이미지 처리 실패에서 이 방식이 쓰인다.
 
-넷째, PrintWriter.println(...) 기반의 프로토콜 출력
-GmailSender는 SMTP 통신용 PrintWriter(wr, swr)에 println(...)을 여러 번 호출한다. 이건 로그가 아니라 소켓으로 보내는 SMTP 명령 출력이다. 이름은 println이지만 콘솔 로그가 아니다.
+	넷째, PrintWriter.println(...) 기반의 프로토콜 출력
+	GmailSender는 SMTP 통신용 PrintWriter(wr, swr)에 println(...)을 여러 번 호출한다. 이건 로그가 아니라 소켓으로 보내는 SMTP 명령 출력이다. 이름은 println이지만 콘솔 로그가 아니다.
 
-다섯째, PrintWriter writer.println(...) 기반 로그 파일 기록
-AppLogger 내부에서는 최종적으로 writer.println(...)으로 로그 파일에 직접 쓴다. 또한 TeeStream이 System.out/err를 가로채서 줄 단위로 writeToFile(...)에 넘긴다. 즉 실제 저장은 writer.println(...) 계열이다.
+	다섯째, PrintWriter writer.println(...) 기반 로그 파일 기록
+	AppLogger 내부에서는 최종적으로 writer.println(...)으로 로그 파일에 직접 쓴다. 또한 TeeStream이 System.out/err를 가로채서 줄 단위로 writeToFile(...)에 넘긴다. 즉 실제 저장은 writer.println(...) 계열이다.
 
 */
 
@@ -64,54 +64,58 @@ import java.time.format.DateTimeFormatter;
 //     - 로거 종료 후 표준 출력 스트림을 원래대로 되돌림
 // ═══════════════════════════════════════════════════════════
 public class AppLogger {
-	
+
     private static PrintWriter  writer      = null;
     private static String       logFilePath = "";
     private static String       exeFilePath = "";
     private static final Object LOCK        = new Object();
     private static final Object INIT_LOCK   = new Object();
-	
+
     // J. thread-safe 포맷터로 교체
     private static final DateTimeFormatter TS =
 	DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
     private static final DateTimeFormatter FILE_TS =
 	DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
-	
+
     // I. 호출자 추적 on/off (기본 false)
     //    사용 예: java -Dapplogger.callerTracking=true -jar app.jar
     private static volatile boolean callerTrackingEnabled =
 	Boolean.parseBoolean(System.getProperty("applogger.callerTracking", "false"));
-	
+
     // K. init() 중복 호출 방지
     private static volatile boolean initialized = false;
-	
+    // shutdown hook 중복 등록 방지
+    private static volatile boolean shutdownHookAdded = false;
+    // close() 중복 수행 방지
+    private static volatile boolean closed = false;
+
     // lineBuf 는 out/err 각각 독립 관리 (내부 Tee 클래스에서 직접 보유)
     // close() 시 플러시를 위해 두 Tee 의 참조를 보관
     private static TeeStream outTee = null;
     private static TeeStream errTee = null;
-	
+
     // L. close() 시 원복할 원본 스트림
     private static PrintStream originalOut = System.out;
     private static PrintStream originalErr = System.err;
-	
+
     // ── 공개 API ─────────────────────────────────────────────────
-	
+
     /** 로거 초기화 - main() 가장 먼저 호출 */
     public static void init() {
-		
+
         synchronized (INIT_LOCK) {
             if (initialized) return;
-			
+
             originalOut = System.out;
             originalErr = System.err;
-			
+
             // ① sun.java.command / ProcessHandle / CodeSource 순으로 실행 파일 경로 탐색
             String exePath = resolveExePath();
             exeFilePath = exePath != null ? exePath : "(unknown)";
-			
+
             // 실행 파일 정보 (baseName 용도로만 사용)
             File exeFile = exePath != null ? new File(exePath) : null;
-			
+
             // log 폴더: %APPDATA%\KootPanKingThree\log\
             // 재설치 시 삭제되지 않도록 실행 폴더 대신 APPDATA 아래에 고정
             String appData = System.getenv("APPDATA");
@@ -121,14 +125,14 @@ public class AppLogger {
             File logDir = new File(appData + File.separator
 			+ "KootPanKingThree" + File.separator + "log");
             if (!logDir.exists()) logDir.mkdirs();
-			
+
             // 로그 파일명: <실행파일 기본명>_yyyyMMdd_HHmmss.txt
             String baseName  = (exeFile != null) ? stripExt(exeFile.getName()) : "KootPanKingThree";
             String timestamp = FILE_TS.format(LocalDateTime.now());
             String fileName  = baseName + "_" + timestamp + ".txt";
             File   logFile   = new File(logDir, fileName);
             logFilePath = logFile.getAbsolutePath();
-			
+
             // PrintWriter 열기 (UTF-8, 자동 flush)
             try {
                 writer = new PrintWriter(
@@ -143,11 +147,11 @@ public class AppLogger {
                 e.printStackTrace(originalErr);
                 return;
 			}
-			
+
             // ── B. out / err 를 별도 TeeStream 으로 교체 ──────────────
             final PrintStream prevOut = System.out;
             final PrintStream prevErr = System.err;
-			
+
             try {
                 outTee = new TeeStream(prevOut, false);  // isErr = false
                 errTee = new TeeStream(prevErr, true);   // isErr = true  → [ERR] 접두어
@@ -158,11 +162,29 @@ public class AppLogger {
                 writer = null;
                 return;
 			}
-			
+
             System.setOut(outTee);
             System.setErr(errTee);
             initialized = true;
-			
+			closed = false;
+
+            if (!shutdownHookAdded) {
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    try {
+                        AppLogger.close();
+						} catch (Exception e) {
+                        try {
+                            if (originalErr != null) {
+                                e.printStackTrace(originalErr);
+								} else {
+                                e.printStackTrace();
+							}
+						} catch (Exception ignored) {}
+					}
+				}, "AppLogger-ShutdownHook"));
+                shutdownHookAdded = true;
+			}
+
             System.out.println("[AppLogger] 초기화 완료");
             System.out.println("[AppLogger] callerTracking=" + callerTrackingEnabled
 			+ " (옵션: -Dapplogger.callerTracking=true)");
@@ -170,31 +192,31 @@ public class AppLogger {
             System.out.println("[AppLogger] 로그 파일: " + logFilePath);
 		}
 	}
-	
+
     /** caller 추적 on/off 수동 제어 */
     public static void setCallerTrackingEnabled(boolean enabled) {
         callerTrackingEnabled = enabled;
 	}
-	
+
     /** caller 추적 활성 여부 반환 */
     public static boolean isCallerTrackingEnabled() {
         return callerTrackingEnabled;
 	}
-	
+
     /** writer 에만 직접 기록 (타임스탬프 + 스레드명 + 호출자 포함) */
     public static void writeToFile(String msg) {
         writeToFile(msg, false);
 	}
-	
+
     /** writer 에만 직접 기록 - isErr=true 이면 [ERR] 접두어 추가 */
     public static void writeToFile(String msg, boolean isErr) {
         if (writer == null || msg == null) return;
-		
+
         String ts     = TS.format(LocalDateTime.now());
         String thread = Thread.currentThread().getName();
         String caller = callerTrackingEnabled ? resolveCallerTag() : "";
         String prefix = isErr ? "[ERR] " : "";
-		
+
         synchronized (LOCK) {
             if (callerTrackingEnabled) {
                 writer.println("[" + ts + "] [" + thread + "] " + caller + prefix + msg);
@@ -203,13 +225,13 @@ public class AppLogger {
 			}
 		}
 	}
-	
+
     /** 로그 파일 전체 경로 반환 */
     public static String getLogFilePath() { return logFilePath; }
-	
+
     /** 실행 파일 전체 경로 반환 */
     public static String getExeFilePath() { return exeFilePath; }
-	
+
     /**
 		* 로거 닫기.
 		* H. close() 시 out/err lineBuf 에 남아있는 미완성 라인을 강제 플러시한 뒤
@@ -218,14 +240,16 @@ public class AppLogger {
 	*/
     public static void close() {
         synchronized (INIT_LOCK) {
-            // 미기록 버퍼 플러시 (개행 없이 프로세스가 종료될 때 마지막 라인 손실 방지)
+            if (closed) return;
+            closed = true;
+			// 미기록 버퍼 플러시 (개행 없이 프로세스가 종료될 때 마지막 라인 손실 방지)
             try {
                 if (outTee != null) outTee.flushLineBuf();
                 if (errTee != null) errTee.flushLineBuf();
 				} catch (Exception e) {
                 originalErr.println("[AppLogger] close() flush 실패: " + e.getMessage());
 			}
-			
+
             try {
                 if (writer != null) {
                     writer.flush();
@@ -234,20 +258,20 @@ public class AppLogger {
 				} catch (Exception e) {
                 originalErr.println("[AppLogger] writer close 실패: " + e.getMessage());
 			}
-			
+
             // L. 원본 스트림 복구
             try { if (originalOut != null) System.setOut(originalOut); } catch (Exception ignored) {}
             try { if (originalErr != null) System.setErr(originalErr); } catch (Exception ignored) {}
-			
+
             writer = null;
             outTee = null;
             errTee = null;
             initialized = false;
 		}
 	}
-	
+
     // ── 내부: TeeStream ──────────────────────────────────────────
-	
+
     /**
 		* out 또는 err 를 감싸는 Tee 스트림.
 		* - 콘솔(원본 스트림)에는 그대로 전달
@@ -257,12 +281,12 @@ public class AppLogger {
     private static class TeeStream extends PrintStream {
         private final StringBuilder lineBuf = new StringBuilder();
         private final boolean isErr;
-		
+
         TeeStream(PrintStream original, boolean isErr) throws UnsupportedEncodingException {
             super(original, true, "UTF-8");
             this.isErr = isErr;
 		}
-		
+
         @Override
         public void write(byte[] buf, int off, int len) {
             super.write(buf, off, len);   // 콘솔 출력
@@ -272,7 +296,7 @@ public class AppLogger {
 				} catch (Exception e) {
                 s = new String(buf, off, len);
 			}
-			
+
             synchronized (lineBuf) {
                 for (int i = 0; i < s.length(); i++) {
                     char c = s.charAt(i);
@@ -284,7 +308,7 @@ public class AppLogger {
 				}
 			}
 		}
-		
+
         // K-보완. print(char) / write(int) 경로도 안전하게 흡수
         @Override
         public void write(int b) {
@@ -298,14 +322,14 @@ public class AppLogger {
 				}
 			}
 		}
-		
+
         /** 내부 lineBuf 의 현재 내용을 한 줄로 파일 기록 */
         private void flushCurrentLine() {
             String line = lineBuf.toString();
             lineBuf.setLength(0);
             if (!isSuppressed(line)) writeToFile(line, isErr);
 		}
-		
+
         /** H. close() 시 미완성 라인 강제 기록 */
         void flushLineBuf() {
             synchronized (lineBuf) {
@@ -315,9 +339,9 @@ public class AppLogger {
 			}
 		}
 	}
-	
+
     // ── 내부: 노이즈 필터 ────────────────────────────────────────
-	
+
     /**
 		* 로그 파일에 기록하지 않을 노이즈 라인 판정.
 		* - [Stream] ... 캡처 완료
@@ -352,7 +376,7 @@ public class AppLogger {
 		if (s.contains("Direct3D initialization succeeded")) return true;
 		if (s.contains("Initialized prism pipeline:")) return true;
 		if (s.contains("(X) Got class = class com.sun.prism.d3d.D3DPipeline")) return true;
-		
+
 		// ── JavaFX / D3D 정보 로그 ─────────────
 		if (s.contains("Maximum supported texture size:")) return true;
 		if (s.contains("Maximum texture size clamped to")) return true;
@@ -366,15 +390,15 @@ public class AppLogger {
 		if (s.contains("Device : ven_")) return true;
 		if (s.contains("Max Multisamples supported:")) return true;
 		if (s.contains("vsync: true vpipe: true")) return true;
-		
+
 		// ── JavaFX 렌더러 내부 반복 로그 ───────
 		if (s.contains("new alphas with length =")) return true;
 		if (s.contains("PPSRenderer: scenario.effect - createShader:")) return true;
 		if (s.contains("Growing pool D3D Vram Pool")) return true;
-		
-	*/	
+
+	*/
     // ── 내부: 호출자 태그 ────────────────────────────────────────
-	
+
     /**
 		* C / 신규. StackTrace 를 분석해 실제 호출한 앱 클래스·메쏘드를 반환.
 		*
@@ -390,7 +414,7 @@ public class AppLogger {
         StackTraceElement[] stack = Thread.currentThread().getStackTrace();
         for (StackTraceElement e : stack) {
             String cls = e.getClassName();
-			
+
             // JVM 내부 / 로거 자신 / Tee 내부 클래스 제외
             if (cls.startsWith("java.")
                 || cls.startsWith("sun.")
@@ -400,24 +424,24 @@ public class AppLogger {
                 || cls.startsWith("AppLogger$")) {
                 continue;
 			}
-			
+
             // 패키지 제거 후 단순 클래스명만 사용
             String simpleCls = cls;
             int dot = simpleCls.lastIndexOf('.');
             if (dot >= 0) simpleCls = simpleCls.substring(dot + 1);
-			
+
             // 익명 클래스($1, $2 …)는 외부 클래스명만 사용
             if (simpleCls.contains("$")) {
                 simpleCls = simpleCls.substring(0, simpleCls.indexOf('$'));
 			}
-			
+
             return "[" + simpleCls + "#" + e.getMethodName() + "] ";
 		}
         return "";
 	}
-	
+
     // ── 내부: 실행 파일 경로 탐색 ────────────────────────────────
-	
+
     /**
 		* G. 실행 파일 경로를 3단계로 탐색.
 		*
@@ -429,7 +453,7 @@ public class AppLogger {
 		*    - ①, ② 가 실패했을 때 최후 수단
 	*/
     private static String resolveExePath() {
-		
+
         // ① sun.java.command - .jar 또는 .exe (java/javaw 제외)
         //    .jar 인 경우 옆에 KootPanKingThree.exe 가 있으면 exe 를 우선 반환
         try {
@@ -441,7 +465,7 @@ public class AppLogger {
 				} else if (!sc.isEmpty()) {
                 first = sc.split("\\s+")[0];
 			}
-			
+
             if (first.endsWith(".exe")) {
                 return new File(first).getAbsolutePath();
 				} else if (first.endsWith(".jar")) {
@@ -454,7 +478,7 @@ public class AppLogger {
                 return jarFile.getAbsolutePath();
 			}
 		} catch (Exception ignored) {}
-		
+
         // ② CodeSource (JAR / class 실행)
         try {
             java.security.CodeSource cs =
@@ -462,7 +486,7 @@ public class AppLogger {
             if (cs != null) {
                 File f = new File(cs.getLocation().toURI()).getAbsoluteFile();
                 String name = f.getName().toLowerCase();
-				
+
                 if (name.equals("java.exe") || name.equals("javaw.exe")
 					|| name.equals("java")     || name.equals("javaw")) {
                     // java/javaw → 건너뜀, ProcessHandle ③ 에서 처리
@@ -483,7 +507,7 @@ public class AppLogger {
 				}
 			}
 		} catch (Exception ignored) {}
-		
+
         // ③ ProcessHandle 기반 명령행 파싱 (Java 9+) - 최후 수단
         try {
             java.util.Optional<String> cmd =
@@ -499,7 +523,7 @@ public class AppLogger {
 				}
 			}
 		} catch (Exception ignored) {}
-		
+
         // ④ 현재 작업 디렉터리 기준 (최후의 최후)
         return null;
 	}
@@ -508,7 +532,7 @@ public class AppLogger {
 		t.printStackTrace();
 	}
     // ── 내부: 유틸 ───────────────────────────────────────────────
-	
+
     private static String stripExt(String name) {
         int dot = name.lastIndexOf('.');
         return (dot > 0) ? name.substring(0, dot) : name;

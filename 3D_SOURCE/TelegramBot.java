@@ -22,6 +22,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import java.util.concurrent.atomic.AtomicBoolean;
 /**
 	* TelegramBot - 텔레그램 Bot API 연동 클래스
 	*
@@ -34,7 +35,11 @@ import javafx.stage.StageStyle;
 	* 이 클래스는 Swing/AWT 에 직접 의존하지 않는다.
 */
 public class TelegramBot {
-    // ── 콜백 인터페이스 ──────────────────────────────────────────
+	
+	private static TelegramBot INSTANCE;   // lazy singletone
+	private static final Object LOCK = new Object();   // lazy singletone
+	
+	// ── 콜백 인터페이스 ──────────────────────────────────────────
     /**
 		* 명령어 처리 중 KootPanKing 의 기능이 필요할 때 호출되는 콜백.
 		* KootPanKing 이 구현하여 TelegramBot 생성 시 주입한다.
@@ -63,17 +68,29 @@ public class TelegramBot {
         /** 알람 목록에서 텔레그램 Chat ID 첫 번째 값 반환 (없으면 "") */
         // String getFirstAlarmTelegramChatId();
 	}
-    // ── 설정 필드 (외부에서 직접 읽기/쓰기) ──────────────────────
+	private static final AtomicBoolean startupNoticeSent  = new AtomicBoolean(false);
+	private static final AtomicBoolean shutdownNoticeSent = new AtomicBoolean(false);
+    // if (!startupNoticeSent.compareAndSet(false, true)) {		return;	}
+    // if (!shutdownNoticeSent.compareAndSet(false, true)) {		return;	}
+	
+	private volatile boolean initialized = false;
+	private String exeFilePath = "";
+	private String logFilePath = "";
+	
+	private static String publicIp = null;
+	
+	// ── 설정 필드 (외부에서 직접 읽기/쓰기) ──────────────────────
     // Google Calendar 서비스 (외부에서 주입)
     public GoogleCalendarService calendarService = null;
     // Naver Calendar 서비스 (외부에서 주입)
     public NaverCalendarService  naverCalendarService = null;
-    // 카카오 인스턴스 (외부에서 주입) - send() 호출 시 카카오에도 동시 전송
+    // 카카오 인스턴스 (외부에서 주입) - sendTelegram() 호출 시 카카오에도 동시 전송
     public Kakao kakao = null;
-    public String  botToken  = "";  // BotFather 에서 발급받은 Bot Token
-    public String  myChatId  = "";  // 허용된 Chat ID (보안) - 비어있으면 전체 허용
+    
+	private static String  botToken  = "";  // BotFather 에서 발급받은 Bot Token
+    private static String  myChatId  = "";  // 허용된 Chat ID (보안) - 비어있으면 전체 허용
     public volatile boolean polling = false; // 폴링 활성화 여부
-    public String  appDir    = "";  // KootPanKing.APP_DIR 주입 — txt/ini 파일 경로 기준
+    public static String  appDir    = "";  // KootPanKing.APP_DIR 주입 — txt/ini 파일 경로 기준
     // ── 내부 상태 ─────────────────────────────────────────────────
     private volatile long              lastUpdateId  = 0;    // 마지막 처리한 update_id
     private ScheduledExecutorService   pollScheduler = null; // 폴링 스케줄러
@@ -82,36 +99,98 @@ public class TelegramBot {
     // 콜백 핸들러 (KootPanKing 이 구현)
     private final CommandHandler handler;
     // ── 생성자 ────────────────────────────────────────────────────
-    public TelegramBot(CommandHandler handler) {
+    private TelegramBot(CommandHandler handler) {   // lazy singletone , 반드시 private
         this.handler = handler;
+		System.out.println("[TelegramBot] TelegramBot(CommandHandler handler)");
 	}
-    // ── 폴링 시작 / 중지 ─────────────────────────────────────────
+	
+	public static TelegramBot getInstance(CommandHandler handler) { // lazy singletone
+		System.out.println("[TelegramBot] getInstance(CommandHandler handler)");
+		if (INSTANCE == null) {
+			synchronized (LOCK) {
+				if (INSTANCE == null) {
+					INSTANCE = new TelegramBot(handler);
+				}
+			}
+		}
+		return INSTANCE;
+	}
+	//  🔥 handler 없는 접근용도 (선택)
+	public static TelegramBot getInstance() {
+		System.out.println("[TelegramBot] getInstance()");
+		return INSTANCE;
+	}
+	
+	public   void init(IniController ini) {
+		// public synchronized  void init(IniController ini) {
+		try {
+			System.out.println("[TelegramBot] init()1");
+			if (initialized) return;
+			System.out.println("[TelegramBot] init()2");
+			if (ini == null) return;
+			System.out.println("[TelegramBot] init()3");
+			initialized = true;
+			
+			this.botToken   = ini.getProperties().getProperty("tg.botToken", "");
+			this.myChatId   = ini.getProperties().getProperty("tg.myChatId", "");
+			
+			this.exeFilePath = AppLogger.getExeFilePath();
+			this.logFilePath = AppLogger.getLogFilePath();
+			System.out.println("[TelegramBot] init()4");
+			} catch (Exception e) {
+			System.out.println("[TelegramBot] init 실패: " + e.getMessage());		
+		}	
+	}
+	
+	public void sendShutdownNoticeOnce() {
+		sendShutdownNoticeSync();
+	}
+	// ── 폴링 시작 / 중지 ─────────────────────────────────────────
     /** 폴링 시작. 어느 스레드에서든 호출 가능. */
     public void startPolling() {
+        System.out.println("[TelegramBot] startPolling() : before");
         stopPolling(); // 기존 스케줄러 정리
+		if (botToken.isEmpty()){
+			System.out.println("[TelegramBot] botToken.isEmpty()");
+		}
+		if (!polling) {
+			System.out.println("[TelegramBot] !polling");
+		}
         if (!polling || botToken.isEmpty()) return;
         skipOldUpdates();
         pollScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+	        System.out.println("[TelegramBot] pollScheduler = Executors.newSingleThreadScheduledExecutor");
+			
             Thread t = new Thread(r, "TelegramPoll");
             t.setDaemon(true);
             return t;
-        });
+		});
         pollScheduler.scheduleAtFixedRate(() -> {
+	        System.out.println("[TelegramBot] pollScheduler.scheduleAtFixedRate ");
             try { poll(); }
             catch (Exception e) {
                 System.out.println("[Telegram] 폴링 예외: " + e.getMessage());
-            }
-        }, 0, 5, TimeUnit.SECONDS);
+			}
+		}, 0, 5, TimeUnit.SECONDS);
         System.out.println("[Telegram] 폴링 시작 (5초 간격)");
-    }
+	}
     /** 폴링 중지. 어느 스레드에서든 호출 가능. */
     public void stopPolling() {
-        if (pollScheduler != null) {
-            pollScheduler.shutdownNow();
-            pollScheduler = null;
-        }
-        System.out.println("[Telegram] 폴링 중지");
-    }
+		if (pollScheduler == null) {
+	        System.out.println("[Telegram] 폴링은 이미 종료되어 있었음");
+            return ;
+		}
+	    try {
+			if (pollScheduler != null) {
+				System.out.println("[TelegramBot] pollScheduler.shutdownNow() ");
+				pollScheduler.shutdownNow();
+				pollScheduler = null;
+		        System.out.println("[Telegram] 폴링 종료 성공");
+			}
+	    } catch (Exception e) {
+	        System.out.println("[Telegram] 폴링 종료 실패");
+			AppLogger.logException(e);		}
+	}
 	/** 폴링 시작 전 기존 메시지를 모두 건너뜀 - 재시작 후 이전 명령 재처리 방지 */
 	private void skipOldUpdates() {
 		try {
@@ -143,13 +222,23 @@ public class TelegramBot {
     // ── 시작 알림 ─────────────────────────────────────────────────
     /** 앱 시작 알림 전송 (비동기) */
     public void sendStartupNotice() {
-	
+        System.out.println("[TelegramBot] pollScheduler.shutdownNow() ");
+        if (botToken.isEmpty()) {
+	        System.out.println("[TelegramBot] botToken.isEmpty() ");
+		}
+        if (myChatId.isEmpty()) {
+	        System.out.println("[TelegramBot] myChatId.isEmpty() ");
+		}
         if (botToken.isEmpty() || myChatId.isEmpty()) {
             System.out.println("[Telegram][sendStartupNotice] 스킵 — botToken=" + (botToken.isEmpty() ? "(없음)" : "(있음)")
-                + " myChatId=" + (myChatId.isEmpty() ? "(없음)" : myChatId));
+			+ " myChatId=" + (myChatId.isEmpty() ? "(없음)" : myChatId));
             return;
-        }
-        new Thread(() -> {
+		}
+	    if (!startupNoticeSent.compareAndSet(false, true)) {	
+			System.out.println("[TelegramBot] startupNoticeSent.compareAndSet(false, true) ");
+			return;		
+		}
+		new Thread(() -> {
             try {
                 String now     = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
                 String pcName  = java.net.InetAddress.getLocalHost().getHostName();
@@ -157,7 +246,7 @@ public class TelegramBot {
                 String osName  = System.getProperty("os.name") + " " + System.getProperty("os.version");
                 String javaVer = System.getProperty("java.version");
                 String localIp = java.net.InetAddress.getLocalHost().getHostAddress();
-                String publicIp = getPublicIp();
+                publicIp = getPublicIp();
                 String msg = "🟢 PC가 시작되었습니다.\n\n"
 				+ "🕐 시작 시각: " + now + "\n"
 				+ "💻 PC 이름 : " + pcName  + "\n"
@@ -167,7 +256,7 @@ public class TelegramBot {
 				+ "🖥 OS      : " + osName  + "\n"
 				+ "☕ Java    : " + javaVer;
                 System.out.println("[Telegram][sendStartupNotice] chatId=" + myChatId);
-                send(myChatId, msg);
+                sendTelegram( msg);
                 System.out.println("[Telegram][sendStartupNotice] 발송 완료 → " + myChatId);
 				} catch (Exception e) {
                 System.out.println("[Telegram][sendStartupNotice] 발송 실패: " + e.getMessage());
@@ -179,9 +268,10 @@ public class TelegramBot {
     public void sendShutdownNotice(boolean reboot) {
         if (botToken.isEmpty() || myChatId.isEmpty()) {
             System.out.println("[Telegram][sendShutdownNotice] 스킵 — botToken=" + (botToken.isEmpty() ? "(없음)" : "(있음)")
-                + " myChatId=" + (myChatId.isEmpty() ? "(없음)" : myChatId));
+			+ " myChatId=" + (myChatId.isEmpty() ? "(없음)" : myChatId));
             return;
-        }
+		}
+	    if (!shutdownNoticeSent.compareAndSet(false, true)) {		return;	}
         new Thread(() -> {
             try {
                 String now    = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
@@ -193,43 +283,46 @@ public class TelegramBot {
                 + "👤 사용자  : " + userId;
                 System.out.println("[Telegram][sendShutdownNotice] chatId=" + myChatId);
                 System.out.println("[Telegram][sendShutdownNotice] body=\n" + msg);
-                send(myChatId, msg);
+                sendTelegram( msg);
                 System.out.println("[Telegram][sendShutdownNotice] 발송 완료 → " + myChatId);
 				} catch (Exception e) {
                 System.out.println("[Telegram][sendShutdownNotice] 발송 실패: " + e.getMessage());
 			}
 		}, "TelegramShutdown").start();
 	}
-
+	
     /**
-     * 종료 알림 동기 전송 (호출 스레드에서 완료까지 대기).
-     * sendShutdownEmailAndExit() 에서 Gmail 보다 먼저 완료를 보장하기 위해 사용.
-     * 텔레그램 미설정 시 즉시 반환.
-     */
+		* 종료 알림 동기 전송 (호출 스레드에서 완료까지 대기).
+		* sendShutdownEmailAndExit() 에서 Gmail 보다 먼저 완료를 보장하기 위해 사용.
+		* 텔레그램 미설정 시 즉시 반환.
+	*/
     public void sendShutdownNoticeSync() {
         if (botToken.isEmpty() || myChatId.isEmpty()) {
             System.out.println("[Telegram][sendShutdownNoticeSync] 스킵 — botToken=" + (botToken.isEmpty() ? "(없음)" : "(있음)")
-                + " myChatId=" + (myChatId.isEmpty() ? "(없음)" : myChatId));
+			+ " myChatId=" + (myChatId.isEmpty() ? "(없음)" : myChatId));
             return;
-        }
-        try {
+		}
+		if (!shutdownNoticeSent.compareAndSet(false, true)) {		return;	}
+		try {
             String now    = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
             String pcName = java.net.InetAddress.getLocalHost().getHostName();
             String userId = System.getProperty("user.name");
             String msg = "🔴 PC가 종료됩니다.\n\n"
-                + "🕐 종료 시각: " + now + "\n"
-                + "💻 PC 이름 : " + pcName + "\n"
-                + "👤 사용자  : " + userId;
+			+ "🕐 종료 시각: " + now + "\n"
+			+ "💻 PC 이름 : " + pcName + "\n"
+			+ "👤 사용자  : " + userId;
             System.out.println("[Telegram][sendShutdownNoticeSync] chatId=" + myChatId);
             System.out.println("[Telegram][sendShutdownNoticeSync] body=\n" + msg);
-            send(myChatId, msg);
+            sendTelegram( msg);
             System.out.println("[Telegram][sendShutdownNoticeSync] 발송 완료 → " + myChatId);
-        } catch (Exception e) {
+			} catch (Exception e) {
             System.out.println("[Telegram][sendShutdownNoticeSync] 발송 실패: " + e.getMessage());
-        }
-    }
+		}
+	}
     /** 외부 공인 IP 조회 (api.ipify.org 사용) */
-    private String getPublicIp() {
+    private String getPublicIp() {	
+		if  ( publicIp != null ) return publicIp;
+		
         try {
             // java.net.URL url = new java.net.URL("https://api.ipify.org");
             java.net.URL url = toUrl("https://api.ipify.org");
@@ -248,7 +341,11 @@ public class TelegramBot {
 	}
     // ── getUpdates 폴링 ──────────────────────────────────────────
     private void poll() {
-        if (botToken.isEmpty()) return;
+		System.out.println("[TelegramBot] poll() ");
+        if (botToken.isEmpty()) {
+			System.out.println("[TelegramBot] poll() : (botToken.isEmpty()) ");
+			return;
+		}
         try {
             String apiUrl = "https://api.telegram.org/bot" + botToken
 			+ "/getUpdates?timeout=1&offset=" + (lastUpdateId + 1);
@@ -275,12 +372,12 @@ public class TelegramBot {
             Pattern uidPat = Pattern.compile("\"update_id\":(\\d+)");
             Pattern cidPat = Pattern.compile("\"chat\":\\{\"id\":(-?\\d+)");
             Pattern txtPat = Pattern.compile("\"text\":\"((?:[^\"\\\\]|\\\\.)*)\"");
-
+			
             // CallbackQuery 패턴 (인라인 버튼 클릭)
             Pattern cbPat  = Pattern.compile("\"callback_query\":\\{\"id\":\"([^\"]+)\"");
             Pattern cbData = Pattern.compile("\"data\":\"([^\"]+)\"");
             Pattern cbCid  = Pattern.compile("\"callback_query\".*?\"chat\":\\{\"id\":(-?\\d+)");
-
+			
             // CallbackQuery 처리
             // ── 이미 처리한 update_id 를 기록 → uidMat 루프에서 중복 처리 방지
             java.util.Set<Long> callbackUpdateIds = new java.util.HashSet<>();
@@ -289,16 +386,16 @@ public class TelegramBot {
                 String queryId = cbMat.group(1);
                 int    bStart  = cbMat.start();
                 String block   = json.substring(bStart);
-
+				
                 Matcher datMat = cbData.matcher(block);
                 Matcher cidCb  = cbCid.matcher(json.substring(bStart));
                 if (!datMat.find() || !cidCb.find()) continue;
-
+				
                 String data   = datMat.group(1);
                 String fromId = cidCb.group(1);
-
+				
                 if (!myChatId.isEmpty() && !fromId.equals(myChatId)) continue;
-
+				
                 // 이 CallbackQuery 가 속한 update_id 추출 → 중복 처리 방지용
                 Matcher uidCb = uidPat.matcher(json.substring(0, cbMat.start() + 1));
                 long cbUpdateId = 0;
@@ -306,12 +403,12 @@ public class TelegramBot {
                 if (cbUpdateId > 0) {
                     callbackUpdateIds.add(cbUpdateId);
                     if (cbUpdateId > lastUpdateId) lastUpdateId = cbUpdateId;
-                }
-
+				}
+				
                 answerCallbackQuery(queryId); // 로딩 스피너 제거
                 processCallbackData(fromId, data);
-            }
-
+			}
+			
             Matcher uidMat = uidPat.matcher(json);
             while (uidMat.find()) {
                 long updateId = Long.parseLong(uidMat.group(1));
@@ -320,7 +417,7 @@ public class TelegramBot {
                 if (callbackUpdateIds.contains(updateId)) {
                     lastUpdateId = updateId;
                     continue;
-                }
+				}
                 lastUpdateId = updateId;
 				
                 // 이 update 블록 범위 계산
@@ -341,7 +438,7 @@ public class TelegramBot {
                     // Chat ID 보안 체크 (첨부파일도 동일하게 적용)
                     if (!myChatId.isEmpty() && !fromChatId.equals(myChatId)) {
                         System.out.println("[Telegram] 허용되지 않은 Chat ID: " + fromChatId);
-                        send(fromChatId, "❌ 허용되지 않은 접근입니다.");
+                        sendTelegramWarning(fromChatId, "❌ 허용되지 않은 접근입니다.");
                         continue;
 					}
                     receiveFile(fromChatId, block);
@@ -357,7 +454,7 @@ public class TelegramBot {
                 // Chat ID 보안 체크
                 if (!myChatId.isEmpty() && !fromChatId.equals(myChatId)) {
                     System.out.println("[Telegram] 허용되지 않은 Chat ID: " + fromChatId);
-                    send(fromChatId, "❌ 허용되지 않은 접근입니다.");
+                    sendTelegramWarning(fromChatId, "❌ 허용되지 않은 접근입니다.");
                     continue;
 				}
                 processCommand(fromChatId, text.trim());
@@ -377,17 +474,17 @@ public class TelegramBot {
             case "/save"  : processSave ( chatId,  text);	break;
             case "/wh"    : processStart( chatId,  text);	break;
             case "/start" : processStart( chatId,  text);	break;
-            case "/yes"   : processYes  ( chatId,  text);	break; 
-            // case "/tray"  : processTray ( chatId,  text);	break; 
+            case "/yes"   : processYes  ( chatId,  text);	break;
+            // case "/tray"  : processTray ( chatId,  text);	break;
 			
-			case "/c1":	processCapture  ( chatId,  0);	break; 
-			case "/c2":	processCapture  ( chatId,  1);	break; 
-			case "/c3":	processCapture  ( chatId,  2);	break; 
-			case "/c4":	processCapture  ( chatId,  3);	break; 
+			case "/c1":	processCapture  ( chatId,  0);	break;
+			case "/c2":	processCapture  ( chatId,  1);	break;
+			case "/c3":	processCapture  ( chatId,  2);	break;
+			case "/c4":	processCapture  ( chatId,  3);	break;
 			
 			case "/h":
             case "/help":
-			send(chatId,
+			sendTelegram(
 				"📋 사용 가능한 명령어\n\n" +
 				"/h, /help       - 명령어 목록\n" +
 				"/wh             - PC 정보 조회\n" +
@@ -409,21 +506,21 @@ public class TelegramBot {
 			break;
             case "/c":
             case "/capture":
-			send(chatId, "📷 시계 캡처 중...");
+			sendTelegram( "📷 시계 캡처 중...");
 			try {
 				sendFile(chatId, handler.captureClockScreen());
                 } catch (Exception ex) {
-				send(chatId, "❌ 캡처 실패: " + ex.getMessage());
+				sendTelegram( "❌ 캡처 실패: " + ex.getMessage());
 			}
 			break;
 			
             case "/s":
             case "/screenshot":
-			send(chatId, "🖥 전체 화면 캡처 중...");
+			sendTelegram( "🖥 전체 화면 캡처 중...");
 			/*
 				new Thread(() -> {
 				try   { sendFile(chatId, handler.captureFullScreen()); }
-				catch (Exception ex) { send(chatId, "❌ 전체화면 캡처 실패: " + ex.getMessage()); }
+				catch (Exception ex) { sendTelegram(chatId, "❌ 전체화면 캡처 실패: " + ex.getMessage()); }
 				}, "ScreenCapture").start();
 			*/
 			new Thread(() -> {
@@ -434,79 +531,84 @@ public class TelegramBot {
 						catch (Exception e) { System.out.println("[Capture] " + e.getMessage()); }
 					});
 					if (result[0] != null) sendFile(chatId, result[0]);
-				} catch (Exception e) { send(chatId, "❌ 전체화면 캡처 실패: " + e.getMessage()); }
+				} catch (Exception e) { sendTelegram("❌ 전체화면 캡처 실패: " + e.getMessage()); }
 			}, "ScreenCapture").start();
 			break;
 			
 			case "/d":
             case "/down":
 			pendingCmd.set("/down");
-			send(chatId, "⚠️ PC를 종료하시겠습니까?\n/yes - 확인\n/no  - 취소");
+			sendTelegram( "⚠️ PC를 종료하시겠습니까?\n/yes - 확인\n/no  - 취소");
 			break;
 			
             case "/r":
             case "/reboot":
 			pendingCmd.set("/reboot");
-			send(chatId, "🔄 PC를 재시작하시겠습니까?\n/yes - 확인\n/no  - 취소");
-			break;			
+			sendTelegram( "🔄 PC를 재시작하시겠습니까?\n/yes - 확인\n/no  - 취소");
+			break;
 			
             case "/n":
             case "/no": {
                 // getAndSet("") : 읽기와 초기화를 원자적으로 처리
                 String cancelled = pendingCmd.getAndSet("");
-                if (!cancelled.isEmpty()) send(chatId, "✅ " + cancelled + " 취소되었습니다.");
-                else                      send(chatId, "❓ 대기 중인 명령이 없습니다.");
+                if (!cancelled.isEmpty()) sendTelegram( "✅ " + cancelled + " 취소되었습니다.");
+                else                      sendTelegram( "❓ 대기 중인 명령이 없습니다.");
                 break;
 			}
 			
             case "/logout_calendar":
-                processLogoutCalendar(chatId);
-                break;
-
+			processLogoutCalendar(chatId);
+			break;
+			
             case "/myschedule":
             case "/ms":
-                processMySchedule(chatId, text);
-                break;
-
+			processMySchedule(chatId, text);
+			break;
+			
             case "/naverschedule":
             case "/ns":
-                processNaverSchedule(chatId, text);
-                break;
-
+			processNaverSchedule(chatId, text);
+			break;
+			
             case "":
             case " ":
 			// 빈 메시지 무시
 			break;
 			
             default:
-			send(chatId, "❓ 알 수 없는 명령어입니다.\n/help 로 명령어 목록을 확인하세요.");
+			sendTelegram( "❓ 알 수 없는 명령어입니다.\n/help 로 명령어 목록을 확인하세요.");
 			break;
 		}  //  switch
 	}  //  processCommand
-
+	
     /** /logout_calendar 명령 처리 - 구글 캘린더 로그아웃 */
     private void processLogoutCalendar(String chatId) {
+		System.out.println("[TelegramBot] processLogoutCalendar() ");
+		
+		
         if (calendarService == null) {
-            send(chatId, "❌ Google Calendar 서비스가 연결되어 있지 않습니다.");
+			System.out.println("[TelegramBot] processLogoutCalendar()Google Calendar 서비스가 연결되어 있지 않습니다 ");
+            sendTelegram( "❌ Google Calendar 서비스가 연결되어 있지 않습니다.");
             return;
-        }
+		}
         String deletedPath = calendarService.logout();
         if (deletedPath != null) {
-            send(chatId, "✅ Google Calendar 로그아웃 완료\n"
+            sendTelegram( "✅ Google Calendar 로그아웃 완료\n"
                 + "🗑 토큰 삭제: " + deletedPath + "\n\n"
-                + "다음 앱 시작 시 브라우저 인증이 다시 진행됩니다.");
-        } else {
-            send(chatId, "✅ Google Calendar 로그아웃 완료\n"
-                + "(저장된 토큰 파일 없음)");
-        }
-    }
-
+			+ "다음 앱 시작 시 브라우저 인증이 다시 진행됩니다.");
+			} else {
+            sendTelegram( "✅ Google Calendar 로그아웃 완료\n"
+			+ "(저장된 토큰 파일 없음)");
+		}
+	}
+	
     /** /mySchedule 명령 처리 - 인라인 버튼 메뉴 또는 직접 조회 */
     private void processMySchedule(String chatId, String text) {
         if (calendarService == null || !calendarService.isInitialized()) {
-            send(chatId, "❌ Google Calendar 연동이 설정되지 않았습니다.");
+			System.out.println("[TelegramBot] Google Calendar 연동이 설정되지 않았습니다 ");
+            sendTelegram( "❌ Google Calendar 연동이 설정되지 않았습니다.");
             return;
-        }
+		}
         String[] parts = text.trim().split("\\s+");
         if (parts.length == 1) {
             sendWithInlineKeyboard(chatId,
@@ -519,14 +621,16 @@ public class TelegramBot {
                     {"지난 7일", "ms_week"},
                     {"이번 달",  "ms_month"},
                     {"다음 달",  "ms_nextmonth"}
-                });
-            return;
-        }
+				});
+				return;
+		}
         fetchAndSendSchedule(chatId, parts[1].toLowerCase());
-    }
-
+	}
+	
     /** 일정 조회 및 전송 */
     private void fetchAndSendSchedule(String chatId, String arg) {
+		System.out.println("[TelegramBot] fetchAndSendSchedule ");
+		
         new Thread(() -> {
             try {
                 java.util.List<GoogleCalendarService.CalendarEvent> events;
@@ -534,60 +638,61 @@ public class TelegramBot {
                 switch (arg) {
                     case "today":
                     case "오늘":
-                        events = calendarService.getToday();
-                        title  = "오늘 일정 (" + java.time.LocalDate.now()
-                            .format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
-                        break;
+					events = calendarService.getToday();
+					title  = "오늘 일정 (" + java.time.LocalDate.now()
+					.format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
+					break;
                     case "tomorrow":
                     case "내일":
-                        events = calendarService.getNextDays(2).stream()
-                            .filter(e -> e.startTime.toLocalDate()
-                                .equals(java.time.LocalDate.now().plusDays(1)))
-                            .collect(java.util.stream.Collectors.toList());
-                        title  = "내일 일정 (" + java.time.LocalDate.now().plusDays(1)
-                            .format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
-                        break;
+					events = calendarService.getNextDays(2).stream()
+					.filter(e -> e.startTime.toLocalDate()
+					.equals(java.time.LocalDate.now().plusDays(1)))
+					.collect(java.util.stream.Collectors.toList());
+					title  = "내일 일정 (" + java.time.LocalDate.now().plusDays(1)
+					.format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
+					break;
                     case "week":
                     case "이번주":
-                        events = calendarService.getThisWeek();
-                        title  = "이번 주 일정";
-                        break;
+					events = calendarService.getThisWeek();
+					title  = "이번 주 일정";
+					break;
                     case "month":
                     case "이번달":
-                        events = calendarService.getThisMonth();
-                        title  = "이번 달 일정";
-                        break;
+					events = calendarService.getThisMonth();
+					title  = "이번 달 일정";
+					break;
                     case "nextmonth":
                     case "다음달":
-                        events = calendarService.getNextMonth();
-                        title  = "다음 달 일정";
-                        break;
+					events = calendarService.getNextMonth();
+					title  = "다음 달 일정";
+					break;
                     default:
-                        try {
-                            int days = Integer.parseInt(arg);
-                            events = calendarService.getNextDays(days);
-                            title  = "향후 " + days + "일 일정";
+					try {
+						int days = Integer.parseInt(arg);
+						events = calendarService.getNextDays(days);
+						title  = "향후 " + days + "일 일정";
                         } catch (NumberFormatException ex) {
-                            send(chatId, "❓ 사용법: /ms [today|tomorrow|week|month|숫자]");
-                            return;
-                        }
-                }
-                send(chatId, GoogleCalendarService.formatEvents(title, events));
-            } catch (Exception e) {
-                send(chatId, "❌ 일정 조회 실패: " + e.getMessage());
-            }
-        }, "ScheduleFetch").start();
-    }
-
+						sendTelegram( "❓ 사용법: /ms [today|tomorrow|week|month|숫자]");
+						return;
+					}
+				}
+                sendTelegram( GoogleCalendarService.formatEvents(title, events));
+				} catch (Exception e) {
+                sendTelegram( "❌ 일정 조회 실패: " + e.getMessage());
+			}
+		}, "ScheduleFetch").start();
+	}
+	
     /** /naverSchedule 명령 처리 - 인라인 버튼 메뉴 또는 직접 조회 */
     private void processNaverSchedule(String chatId, String text) {
         if (naverCalendarService == null || !naverCalendarService.isInitialized()) {
-            send(chatId, "❌ 네이버 Calendar 연동이 설정되지 않았습니다.\n"
+			System.out.println("[TelegramBot] 네이버 Calendar 연동이 설정되지 않았습니다 ");
+            sendTelegram( "❌ 네이버 Calendar 연동이 설정되지 않았습니다.\n"
                 + "clock_settings.ini 에 아래 항목을 추가하세요.\n\n"
                 + "  naver.caldav.id       = 네이버아이디\n"
-                + "  naver.caldav.password = 앱비밀번호");
+			+ "  naver.caldav.password = 앱비밀번호");
             return;
-        }
+		}
         String[] parts = text.trim().split("\\s+");
         if (parts.length == 1) {
             // 인라인 버튼 메뉴 표시
@@ -601,14 +706,16 @@ public class TelegramBot {
                     {"지난 7일", "ns_week"},
                     {"이번 달",  "ns_month"},
                     {"다음 달",  "ns_nextmonth"}
-                });
-            return;
-        }
+				});
+				return;
+		}
         fetchAndSendNaverSchedule(chatId, parts[1].toLowerCase());
-    }
-
+	}
+	
     /** 네이버 일정 조회 및 전송 */
     private void fetchAndSendNaverSchedule(String chatId, String arg) {
+		System.out.println("[TelegramBot] fetchAndSendNaverSchedule ");
+		
         new Thread(() -> {
             try {
                 java.util.List<NaverCalendarService.CalendarEvent> events;
@@ -616,51 +723,51 @@ public class TelegramBot {
                 switch (arg) {
                     case "today":
                     case "오늘":
-                        events = naverCalendarService.getToday();
-                        title  = "네이버 오늘 일정 (" + java.time.LocalDate.now()
-                            .format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
-                        break;
+					events = naverCalendarService.getToday();
+					title  = "네이버 오늘 일정 (" + java.time.LocalDate.now()
+					.format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
+					break;
                     case "tomorrow":
                     case "내일":
-                        events = naverCalendarService.getNextDays(2).stream()
-                            .filter(e -> e.startTime.toLocalDate()
-                                .equals(java.time.LocalDate.now().plusDays(1)))
-                            .collect(java.util.stream.Collectors.toList());
-                        title  = "네이버 내일 일정 (" + java.time.LocalDate.now().plusDays(1)
-                            .format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
-                        break;
+					events = naverCalendarService.getNextDays(2).stream()
+					.filter(e -> e.startTime.toLocalDate()
+					.equals(java.time.LocalDate.now().plusDays(1)))
+					.collect(java.util.stream.Collectors.toList());
+					title  = "네이버 내일 일정 (" + java.time.LocalDate.now().plusDays(1)
+					.format(java.time.format.DateTimeFormatter.ofPattern("M/d")) + ")";
+					break;
                     case "week":
                     case "이번주":
-                        events = naverCalendarService.getThisWeek();
-                        title  = "네이버 이번 주 일정";
-                        break;
+					events = naverCalendarService.getThisWeek();
+					title  = "네이버 이번 주 일정";
+					break;
                     case "month":
                     case "이번달":
-                        events = naverCalendarService.getThisMonth();
-                        title  = "네이버 이번 달 일정";
-                        break;
+					events = naverCalendarService.getThisMonth();
+					title  = "네이버 이번 달 일정";
+					break;
                     case "nextmonth":
                     case "다음달":
-                        events = naverCalendarService.getNextMonth();
-                        title  = "네이버 다음 달 일정";
-                        break;
+					events = naverCalendarService.getNextMonth();
+					title  = "네이버 다음 달 일정";
+					break;
                     default:
-                        try {
-                            int days = Integer.parseInt(arg);
-                            events = naverCalendarService.getNextDays(days);
-                            title  = "네이버 향후 " + days + "일 일정";
+					try {
+						int days = Integer.parseInt(arg);
+						events = naverCalendarService.getNextDays(days);
+						title  = "네이버 향후 " + days + "일 일정";
                         } catch (NumberFormatException ex) {
-                            send(chatId, "❓ 사용법: /ns [today|tomorrow|week|month|숫자]");
-                            return;
-                        }
-                }
-                send(chatId, NaverCalendarService.formatEvents(title, events));
-            } catch (Exception e) {
-                send(chatId, "❌ 네이버 일정 조회 실패: " + e.getMessage());
-            }
-        }, "NaverScheduleFetch").start();
-    }
-
+						sendTelegram( "❓ 사용법: /ns [today|tomorrow|week|month|숫자]");
+						return;
+					}
+				}
+                sendTelegram( NaverCalendarService.formatEvents(title, events));
+				} catch (Exception e) {
+                sendTelegram( "❌ 네이버 일정 조회 실패: " + e.getMessage());
+			}
+		}, "NaverScheduleFetch").start();
+	}
+	
     /** 인라인 버튼 클릭 콜백 처리 */
     private void processCallbackData(String chatId, String data) {
         System.out.println("[Telegram Callback] " + chatId + " → " + data);
@@ -682,19 +789,19 @@ public class TelegramBot {
             case "ns_3":        fetchAndSendNaverSchedule(chatId, "3");        break;
             case "ns_7":        fetchAndSendNaverSchedule(chatId, "7");        break;
             default:
-                System.out.println("[Telegram Callback] 알 수 없는 콜백: " + data);
-        }
-    }
-
+			System.out.println("[Telegram Callback] 알 수 없는 콜백: " + data);
+		}
+	}
+	
 	private void processCapture(String chatId, int monitor) {
 		
 	    // 모니터 개수 확인 (GraphicsEnvironment 사용)
 		int monitorCount = java.awt.GraphicsEnvironment
         .getLocalGraphicsEnvironment()
         .getScreenDevices().length;
-
+		
 		if (monitor >= monitorCount) {
-			send(chatId, "모니터 " + (monitor + 1) + "번 없음 (현재 " + monitorCount + "개 연결됨)");
+			sendTelegram( "모니터 " + (monitor + 1) + "번 없음 (현재 " + monitorCount + "개 연결됨)");
 			return;  // 스레드 실행 전에 조기 종료
 		}
 		
@@ -714,9 +821,9 @@ public class TelegramBot {
 						}
 					});
 					if (result[0] != null) sendFile(chatId, result[0]);
-					else send(chatId, "캡처 실패: 결과 없음");
+					else sendTelegram( "캡처 실패: 결과 없음");
 					} catch (Exception e) {
-					send(chatId, "캡처 실패: " + e.getMessage());
+					sendTelegram( "캡처 실패: " + e.getMessage());
 				}
 			}
 		}, "TelegramCapture");
@@ -724,18 +831,18 @@ public class TelegramBot {
 		t.start();
 	}  //  processCapture
 	/*
-    private void processTray (String chatId, String text) {
+		private void processTray (String chatId, String text) {
 		new Thread(() -> {
-			try {
-				final boolean[] visible = new boolean[1];
-				SwingUtilities.invokeAndWait(() -> visible[0] = handler.toggleTrayWindow());
-				if (visible[0]) send(chatId, "🪟 시계 창이 표시되었습니다.");
-				else            send(chatId, "📥 시계 창이 트레이로 숨겨졌습니다.");
-				} catch (Exception ex) {
-				send(chatId, "❌ 트레이 토글 실패: " + ex.getMessage());
-			}
+		try {
+		final boolean[] visible = new boolean[1];
+		SwingUtilities.invokeAndWait(() -> visible[0] = handler.toggleTrayWindow());
+		if (visible[0]) sendTelegram(chatId, "🪟 시계 창이 표시되었습니다.");
+		else            sendTelegram(chatId, "📥 시계 창이 트레이로 숨겨졌습니다.");
+		} catch (Exception ex) {
+		sendTelegram(chatId, "❌ 트레이 토글 실패: " + ex.getMessage());
+		}
 		}, "TrayToggle").start();
-	}  //  processTray
+		}  //  processTray
 	*/
 	
 	private void processYes(String chatId, String text) {
@@ -748,7 +855,7 @@ public class TelegramBot {
 					Thread.sleep(2000);
 					handler.shutdownPC();
 					} catch (Exception ex) {
-					send(chatId, "❌ 종료 실패: " + ex.getMessage());
+					sendTelegram( "❌ 종료 실패: " + ex.getMessage());
 				}
 			}, "Shutdown").start();
 			} else if (pending.equals("/reboot")) {
@@ -758,11 +865,11 @@ public class TelegramBot {
 					Thread.sleep(2000);
 					handler.rebootPC();
 					} catch (Exception ex) {
-					send(chatId, "❌ 재시작 실패: " + ex.getMessage());
+					sendTelegram( "❌ 재시작 실패: " + ex.getMessage());
 				}
 			}, "Reboot").start();
 			} else {
-			send(chatId, "❓ 대기 중인 명령이 없습니다.");
+			sendTelegram( "❓ 대기 중인 명령이 없습니다.");
 		}
 		return ;
 	}   // processYes
@@ -776,7 +883,7 @@ public class TelegramBot {
 				String osName   = System.getProperty("os.name") + " " + System.getProperty("os.version");
 				String javaVer  = System.getProperty("java.version");
 				String localIp  = java.net.InetAddress.getLocalHost().getHostAddress();
-				String publicIp = getPublicIp();
+				publicIp = getPublicIp();
 				String msg = "🖥 PC 정보\n\n"
 				+ "🕐 현재 시각: " + now      + "\n"
 				+ "💻 PC 이름 : " + pcName   + "\n"
@@ -785,9 +892,9 @@ public class TelegramBot {
 				+ "🌍 IP (외부): " + publicIp + "\n"
 				+ "🖥 OS      : " + osName   + "\n"
 				+ "☕ Java    : " + javaVer;
-				send(chatId, msg);
+				sendTelegram( msg);
 				} catch (Exception ex) {
-				send(chatId, "❌ PC 정보 조회 실패: " + ex.getMessage());
+				sendTelegram( "❌ PC 정보 조회 실패: " + ex.getMessage());
 			}
 		}, "WhInfo").start();
 	}  //  processStart
@@ -796,24 +903,24 @@ public class TelegramBot {
 		String saveArgs = text.substring("/save".length());
 		int nl = saveArgs.indexOf('\n');
 		if (nl < 0) {
-			send(chatId, "사용법: /save 파일명\n내용 첫째줄\n내용 둘째줄\n...");
+			sendTelegram( "사용법: /save 파일명\n내용 첫째줄\n내용 둘째줄\n...");
 			return ;
 		}
 		String fileName = saveArgs.substring(0, nl).trim();
 		String content  = saveArgs.substring(nl + 1);
 		if (fileName.isEmpty()) {
-			send(chatId, "❌ 파일명이 없습니다.");
+			sendTelegram( "파일명이 없습니다.");
 			return ;
 		}
 		if (fileName.contains("/") || fileName.contains("\\") || fileName.contains("..")) {
-			send(chatId, "❌ 파일명에 경로 문자를 포함할 수 없습니다.");
+			sendTelegram( "❌ 파일명에 경로 문자를 포함할 수 없습니다.");
 			return ;
 		}
 		try {
 			// java.io.File saveFile = new java.io.File(System.getProperty("user.dir"), fileName);
 			java.io.File saveFile = new java.io.File(resolveRunDir(), fileName);
 			if (saveFile.exists()) {
-				send(chatId, "❌ 이미 존재하는 파일입니다. 다른 파일 명칭을 지정하세요: " + saveFile.getAbsolutePath());
+				sendTelegram( "❌ 이미 존재하는 파일입니다. 다른 파일 명칭을 지정하세요: " + saveFile.getAbsolutePath());
 				return ;
 			}
 			try (java.io.PrintWriter pw = new java.io.PrintWriter(
@@ -821,9 +928,9 @@ public class TelegramBot {
 				new java.io.FileOutputStream(saveFile), "UTF-8"))) {
 				pw.print(content);
 			}
-			send(chatId, "✅ 저장 완료: " + saveFile.getAbsolutePath());
+			sendTelegram( "✅ 저장 완료: " + saveFile.getAbsolutePath());
 			} catch (Exception ex) {
-			send(chatId, "❌ 저장 실패: " + ex.getMessage());
+			sendTelegram( "❌ 저장 실패: " + ex.getMessage());
 		}
 		return ;
 	}	//  processSave
@@ -831,13 +938,13 @@ public class TelegramBot {
     private void processCMD(String chatId, String text) 	{
 		String command = text.substring("/cmd".length()).trim();
 		if (command.isEmpty()) {
-			send(chatId, "사용법: /cmd <명령어>\n예) /cmd dir\n예) /cmd ipconfig");
+			sendTelegram( "사용법: /cmd <명령어>\n예) /cmd dir\n예) /cmd ipconfig");
 			return ;
 		}
 		// ── 위험 명령어 차단 ──────────────────────────────
 		String blockedKeyword = findBlockedKeyword(command);
 		if (blockedKeyword != null) {
-			send(chatId, "🚫 [" + blockedKeyword + "] 는 처리 할 수 없습니다.");
+			sendTelegram( "🚫 [" + blockedKeyword + "] 는 처리 할 수 없습니다.");
 			AppLogger.writeToFile("[CMD Block] chatId=" + chatId + " cmd=" + command);
 			return ;
 		}
@@ -861,10 +968,10 @@ public class TelegramBot {
 				proc.waitFor();
 				if (lineCount > maxLines)
 				sb.append("\n... (").append(lineCount).append("줄 중 ").append(maxLines).append("줄만 표시)");
-				if (sb.length() > 0) send(chatId, "```\n" + sb + "```");
-				else                 send(chatId, "✅ 실행 완료 (출력 없음)");
+				if (sb.length() > 0) sendTelegram( "```\n" + sb + "```");
+				else                 sendTelegram( "✅ 실행 완료 (출력 없음)");
 				} catch (Exception ex) {
-				send(chatId, "❌ 실행 실패: " + ex.getMessage());
+				sendTelegram( "❌ 실행 실패: " + ex.getMessage());
 			}
 		}, "CmdExec").start();
 		return ;
@@ -872,9 +979,48 @@ public class TelegramBot {
 	
 	// ── 메시지 전송 ───────────────────────────────────────────────
     /** 텍스트 메시지 전송 */
-    public void send(String chatId, String text) {
-        if (botToken.isEmpty() || chatId.isEmpty()) {
-            System.out.println("[Telegram] Bot Token 또는 Chat ID 없음");
+    public void sendTelegram(String text) {
+		System.out.println("[TelegramBot] sendTelegram(String chatId, String text) ");
+        if (this.botToken.isEmpty() ) {
+            System.out.println("[Telegram] Bot Token 없음");
+            return;
+		}	
+        if (this.myChatId.isEmpty()) {
+            System.out.println("[Telegram] Chat ID 없음");
+            return;
+		}
+        try {
+            URL url = toUrl("https://api.telegram.org/bot" + botToken + "/sendMessage");
+            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+            con.setRequestMethod("POST");
+            con.setDoOutput(true);
+            con.setConnectTimeout(10000);
+            con.setReadTimeout(10000);
+            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            String body = "chat_id=" + java.net.URLEncoder.encode(this.myChatId, "UTF-8")
+			+ "&text="    + java.net.URLEncoder.encode(text,   "UTF-8");
+            con.getOutputStream().write(body.getBytes("UTF-8"));
+            int code = con.getResponseCode();
+            con.disconnect();
+            System.out.println("[Telegram] 발송 완료 code=" + code);
+			} catch (Exception e) {
+            System.out.println("[Telegram] 발송 오류: " + e.getMessage());
+		}
+        // 카카오톡 동시 전송 (로그인된 경우에만)
+        if (kakao != null && !kakao.kakaoAccessToken.isEmpty()) {
+            final String kakaoText = text;
+            new Thread(() -> kakao.sendKakao("", kakaoText), "KakaoMirror").start();
+		}
+	}
+	
+    public void sendTelegramWarning(String chatId ,String text) {
+		System.out.println("[TelegramBot] sendTelegram(String chatId, String text) ");
+        if (botToken.isEmpty() ) {
+            System.out.println("[Telegram] Bot Token 없음");
+            return;
+		}	
+        if (chatId.isEmpty()) {
+            System.out.println("[Telegram] Chat ID 없음");
             return;
 		}
         try {
@@ -894,18 +1040,13 @@ public class TelegramBot {
 			} catch (Exception e) {
             System.out.println("[Telegram] 발송 오류: " + e.getMessage());
 		}
-        // 카카오톡 동시 전송 (로그인된 경우에만)
-        if (kakao != null && !kakao.kakaoAccessToken.isEmpty()) {
-            final String kakaoText = text;
-            new Thread(() -> kakao.sendKakao("", kakaoText), "KakaoMirror").start();
-        }
 	}
-
-    /**
-     * 인라인 키보드 버튼이 포함된 메시지 전송.
-     * buttons: [ ["버튼텍스트1", "callbackData1"], ["버튼텍스트2", "callbackData2"] ... ]
-     * 한 줄에 2개씩 배치됨
-     */
+	
+	/**
+		* 인라인 키보드 버튼이 포함된 메시지 전송.
+		* buttons: [ ["버튼텍스트1", "callbackData1"], ["버튼텍스트2", "callbackData2"] ... ]
+		* 한 줄에 2개씩 배치됨
+	*/
     public void sendWithInlineKeyboard(String chatId, String text, String[][] buttons) {
         if (botToken.isEmpty() || chatId.isEmpty()) return;
         try {
@@ -914,19 +1055,19 @@ public class TelegramBot {
                 if (i > 0) kb.append(",");
                 kb.append("[");
                 kb.append("{\"text\":\"").append(buttons[i][0])
-                  .append("\",\"callback_data\":\"").append(buttons[i][1]).append("\"}");
+				.append("\",\"callback_data\":\"").append(buttons[i][1]).append("\"}");
                 if (i + 1 < buttons.length) {
                     kb.append(",{\"text\":\"").append(buttons[i+1][0])
-                      .append("\",\"callback_data\":\"").append(buttons[i+1][1]).append("\"}");
-                }
+					.append("\",\"callback_data\":\"").append(buttons[i+1][1]).append("\"}");
+				}
                 kb.append("]");
-            }
+			}
             kb.append("]");
-
+			
             String jsonBody = "{\"chat_id\":\"" + chatId + "\","
-                + "\"text\":\"" + text.replace("\"","\\\"").replace("\n","\\n") + "\","
-                + "\"reply_markup\":{\"inline_keyboard\":" + kb + "}}";
-
+			+ "\"text\":\"" + text.replace("\"","\\\"").replace("\n","\\n") + "\","
+			+ "\"reply_markup\":{\"inline_keyboard\":" + kb + "}}";
+			
             java.net.URL url = toUrl("https://api.telegram.org/bot" + botToken + "/sendMessage");
             java.net.HttpURLConnection con = (java.net.HttpURLConnection) url.openConnection();
             con.setRequestMethod("POST");
@@ -938,11 +1079,11 @@ public class TelegramBot {
             int code = con.getResponseCode();
             con.disconnect();
             System.out.println("[Telegram] 인라인 키보드 발송 code=" + code);
-        } catch (Exception e) {
+			} catch (Exception e) {
             System.out.println("[Telegram] 인라인 키보드 발송 오류: " + e.getMessage());
-        }
-    }
-
+		}
+	}
+	
     /** 콜백 쿼리에 응답 (버튼 클릭 후 로딩 스피너 제거) */
     private void answerCallbackQuery(String callbackQueryId) {
         if (botToken.isEmpty() || callbackQueryId.isEmpty()) return;
@@ -958,11 +1099,11 @@ public class TelegramBot {
             con.getOutputStream().write(jsonBody.getBytes("UTF-8"));
             con.getResponseCode();
             con.disconnect();
-        } catch (Exception e) {
+			} catch (Exception e) {
             System.out.println("[Telegram] answerCallbackQuery 오류: " + e.getMessage());
-        }
-    }
-
+		}
+	}
+	
     /** 파일(이미지/문서) 전송 */
     public void sendFile(String chatId, File file) throws Exception {
         String name    = file.getName().toLowerCase();
@@ -1069,7 +1210,7 @@ public class TelegramBot {
             // ── getFile API → file_path + file_size 획득 (가장 정확한 크기 출처)
             String[] fileInfo = getFileInfo(fileId);
             if (fileInfo == null) {
-                send(chatId, "❌ 파일 경로 조회 실패");
+                sendTelegram( "❌ 파일 경로 조회 실패");
                 return;
 			}
             String filePath = fileInfo[0];
@@ -1085,7 +1226,7 @@ public class TelegramBot {
             // path==null 이면 텔레그램이 getFile 자체를 거부 = 50MB 초과 확실
             if (filePath == null || fileSize < 0) {
                 System.out.println("[Telegram] 파일 제공 불가 -> 50MB 초과");
-                send(chatId, "❌ 파일이 너무 커서 저장할 수 없습니다.\n"
+                sendTelegram( "❌ 파일이 너무 커서 저장할 수 없습니다.\n"
                     + "⚠️ 최대 허용: " + limitLabel + "\n"
 				+ "(텔레그램 Bot API 50MB 제한)");
                 return;
@@ -1093,7 +1234,7 @@ public class TelegramBot {
             if (fileSize > limitBytes) {
                 String sizeMB = String.format("%.1f", fileSize / 1024.0 / 1024.0);
                 System.out.println("[Telegram] 파일 크기 초과: " + sizeMB + "MB -> 수신 거부");
-                send(chatId, "❌ 파일 크기 초과로 저장할 수 없습니다.\n"
+                sendTelegram( "❌ 파일 크기 초과로 저장할 수 없습니다.\n"
                     + "📦 파일 크기: " + sizeMB + "MB\n"
 				+ "⚠️ 최대 허용: " + limitLabel);
                 return;
@@ -1128,7 +1269,7 @@ public class TelegramBot {
             if (dlCode != 200) {
                 con.disconnect();
                 System.out.println("[Telegram] 다운로드 실패 HTTP " + dlCode);
-                send(chatId, "❌ 파일 다운로드 실패 (HTTP " + dlCode + ")\n"
+                sendTelegram( "❌ 파일 다운로드 실패 (HTTP " + dlCode + ")\n"
 				+ "파일이 너무 크거나 만료되었을 수 있습니다.");
                 return;
 			}
@@ -1141,7 +1282,7 @@ public class TelegramBot {
             con.disconnect();
 			
             System.out.println("[Telegram] 파일 저장 완료: " + outFile.getAbsolutePath());
-            send(chatId, "✅ 파일 저장 완료\n📁 " + outFile.getName()
+            sendTelegram( "✅ 파일 저장 완료\n📁 " + outFile.getName()
 			+ "\n📂 " + outFile.getAbsolutePath());
 			
             // ── 이미지 파일이면 PC 화면에 즉시 표시
@@ -1157,7 +1298,7 @@ public class TelegramBot {
 			
 			} catch (Exception e) {
             System.out.println("[Telegram] 파일 수신 오류: " + e.getMessage());
-            send(chatId, "❌ 파일 수신 실패: " + e.getMessage());
+            sendTelegram( "❌ 파일 수신 실패: " + e.getMessage());
 		}
 	}
 	
@@ -1234,7 +1375,7 @@ public class TelegramBot {
 		String appData = System.getenv("APPDATA");
 		if (appData == null) appData = System.getProperty("user.home");
 		java.io.File dir = new java.io.File(appData
-			+ java.io.File.separator + "KootPanKing");
+		+ java.io.File.separator + "KootPanKing");
 		if (!dir.exists()) dir.mkdirs();
 		return dir;
 	}
@@ -1337,14 +1478,14 @@ public class TelegramBot {
         try { return new URL(s); }
         catch (Exception e) { throw new RuntimeException(e); }
 	}
-
+	
     // ── 텔레그램 설정 다이얼로그 (JavaFX) ────────────────────────
     /**
-     * 텔레그램 설정 다이얼로그 (JavaFX Stage).
-     * FX Application Thread 에서 호출해야 한다.
-     *
-     * @param ownerStage 부모 Stage
-     */
+		* 텔레그램 설정 다이얼로그 (JavaFX Stage).
+		* FX Application Thread 에서 호출해야 한다.
+		*
+		* @param ownerStage 부모 Stage
+	*/
     public void showTelegramDialog(Stage ownerStage) {
         Stage dlg = new Stage();
         dlg.initOwner(ownerStage);
@@ -1352,58 +1493,58 @@ public class TelegramBot {
         dlg.initStyle(StageStyle.UTILITY);
         dlg.setTitle("✈️ 텔레그램 설정");
         dlg.setAlwaysOnTop(true);
-
+		
         // ── 설정 영역 (GridPane) ─────────────────────────────
         GridPane cfg = new GridPane();
         cfg.setHgap(8);
         cfg.setVgap(6);
         cfg.setPadding(new Insets(8));
-
+		
         TextField tokenField  = new TextField(botToken);
         TextField chatIdField = new TextField(myChatId);
         chatIdField.setPromptText("@userinfobot 에게 /start → Chat ID 확인");
         tokenField.setPrefWidth(300);
-
+		
         cfg.add(new Label("Bot Token:"), 0, 0);
         cfg.add(tokenField,              1, 0);
         cfg.add(new Label("Chat ID:"),   0, 1);
         cfg.add(chatIdField,             1, 1);
-
+		
         CheckBox pollingCb = new CheckBox("🎮 원격제어 활성화 (5초마다 명령 수신)");
         pollingCb.setSelected(polling);
         pollingCb.setTooltip(new Tooltip("텔레그램에서 /help /screenshot /shutdown 등 명령 수신"));
         GridPane.setColumnSpan(pollingCb, 2);
         cfg.add(pollingCb, 0, 2);
-
+		
         Label hintLabel = new Label("※ 원격제어: /help /capture /screenshot /shutdown /reboot");
         hintLabel.setStyle("-fx-text-fill: gray; -fx-font-size: 11;");
         GridPane.setColumnSpan(hintLabel, 2);
         cfg.add(hintLabel, 0, 3);
-
+		
         TitledPane cfgPane = new TitledPane("설정", cfg);
         cfgPane.setCollapsible(false);
-
+		
         // ── 메시지 영역 ──────────────────────────────────────
         TextArea msgArea = new TextArea(
             "안녕하세요!\n\n[끝판왕]에서 텔레그램으로 개통 축하 인사 보냅니다.\n\n"
-            + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+		+ new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
         msgArea.setWrapText(true);
         msgArea.setPrefRowCount(5);
-
+		
         TitledPane msgPane = new TitledPane("메시지", msgArea);
         msgPane.setCollapsible(false);
-
+		
         // ── 첨부파일 영역 ────────────────────────────────────
         java.util.List<File> attachedFiles = new java.util.ArrayList<>();
         ObservableList<String> fileItems   = FXCollections.observableArrayList();
         ListView<String> fileList = new ListView<>(fileItems);
         fileList.setPrefHeight(80);
-
+		
         Button addFileBtn = new Button("📎 파일 추가");
         Button addImgBtn  = new Button("🖼 이미지 추가");
         Button captureBtn = new Button("📷 시계 캡처");
         Button removeBtn  = new Button("🗑 삭제");
-
+		
         addFileBtn.setOnAction(e -> {
             FileChooser fc = new FileChooser();
             fc.setTitle("첨부할 파일 선택");
@@ -1412,25 +1553,25 @@ public class TelegramBot {
                 for (File f : files) {
                     attachedFiles.add(f);
                     fileItems.add(f.getName() + "  (" + (f.length() / 1024) + " KB)");
-                }
-            }
-        });
-
+				}
+			}
+		});
+		
         addImgBtn.setOnAction(e -> {
             FileChooser fc = new FileChooser();
             fc.setTitle("첨부할 이미지 선택");
             fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(
-                "이미지", "*.jpg","*.jpeg","*.png","*.gif","*.bmp"));
-                // "이미지", "*.jpg","*.jpeg","*.png","*.gif","*.bmp","*.webp"));
+			"이미지", "*.jpg","*.jpeg","*.png","*.gif","*.bmp"));
+			// "이미지", "*.jpg","*.jpeg","*.png","*.gif","*.bmp","*.webp"));
             java.util.List<File> files = fc.showOpenMultipleDialog(dlg);
             if (files != null) {
                 for (File f : files) {
                     attachedFiles.add(f);
                     fileItems.add("🖼 " + f.getName() + "  (" + (f.length() / 1024) + " KB)");
-                }
-            }
-        });
-
+				}
+			}
+		});
+		
         captureBtn.setOnAction(e -> {
             try {
                 File capFile = (handler != null) ? handler.captureClockScreen() : null;
@@ -1438,67 +1579,67 @@ public class TelegramBot {
                     attachedFiles.add(capFile);
                     fileItems.add("📷 " + capFile.getName() + "  (" + (capFile.length() / 1024) + " KB)");
                     fxAlert(dlg, Alert.AlertType.INFORMATION, "캡처 완료", "시계 화면이 캡처되었습니다.");
-                }
-            } catch (Exception ex) {
+				}
+				} catch (Exception ex) {
                 fxAlert(dlg, Alert.AlertType.ERROR, "캡처 실패", ex.getMessage());
-            }
-        });
-
+			}
+		});
+		
         removeBtn.setOnAction(e -> {
             int idx = fileList.getSelectionModel().getSelectedIndex();
             if (idx >= 0) { attachedFiles.remove(idx); fileItems.remove(idx); }
-        });
-
+		});
+		
         HBox attachBtns = new HBox(4, addFileBtn, addImgBtn, captureBtn, removeBtn);
         VBox attachBox  = new VBox(4, fileList, attachBtns);
         TitledPane attachPane = new TitledPane("첨부파일", attachBox);
         attachPane.setCollapsible(false);
-
+		
         // ── 하단 버튼 영역 ───────────────────────────────────
         Label statusLabel = new Label(" ");
         statusLabel.setStyle("-fx-text-fill: green;");
-
+		
         Button sendBtn  = new Button("✈️ 전송");
         Button closeBtn = new Button("닫기");
         sendBtn.setStyle("-fx-background-color:#0088cc; -fx-text-fill:white; -fx-font-weight:bold;");
-
+		
         sendBtn.setOnAction(e -> {
             botToken = tokenField.getText().trim();
             myChatId = chatIdField.getText().trim();
             polling  = pollingCb.isSelected();
             String chatId = myChatId;
             String text   = msgArea.getText().trim();
-
+			
             if (botToken.isEmpty()) {
                 fxAlert(dlg, Alert.AlertType.WARNING, "텔레그램", "Bot Token을 입력하세요."); return;
-            }
+			}
             if (chatId.isEmpty()) {
                 fxAlert(dlg, Alert.AlertType.WARNING, "텔레그램", "Chat ID를 입력하세요."); return;
-            }
-
+			}
+			
             sendBtn.setDisable(true);
             statusLabel.setText("전송 중...");
             statusLabel.setStyle("-fx-text-fill: orange;");
-
+			
             new Thread(() -> {
                 StringBuilder result = new StringBuilder();
                 boolean anyError = false;
-
+				
                 if (!text.isEmpty()) {
-                    try   { send(chatId, text); result.append("✅ 텍스트 전송 완료\n"); }
+                    try   { sendTelegram( text); result.append("✅ 텍스트 전송 완료\n"); }
                     catch (Exception ex) {
                         result.append("❌ 텍스트 전송 실패: ").append(ex.getMessage()).append("\n");
                         anyError = true;
-                    }
-                }
+					}
+				}
                 for (File f : attachedFiles) {
                     try   { sendFile(chatId, f); result.append("✅ ").append(f.getName()).append(" 전송 완료\n"); }
                     catch (Exception ex) {
                         result.append("❌ ").append(f.getName()).append(" 실패: ").append(ex.getMessage()).append("\n");
                         anyError = true;
-                    }
-                }
-
+					}
+				}
+				
                 final String  finalResult = result.toString();
                 final boolean hasError    = anyError;
                 Platform.runLater(() -> {
@@ -1508,11 +1649,11 @@ public class TelegramBot {
                     fxAlert(dlg,
                         hasError ? Alert.AlertType.WARNING : Alert.AlertType.INFORMATION,
                         "전송 결과",
-                        finalResult.isEmpty() ? "보낼 내용이 없습니다." : finalResult);
-                });
-            }, "TelegramSend").start();
-        });
-
+					finalResult.isEmpty() ? "보낼 내용이 없습니다." : finalResult);
+				});
+			}, "TelegramSend").start();
+		});
+		
         closeBtn.setOnAction(e -> {
             botToken = tokenField.getText().trim();
             myChatId = chatIdField.getText().trim();
@@ -1521,20 +1662,20 @@ public class TelegramBot {
             else         stopPolling();
             if (handler != null) handler.saveConfig();
             dlg.close();
-        });
-
+		});
+		
         HBox btnRow = new HBox(8, statusLabel, sendBtn, closeBtn);
         btnRow.setAlignment(Pos.CENTER_RIGHT);
         btnRow.setPadding(new Insets(4, 0, 0, 0));
-
+		
         // ── 전체 레이아웃 조립 ───────────────────────────────
         VBox root = new VBox(8, cfgPane, msgPane, attachPane, btnRow);
         root.setPadding(new Insets(12));
-
+		
         dlg.setScene(new Scene(root, 520, 500));
         dlg.show();
-    }
-
+	}
+	
     /** JavaFX Alert 헬퍼 (FX 스레드에서 호출) */
     private static void fxAlert(Stage owner, Alert.AlertType type, String title, String msg) {
         Alert a = new Alert(type);
@@ -1543,40 +1684,40 @@ public class TelegramBot {
         a.setHeaderText(null);
         a.setContentText(msg);
         a.show();
-    }
-
+	}
+	
     // ── 텔레그램 안내 HTML 파일 열기 ─────────────────────────────
     public void showTelegramHelp(Stage ownerStage) {
         try {
             // TELEGRAM_help.txt 경로: APP_DIR 기준
             java.io.File txtFile = new java.io.File(appDir.isEmpty() ? "." : appDir, "TELEGRAM_help.txt");
-
+			
             String content;
             if (txtFile.exists()) {
                 java.io.BufferedReader br = new java.io.BufferedReader(
                     new java.io.InputStreamReader(
-                        new java.io.FileInputStream(txtFile), "UTF-8"));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) sb.append(line).append("\n");
-                br.close();
-                content = sb.toString();
-            } else {
-                content = "TELEGRAM_help.txt 파일을 찾을 수 없습니다.\n실행 파일과 같은 폴더에 TELEGRAM_help.txt 를 넣어주세요.";
-            }
-
+					new java.io.FileInputStream(txtFile), "UTF-8"));
+					StringBuilder sb = new StringBuilder();
+					String line;
+					while ((line = br.readLine()) != null) sb.append(line).append("\n");
+					br.close();
+					content = sb.toString();
+					} else {
+					content = "TELEGRAM_help.txt 파일을 찾을 수 없습니다.\n실행 파일과 같은 폴더에 TELEGRAM_help.txt 를 넣어주세요.";
+			}
+			
             // URL → <a href> 링크 변환 후 HTML 생성
             String escaped = content
-                .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+			.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
             String html = escaped.replaceAll(
                 "(https?://[\\S]+)",
-                "<a href='$1' target='_blank'>$1</a>");
-
+			"<a href='$1' target='_blank'>$1</a>");
+			
             java.io.File htmlFile = java.io.File.createTempFile("telegram_help_", ".html");
             htmlFile.deleteOnExit();
             try (java.io.PrintWriter pw = new java.io.PrintWriter(
-                    new java.io.OutputStreamWriter(
-                        new java.io.FileOutputStream(htmlFile), "UTF-8"))) {
+				new java.io.OutputStreamWriter(
+				new java.io.FileOutputStream(htmlFile), "UTF-8"))) {
                 pw.println("<!DOCTYPE html><html><head>");
                 pw.println("<meta charset='UTF-8'>");
                 pw.println("<title>텔레그램 설정 안내</title>");
@@ -1590,12 +1731,12 @@ public class TelegramBot {
                 pw.println("</style></head><body><pre>");
                 pw.println(html);
                 pw.println("</pre></body></html>");
-            }
+			}
             java.awt.Desktop.getDesktop().browse(htmlFile.toURI());
-
-        } catch (Exception e) {
+			
+			} catch (Exception e) {
             Platform.runLater(() ->
-                fxAlert(ownerStage, Alert.AlertType.ERROR, "오류", "안내 파일 열기 실패: " + e.getMessage()));
-        }
-    }
+			fxAlert(ownerStage, Alert.AlertType.ERROR, "오류", "안내 파일 열기 실패: " + e.getMessage()));
+		}
+	}
 }

@@ -954,9 +954,9 @@ public class BackgroundPlayer {
 
         // ── 텔레그램 전송 ─────────────────────────────────────────
         private void sendTelegram(String msg) {
-            if (telegramBot == null) return;
-            if (telegramChatId.isEmpty()) return;
-            new Thread(() -> telegramBot.send(telegramChatId, msg), "CalTelegram").start();
+            // if (telegramBot == null) return;
+            // if (telegramChatId.isEmpty()) return;
+            new Thread(() -> telegramBot.sendTelegram(msg), "CalTelegram").start();
         }
 
         // ── 유틸 ──────────────────────────────────────────────────

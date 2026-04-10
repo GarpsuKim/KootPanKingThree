@@ -27,18 +27,18 @@ public final class IniController {
     private final String appDir;
     private final String settingsDir;
     private final String configFilePath;
-    private final boolean isChild;
     private final String cityName;
-
     private final Properties config = new Properties();
 
-    public IniController(String appDir, String settingsDir, String configFilePath,
-                            boolean isChild, String cityName) {
+    public IniController(String appDir, String settingsDir, String configFilePath,String cityName) {
         this.appDir = appDir;
         this.settingsDir = settingsDir;
         this.configFilePath = configFilePath;
-        this.isChild = isChild;
         this.cityName = cityName != null ? cityName : "";
+        System.out.println("[IniController] appDir = [" + appDir + "]");    
+        System.out.println("[IniController] settingsDir = [" + settingsDir + "]");    
+        System.out.println("[IniController] configFilePath = [" + configFilePath + "]");    
+        System.out.println("[IniController] cityName = [" + cityName + "]");    
     }
 
     public boolean exists() {
@@ -47,7 +47,7 @@ public final class IniController {
 
     public void initialize() {
         ensureSettingsDir();
-        migrateLegacyIniIfNeeded();
+        // migrateLegacyIniIfNeeded();
         ensureIniExists();
     }
 
@@ -129,7 +129,6 @@ public final class IniController {
                 "",
                 getDefaultSettingsDir(),
                 getPrimaryConfigFilePath(),
-                false,
                 "Local");
         return controller.ensureInitialized();
     }
@@ -139,7 +138,6 @@ public final class IniController {
                 "",
                 getDefaultSettingsDir(),
                 getPrimaryConfigFilePath(),
-                false,
                 "Local");
         controller.initialize();
         controller.open();
@@ -149,7 +147,7 @@ public final class IniController {
         File s = new File(settingsDir);
         if (!s.exists()) s.mkdirs();
     }
-
+/*
     private void migrateLegacyIniIfNeeded() {
         File target = new File(configFilePath);
 
@@ -172,15 +170,14 @@ public final class IniController {
             }
         }
     }
+	*/
     private void ensureIniExists() {
         File f = new File(configFilePath);
         if (f.exists()) {
             System.out.println("[IniController] ini 존재: " + f.getAbsolutePath());
             return;
         }
-        if (!isChild) {
-            downloadDefaultConfig(f);
-        }
+        downloadDefaultConfig(f);
         if (f.exists()) {
             System.out.println("[IniController] ini 준비 완료: " + f.getAbsolutePath());
         } else {
