@@ -341,7 +341,7 @@ public class TelegramBot {
 	}
     // ── getUpdates 폴링 ──────────────────────────────────────────
     private void poll() {
-		System.out.println("[TelegramBot] poll() ");
+		// System.out.println("[TelegramBot] poll() ");
         if (botToken.isEmpty()) {
 			System.out.println("[TelegramBot] poll() : (botToken.isEmpty()) ");
 			return;

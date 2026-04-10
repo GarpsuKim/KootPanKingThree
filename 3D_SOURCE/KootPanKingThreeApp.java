@@ -153,6 +153,7 @@ public class KootPanKingThreeApp {
     AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     CaptureManager screenCapture;             // 화면 캡처
     FxGPUNeon.ClockController clockController; // FX 시계 컨트롤러 (카메라 프레임 주입용)
+    private String theCityName = "Local";
 	
     // ── 세계시계 자식 창 목록 ─────────────────────────────────────────
     private class ChildClock {
@@ -161,6 +162,7 @@ public class KootPanKingThreeApp {
         final String cityName;
         ChildClock(Stage s, FxGPUNeon.ClockController c, String n) {
             stage = s; controller = c; cityName = n;
+			theCityName = cityName;
 			System.out.println ("■[ChildClock]");
 		}
 	}
@@ -244,7 +246,6 @@ public class KootPanKingThreeApp {
     boolean showNumbers = true;
     String theme = "Light";
     float opacity = 1.0f;
-    String cityName = "Local";
     java.time.ZoneId timeZone = java.time.ZoneId.systemDefault();
     int showInterval = 0;
     int animInterval = 0;
@@ -289,7 +290,7 @@ public class KootPanKingThreeApp {
     public KootPanKingThreeApp() {
         this(null, "Local", java.time.ZoneId.systemDefault());
 		System.out.println ("■[KootPanKingThreeApp]-0");
-		System.out.println("this.cityName = [" + this.cityName + "]");
+		System.out.println("this.cityName = [" + this.theCityName + "]");
 	}	
 	
     public KootPanKingThreeApp(String configFile, String cityName, java.time.ZoneId zoneId) {
@@ -298,22 +299,22 @@ public class KootPanKingThreeApp {
         this.SETTINGS_DIR = resolveSettingsDir();
         this.CONFIG_FILE = SETTINGS_DIR + "clock_settings.ini";
         this.myConfigFile = (configFile == null || configFile.isEmpty()) ? CONFIG_FILE : configFile;
-        this.cityName = (cityName == null || cityName.isEmpty()) ? "Local" : cityName;
+        this.theCityName = (cityName == null || cityName.isEmpty()) ? "Local" : cityName;
         this.timeZone = (zoneId == null) ? java.time.ZoneId.systemDefault() : zoneId;
 		
         this.config = new Properties();
-        this.iniController = new IniController(APP_DIR, SETTINGS_DIR, myConfigFile, this.cityName);
+        this.iniController = new IniController(APP_DIR, SETTINGS_DIR, myConfigFile, this.theCityName);
         this.iniController.initialize();
         this.iniController.load();
         this.config = this.iniController.getProperties();
 		this.tg = TelegramBot.getInstance() ;
 		
 		/*
-		this.appRestarter = KootPanKingThree.getAppRestarter();
-        if (this.appRestarter == null) {
+			this.appRestarter = KootPanKingThree.getAppRestarter();
+			if (this.appRestarter == null) {
             throw new IllegalStateException("AppRestarter not initialized in main()");
-		}
-        this.appRestarter.setTelegramBot(this.tg);
+			}
+			this.appRestarter.setTelegramBot(this.tg);
 		*/
 		
         loadConfig();
@@ -395,7 +396,7 @@ public class KootPanKingThreeApp {
         
 		// if (tg.polling && this.cityName == "Local" ) tg.startPolling();
 		
-		System.out.println("this.cityName = [" + this.cityName + "]");	
+		System.out.println("this.cityName = [" + this.theCityName + "]");	
 	}  //  KootPanKingThreeApp
 	
 	String resolveAppDir() {
@@ -497,7 +498,7 @@ public class KootPanKingThreeApp {
             showNumbers = Boolean.parseBoolean(config.getProperty("showNumbers", "true"));
             theme = config.getProperty("theme", "Light");
             opacity = Float.parseFloat(config.getProperty("opacity", "1.0"));
-            cityName = config.getProperty("cityName", "Local");
+            theCityName = config.getProperty("cityName", "Local");
             String tz = config.getProperty("timeZone", "local");
             timeZone = tz.equals("local") ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(tz);
             showInterval = Integer.parseInt(config.getProperty("showInterval", "0"));
@@ -671,7 +672,7 @@ public class KootPanKingThreeApp {
 			config.setProperty("showNumbers", String.valueOf(showNumbers));
 			config.setProperty("theme", theme);
 			config.setProperty("opacity", String.valueOf(opacity));
-			config.setProperty("cityName", cityName);
+			config.setProperty("cityName", theCityName);
 			config.setProperty("timeZone", timeZone.getId());
 			config.setProperty("showInterval", String.valueOf(showInterval));
 			config.setProperty("animInterval", String.valueOf(animInterval));
@@ -811,9 +812,9 @@ public class KootPanKingThreeApp {
 		tg.sendStartupNotice();  // from/pass/lastTo 미설정 시 내부에서 자동 스킵
 	}
 	public void startInstance(Stage stage, java.util.List<String> rawArgs) {
-	
+		
 		System.out.println ("■[startInstance]");
-	
+		
         String arg1 = rawArgs.size() > 0 ? rawArgs.get(0) : "default1";
         String arg2 = rawArgs.size() > 1 ? rawArgs.get(1) : "default2";
         String arg3 = rawArgs.size() > 2 ? rawArgs.get(2) : "default3";
@@ -845,7 +846,7 @@ public class KootPanKingThreeApp {
 					saveConfig();
 					AppLogger.close();
 					Platform.exit();
-					System.exit(0);
+					// System.exit(0);
 				}
 				
 				@Override public void showLogFile() { openLogFile(); }
@@ -965,6 +966,7 @@ public class KootPanKingThreeApp {
         Stage childStage = new Stage();
         String safeName = cityName.replaceAll("[\\/:*?\"<>|\s]+", "_");
         String childConfigFile = SETTINGS_DIR + "clock_settings_" + safeName + ".ini";
+		theCityName = cityName;
 		
         java.io.File childIni = new java.io.File(childConfigFile);
         if (!childIni.exists()) {
@@ -991,10 +993,13 @@ public class KootPanKingThreeApp {
 			}
 		}
 		
-        childStage.setOnCloseRequest(e ->
-		childClocks.removeIf(c -> c.cityName.equals(cityName)));
+        childStage.setOnCloseRequest(e -> {
+			System.out.println(" cityName = [" + cityName + "]");
+			System.out.println(" theCityName = [" + theCityName + "]");
+		childClocks.removeIf(c -> c.cityName.equals(cityName));});
+		
         childClocks.add(new ChildClock(childStage, childApp.clockController, cityName));
-	}
+	}  //  openChildClock
 	
 	
     private static final String POPUP_NEON_STYLE = """
@@ -1186,9 +1191,9 @@ public class KootPanKingThreeApp {
 	}
 	
 	private void addAppMenuItems(javafx.scene.control.ContextMenu popup) {
-	
+		
 		System.out.println ("■[addAppMenuItems]-0");
-	
+		
 		enhancePopupMenuNeon(popup);
 		restoreParentPopupTextVisible(popup);
 		
@@ -2117,6 +2122,28 @@ public class KootPanKingThreeApp {
 		
         javafx.scene.control.MenuItem closeItem = new javafx.scene.control.MenuItem("Close");
         closeItem.setOnAction(e -> {
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+            System.out.println("[clockController.close] : " + theCityName );
+			//  stage.close();
+			if (clockController != null && clockController.getStage() != null) {
+				clockController.getStage().close();
+			}
+			
             if (splashWindow != null) splashWindow.getStage().hide();
 		});
 		

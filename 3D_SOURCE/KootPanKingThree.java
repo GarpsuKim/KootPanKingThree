@@ -1,34 +1,21 @@
 import javafx.application.Application;
 import javafx.stage.Stage;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Properties;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Properties;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import javafx.application.Platform;
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 public class KootPanKingThree extends Application {
-	public static    AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
-    public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
+	// public static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
+    // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     // public static Properties config = new Properties();
     public static IniController iniController ;
-	public static	String APP_DIR = "";
-	public static	String SETTINGS_DIR = IniController.getDefaultSettingsDir();
-	public static	String configFile  = IniController.getPrimaryConfigFilePath();
-	public static	IniController ini = new IniController(	APP_DIR, SETTINGS_DIR, configFile,"Local"	);
+	public static String APP_DIR = "";
+	public static String SETTINGS_DIR = IniController.getDefaultSettingsDir();
+	public static String configFile  = IniController.getPrimaryConfigFilePath();
+	public static IniController ini = new IniController(	APP_DIR, SETTINGS_DIR, configFile,"Local"	);
 	public static final GmailSender gmail = GmailSender.getInstance();
-	public static	TelegramBot tg;
+	public static TelegramBot tg;
     public static CaptureManager screenCapture;             // 화면 캡처
     public static CaptureManager.Camera camera = null;
     public static ChimeController chimeController;          // 차임벨
@@ -36,21 +23,26 @@ public class KootPanKingThree extends Application {
     public static NaverCalendarService  naverCalendarService  = new NaverCalendarService();
 	public static String startupScheduleText = "";
 	public static KootPanKingThreeApp app ;
-
+	public static Kakao kakao = new Kakao();
+	
 	@Override
     public void start(Stage stage) {
 		System.out.println("[start(Stage stage)-------000]");
-	    startupScheduleText() ;
-        app = new KootPanKingThreeApp();
-        app.startInstance(stage, getParameters().getRaw());
+	    showStartupScheduleTextLater() ;
+        this.app = new KootPanKingThreeApp();
+        this.app.startInstance(stage, getParameters().getRaw());
 		System.out.println("[start(Stage stage)-------999]");
 	}
-	private static void startupScheduleText() {
+	private static void showStartupScheduleTextLater() {
 		new Thread(() -> {
 			try {
-				Thread.sleep(10_000); // 10초 대기
+				Thread.sleep(30_000); // 30초 대기
 			} catch (InterruptedException ignored) {}
-			
+			while (app == null) {
+				try {
+					Thread.sleep(50);
+				} catch (InterruptedException ignored) {}
+			}			
 			if (startupScheduleText != null && !startupScheduleText.isEmpty()) {
 				Platform.runLater(() -> {
 					app.showScheduleDialog("📅 향후 3일 일정", startupScheduleText);
@@ -76,28 +68,7 @@ public class KootPanKingThree extends Application {
 			}
 		}, "Gmail-ShutdownHook"));
 	}
-	public static void main(String[] args) {
-		// 1. 로거 먼저
-		AppLogger.init();
-		ini.ensureInitialized();
-		ini.load();
-		telegramSetup();
-		firstFinalGmail();
-		// 6. 앱 실행
-		try {
-			System.out.println("[(Application.launch)-------000]");
-			Application.launch(KootPanKingThree.class, args);
-			System.out.println("[(Application.launch)-------999]");
-			} finally {
-			System.out.println("[Launcher] bye bye");
-		}
-		try {
-			if (tg != null) {
-				tg.stopPolling();   // 반드시 필요 (없으면 추가)
-			}
-		} catch (Exception ignored) {}
-		AppLogger.close();
-	}
+	
 	private static void telegramSetup() {
 		tg = TelegramBot.getInstance(new TelegramBot.CommandHandler() {
 			@Override public java.io.File captureClockScreen() throws Exception {
@@ -114,8 +85,8 @@ public class KootPanKingThree extends Application {
 			}
 			@Override public void shutdownPC() {
 				System.out.println("=======텔레그램 원격 종료");
-				if (shutdownGuard != null) shutdownGuard.cancel();
-				saveConfig();
+				// if (shutdownGuard != null) shutdownGuard.cancel();
+				// saveConfig();
 				String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
 				gmail.sendShutdownNoticeSync(
 					"텔레그램 원격 종료 알림",
@@ -132,8 +103,8 @@ public class KootPanKingThree extends Application {
 			}
 			@Override public void rebootPC() {
 				System.out.println("=======텔레그램 원격 재시작");
-				if (shutdownGuard != null) shutdownGuard.cancel();
-				saveConfig();
+				// if (shutdownGuard != null) shutdownGuard.cancel();
+				// saveConfig();
 				String now = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
 				gmail.sendShutdownNoticeSync(
 					"텔레그램 원격 재시작 알림",
@@ -185,10 +156,8 @@ public class KootPanKingThree extends Application {
 		*/
         
 		screenCapture = new CaptureManager(null);
-		// tg.kakao = kakao;
 		tg.appDir = APP_DIR;
-		// kakao.appDir = APP_DIR;
-		// kakao.onTokenSaved = this::saveConfig;
+		
 		googleCalendarService.setAppDir(SETTINGS_DIR);
 		tg.calendarService = googleCalendarService;
 		tg.naverCalendarService = naverCalendarService;
@@ -231,29 +200,60 @@ public class KootPanKingThree extends Application {
 				AppLogger.logException(e);
 			}
 		}, "CalendarInit").start();
-		/*
-			new Thread(() -> {
-            if (!kakao.kakaoRestApiKey.isEmpty()
-			&& !kakao.kakaoClientSecret.isEmpty()
-			&& !kakao.kakaoRefreshToken.isEmpty()) {
-			try {
-			kakao.autoRefreshLogin();
-			} catch (Exception e) {
-			AppLogger.logException(e);
-			}
-			}
-            // gmail.sendStartupNotice();
-            tg.sendStartupNotice();
-			}, "KakaoAutoLogin").start();
-		*/
 		
         // this.shutdownGuard = new AppRestarter.ShutdownGuard(gmail, tg);
         // this.appRestarter.buildAppCdsIfNeeded(this::saveConfig);
         // this.shutdownGuard.register();
 		
-		// telegramSetup() 끝부분
 		tg.polling = true;
 		tg.startPolling();
 		tg.sendStartupNotice();
+	}	
+	
+	private static void KakaoSetup() {
+		tg.kakao = kakao;
+		kakao.appDir = APP_DIR;
+		kakao.kakaoRestApiKey   = ini.getProperties().getProperty("kakao.apiKey", "");
+		kakao.kakaoClientSecret = ini.getProperties().getProperty("kakao.clientSecret", "");
+		kakao.kakaoRefreshToken = ini.getProperties().getProperty("kakao.refreshToken", "");
+		
+		// 필요하면
+		// kakao.onTokenSaved = KootPanKingThree::saveMainIni;
+		
+		new Thread(() -> {
+            if (!kakao.kakaoRestApiKey.isEmpty()
+				&& !kakao.kakaoClientSecret.isEmpty()
+				&& !kakao.kakaoRefreshToken.isEmpty()) {
+				try {	kakao.autoRefreshLogin();	} catch (Exception e) {
+					System.out.println("[] Kakao 실패: " + e.getMessage());
+					AppLogger.logException(e);	
+				}
+			}
+            // gmail.sendStartupNotice();
+            // tg.sendStartupNotice();
+		}, "KakaoAutoLogin").start();
+	}	
+
+	public static void main(String[] args) {
+		AppLogger.init();
+		ini.ensureInitialized();
+		ini.load();
+		firstFinalGmail();
+		telegramSetup();
+		KakaoSetup();
+		try {
+			System.out.println("[(Application.launch)-------000]");
+			Application.launch(KootPanKingThree.class, args);
+			System.out.println("[(Application.launch)-------999]");
+			} finally {
+			System.out.println("[Launcher] bye bye");
+		}
+		try {
+			if (tg != null) {
+				tg.stopPolling();   // 반드시 필요 (없으면 추가)
+			}
+		} catch (Exception ignored) {}
+		AppLogger.close();
 	}
+
 }
