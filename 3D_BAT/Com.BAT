@@ -34,7 +34,7 @@ if errorlevel 1 (
     echo [ERROR] 컴파일 실패
     type "%ERROR_FILE%"
     pause
-    start "" "C:\Program Files\Notepad++\notepad++.exe" "%ERROR_FILE%"
+    start "" "C:\Program Files\Notepad++\notepad++.exe" "%ERROR_FILE%"  "%SOURCE_FILE%"
     goto :end
 )
 

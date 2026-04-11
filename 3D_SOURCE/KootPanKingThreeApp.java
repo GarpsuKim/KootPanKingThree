@@ -153,10 +153,11 @@ public class KootPanKingThreeApp {
     AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     CaptureManager screenCapture;             // 화면 캡처
     FxGPUNeon.ClockController clockController; // FX 시계 컨트롤러 (카메라 프레임 주입용)
+	
     private String theCityName = "Local";
+    private java.time.ZoneId theTimeZone = java.time.ZoneId.systemDefault();
 	
     // ── 세계시계 자식 창 목록 ─────────────────────────────────────────
-    private final java.util.Map<String, Stage> childStages = new java.util.LinkedHashMap<>();
     private String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
 	
     // ── 스마트폰 카메라 ────────────────────────────────────────────
@@ -236,7 +237,6 @@ public class KootPanKingThreeApp {
     boolean showNumbers = true;
     String theme = "Light";
     float opacity = 1.0f;
-    java.time.ZoneId timeZone = java.time.ZoneId.systemDefault();
     int showInterval = 0;
     int animInterval = 0;
 	
@@ -284,13 +284,13 @@ public class KootPanKingThreeApp {
 	}	
 	
     public KootPanKingThreeApp(String configFile, String cityName, java.time.ZoneId zoneId) {
-		System.out.println ("■[KootPanKingThreeApp]-1");
+		System.out.println ("■■■■■[KootPanKingThreeApp]-1");
         this.APP_DIR = resolveAppDir();
         this.SETTINGS_DIR = resolveSettingsDir();
         this.CONFIG_FILE = SETTINGS_DIR + "clock_settings.ini";
         this.myConfigFile = (configFile == null || configFile.isEmpty()) ? CONFIG_FILE : configFile;
         this.theCityName = (cityName == null || cityName.isEmpty()) ? "Local" : cityName;
-        this.timeZone = (zoneId == null) ? java.time.ZoneId.systemDefault() : zoneId;
+        this.theTimeZone = (zoneId == null) ? java.time.ZoneId.systemDefault() : zoneId;
 		
         this.config = new Properties();
         this.iniController = new IniController(APP_DIR, SETTINGS_DIR, myConfigFile, this.theCityName);
@@ -388,6 +388,57 @@ public class KootPanKingThreeApp {
 		
 		System.out.println("this.cityName = [" + this.theCityName + "]");	
 	}  //  KootPanKingThreeApp
+	
+	public void close() {
+		System.out.println("[KootPanKingThreeApp.close] " + theCityName);
+		
+		try {
+			saveConfig();
+			} catch (Exception e) {
+			AppLogger.logException(e);
+		}
+		
+		try {
+			stopYoutube();
+			} catch (Exception e) {
+			AppLogger.logException(e);
+		}
+		
+		try {
+			stopItsCctv();
+			} catch (Exception e) {
+			AppLogger.logException(e);
+		}
+		
+		try {
+			stopCamera();
+			} catch (Exception e) {
+			AppLogger.logException(e);
+		}
+		
+		try {
+			if (ytPlayer != null) {
+				ytPlayer.stop();
+			}
+			} catch (Exception e) {
+			AppLogger.logException(e);
+		}
+		
+		try {
+			if (clockController != null && clockController.getStage() != null) {
+				Stage st = clockController.getStage();
+				if (st.isShowing()) st.hide();
+			}
+			} catch (Exception e) {
+			AppLogger.logException(e);
+		}
+	}
+	
+	
+	
+	
+	
+	
 	
 	String resolveAppDir() {
         // ── EXE_PATH 탐색 (실행파일 위치 파악용 — 데이터 경로와 무관) ──
@@ -490,7 +541,7 @@ public class KootPanKingThreeApp {
             opacity = Float.parseFloat(config.getProperty("opacity", "1.0"));
             // theCityName = config.getProperty("cityName", "Local");
             String tz = config.getProperty("timeZone", "local");
-            timeZone = tz.equals("local") ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(tz);
+            theTimeZone = tz.equals("local") ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(tz);
             showInterval = Integer.parseInt(config.getProperty("showInterval", "0"));
             animInterval = Integer.parseInt(config.getProperty("animInterval", "0"));
 			
@@ -661,8 +712,8 @@ public class KootPanKingThreeApp {
         FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
         if (st == null) return;
 		
-        st.timeZone = (this.timeZone != null)
-		? this.timeZone
+        st.theTimeZone = (this.theTimeZone != null)
+		? this.theTimeZone
 		: java.time.ZoneId.systemDefault();
 		
         if (clockPrefix != null && !clockPrefix.trim().isEmpty()) {
@@ -673,13 +724,13 @@ public class KootPanKingThreeApp {
             st.cityPrefix = "";
 		}
 		
-        this.timeZone = st.timeZone;
+        this.theTimeZone = st.theTimeZone;
         this.theCityName = (st.cityPrefix == null || st.cityPrefix.trim().isEmpty())
 		? "Local"
 		: st.cityPrefix.trim();
 		
         System.out.println("[applyCityContextToClock] theCityName = [" + theCityName + "]");
-        System.out.println("[applyCityContextToClock] timeZone = [" + st.timeZone + "]");
+        System.out.println("[applyCityContextToClock] theTimeZone = [" + st.theTimeZone + "]");
         System.out.println("[applyCityContextToClock] cityPrefix = [" + st.cityPrefix + "]");
 	}
 	
@@ -698,11 +749,11 @@ public class KootPanKingThreeApp {
 			// config.setProperty("cityName", theCityName);
 			
 			// ★ 저장은 앱 필드가 아니라 실제 시계 상태(AppState) 기준으로 한다.
-			java.time.ZoneId saveZone = timeZone;
+			java.time.ZoneId saveZone = theTimeZone;
 			if (clockController != null) {
 				FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
-				if (st != null && st.timeZone != null) {
-					saveZone = st.timeZone;
+				if (st != null && st.theTimeZone != null) {
+					saveZone = st.theTimeZone;
 				}
 			}
 			config.setProperty("timeZone", saveZone.getId());
@@ -847,17 +898,11 @@ public class KootPanKingThreeApp {
 		tg.sendStartupNotice();  // from/pass/lastTo 미설정 시 내부에서 자동 스킵
 	}
 	public void startInstance(Stage stage, java.util.List<String> rawArgs) {
-		
-		System.out.println ("■[startInstance]1");
-		System.out.println ("■[startInstance]2");
-		System.out.println ("■[startInstance]3");
-		System.out.println ("■[startInstance]4");
-		System.out.println ("■[startInstance]5");
-		
+		System.out.println ("■■■■■[startInstance]");		
         String arg1 = rawArgs.size() > 0 ? rawArgs.get(0) : "default1";
         String arg2 = rawArgs.size() > 1 ? rawArgs.get(1) : "default2";
         String arg3 = rawArgs.size() > 2 ? rawArgs.get(2) : "default3";
-        startArg1 = arg1; startArg2 = arg2; startArg3 = arg3; // openChildClock()에서 재사용
+        startArg1 = arg1; startArg2 = arg2; startArg3 = arg3; 
 		
         // ── 1. mainWindow 생성 (시계보다 먼저) ─────────────────
         // Stage mainStage = new Stage();
@@ -874,95 +919,95 @@ public class KootPanKingThreeApp {
         clockController.setOnDigitalSettingsRequest(() ->
             Platform.runLater(() ->
 			showDigitalSettingsDialog((javafx.stage.Stage) stage)));
-/*			
-			// ── 4. ClockHostCallback 주입 ─────────────────────────────
-			mainWindow.setClockHost(new MainWindow.ClockHostCallback() {
+			/*			
+				// ── 4. ClockHostCallback 주입 ─────────────────────────────
+				mainWindow.setClockHost(new MainWindow.ClockHostCallback() {
 				
 				@Override public javafx.scene.control.Menu buildGlobalMenu() {
-					return buildWorldClockMenu();
+				return buildWorldClockMenu();
 				}
 				
 				@Override public void exitAll() {
-					saveConfig();
-					AppLogger.close();
-					Platform.exit();
-					// System.exit(0);
+				saveConfig();
+				AppLogger.close();
+				Platform.exit();
+				// System.exit(0);
 				}
 				
 				@Override public void showLogFile() { openLogFile(); }
 				
 				@Override public void deleteOldLogs() {
-					String p = AppLogger.getLogFilePath();
-					if (p == null || p.isEmpty()) return;
-					java.io.File dir = new java.io.File(p).getParentFile();
-					if (dir == null || !dir.exists()) return;
-					java.io.File cur = new java.io.File(p);
-					java.io.File[] old = dir.listFiles(f ->
-						f.isFile() && f.getName().endsWith(".txt")
-					&& !f.getAbsolutePath().equals(cur.getAbsolutePath()));
-					if (old != null) for (java.io.File f : old) f.delete();
+				String p = AppLogger.getLogFilePath();
+				if (p == null || p.isEmpty()) return;
+				java.io.File dir = new java.io.File(p).getParentFile();
+				if (dir == null || !dir.exists()) return;
+				java.io.File cur = new java.io.File(p);
+				java.io.File[] old = dir.listFiles(f ->
+				f.isFile() && f.getName().endsWith(".txt")
+				&& !f.getAbsolutePath().equals(cur.getAbsolutePath()));
+				if (old != null) for (java.io.File f : old) f.delete();
 				}
 				
 				@Override public String getLogFilePath() {
-					return AppLogger.getLogFilePath();
+				return AppLogger.getLogFilePath();
 				}
 				
 				@Override public void showConfigFile() { openConfigFile(); }
 				
 				@Override public void showAbout() {
-					Platform.runLater(() -> showAboutDialog());
+				Platform.runLater(() -> showAboutDialog());
 				}
 				
 				@Override public String getConfigFilePath() {
-					return IniController.getPrimaryConfigFilePath();
+				return IniController.getPrimaryConfigFilePath();
 				}
 				
 				@Override public void onClose() {
-					config.remove("mainWindow");
-					saveConfig();
+				config.remove("mainWindow");
+				saveConfig();
 				}
 				
 				@Override public void showChimeDialog() {
-					if (chimeController != null) chimeController.showChimeDialog();
+				if (chimeController != null) chimeController.showChimeDialog();
 				}
 				
 				@Override public javafx.scene.control.Menu buildGmailCalendarMenu() {
-					return buildGmailMenu();
+				return buildGmailMenu();
 				}
 				
 				@Override public javafx.scene.control.Menu buildKakaoMenu() {
-					return buildKakaoMenuFx();
+				return buildKakaoMenuFx();
 				}
 				
 				@Override public javafx.scene.control.Menu buildTelegramMenu() {
-					return buildTelegramMenuFx();
+				return buildTelegramMenuFx();
 				}
 				
 				@Override public String getConfig(String key, String defaultValue) {
-					return config.getProperty(key, defaultValue);
+				return config.getProperty(key, defaultValue);
 				}
 				
 				@Override public void setMultipleConfigAndSave(String... entries) {
-					for (int i = 0; i + 1 < entries.length; i += 2)
-                    config.setProperty(entries[i], entries[i + 1]);
-					saveConfig();
+				for (int i = 0; i + 1 < entries.length; i += 2)
+				config.setProperty(entries[i], entries[i + 1]);
+				saveConfig();
 				}
 				
 				@Override public void setConfigAndSave(String key, String value) {
-					config.setProperty(key, value);
-					saveConfig();
+				config.setProperty(key, value);
+				saveConfig();
 				}
 				
 				@Override public GmailSender getGmail() { return gmail; }
 				
 				@Override public void moveToTopRight() { resetToCenter(); }
-			});
-			
-*/
-if (mainWindow != null) {
+				});
+				
+			*/
+			if (mainWindow != null) {
 				if (mainWindow != null) {
-				mainWindow.log("시계 초기화 완료.");
-			}
+					mainWindow.log("시계 초기화 완료.");
+				}
 			}
 	}
 	
@@ -993,51 +1038,15 @@ if (mainWindow != null) {
             final String zoneStr  = c[1];
             final String menuName = c[0]; // 창 제목용 (이모지 포함)
             final String prefix   = c[2]; // 시계 날짜 prefix (한글/영문만)
-            item.setOnAction(e -> openChildClock(menuName, java.time.ZoneId.of(zoneStr), prefix));
+            // item.setOnAction(e -> openChildClock(menuName, java.time.ZoneId.of(zoneStr), prefix));
+            item.setOnAction(e -> {
+				System.out.println("■■■■■ MainWindow.getInstance()");
+				MainWindow mainWindow = MainWindow.getInstance();
+			mainWindow.openTheCity(menuName, java.time.ZoneId.of(zoneStr), prefix);});
             menu.getItems().add(item);
 		}
         return menu;
-	}
-	
-	// ── 세계시계 자식 창 열기 ────────────────────────────────────────────
-    private void openChildClock(String cityName, java.time.ZoneId zoneId, String clockPrefix) {
-		System.out.println("■[openChildClock]-1");
-		System.out.println("cityName = [" + cityName + "]");
-		System.out.println("ZoneId = [" + zoneId + "]");
-		System.out.println("clockPrefix = [" + clockPrefix + "]");
-
-        Stage existingStage = childStages.get(cityName);
-        if (existingStage != null) {
-            existingStage.toFront();
-            existingStage.requestFocus();
-            return;
-        }
-
-        Stage childStage = new Stage();
-        String safeName = cityName.replaceAll("[\\/:*?\"<>|\\s]+", "_");
-        String childConfigFile = SETTINGS_DIR + "clock_settings_" + safeName + ".ini";
-
-        java.io.File childIni = new java.io.File(childConfigFile);
-        if (!childIni.exists()) {
-            saveConfig();
-            java.util.Properties copy = new java.util.Properties();
-            copy.putAll(this.config);
-            copy.setProperty("cityName", clockPrefix);
-            copy.setProperty("timeZone", zoneId.getId());
-            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(childIni)) {
-                copy.store(fos, "KootPanKingThree Child Settings");
-            } catch (Exception ex) {
-                AppLogger.logException(ex);
-            }
-        }
-
-        KootPanKingThreeApp childApp = new KootPanKingThreeApp(childConfigFile, clockPrefix, zoneId);
-        childApp.startInstance(childStage, java.util.Arrays.asList(startArg1, startArg2, startArg3));
-
-        childStages.put(cityName, childStage);
-        childStage.setOnCloseRequest(e -> childStages.remove(cityName));
-	}  //  openChildClock
-	
+	}		
 	
     private static final String POPUP_NEON_STYLE = """
     -fx-background-color: linear-gradient(to bottom, rgba(255,105,180,0.95), rgba(255,182,193,0.92));
@@ -1251,6 +1260,15 @@ if (mainWindow != null) {
 		javafx.scene.control.Menu     lifeMenu     = buildLifeMenu(popup);
 		javafx.scene.control.Menu     system       = buildSystemMenu(popup);
 		
+		javafx.scene.control.MenuItem mainWindowItem =
+		new javafx.scene.control.MenuItem("🪟 MainWindow");
+		mainWindowItem.setOnAction(e -> {
+			System.out.println("■■■■■ MainWindow.getInstance()");
+			MainWindow mainWindow = MainWindow.getInstance();
+			if (mainWindow != null) mainWindow.toggleTheMainWindow();
+		});
+		
+		
 		// ── Top-5 항목 생성 (child 시계 포함 표시) ──────────────────────
 		
 		// [중앙 고정]
@@ -1327,6 +1345,11 @@ if (mainWindow != null) {
 		// 시스템
 		popup.getItems().add(system);
 		
+		// 시스템
+		popup.getItems().addAll(
+			new javafx.scene.control.SeparatorMenuItem(),
+		mainWindowItem);
+		
 		applyNeonStylesRecursively(popup.getItems());
 		restoreParentPopupTextVisible(popup);
 		emphasizePopupProgramTitle(popup);
@@ -1338,7 +1361,7 @@ if (mainWindow != null) {
 		if (chimeController != null) return;
         chimeController = new ChimeController(owner, new ChimeController.HostCallback() {
 			@Override public boolean isChild() { return false; }
-			@Override public java.time.ZoneId getTimeZone() { return timeZone; }
+			@Override public java.time.ZoneId getTimeZone() { return theTimeZone; }
 			@Override public void startRainbow(int durationSec) {
 				if (clockController != null)
 				Platform.runLater(() -> clockController.startRainbow(durationSec));
@@ -2151,38 +2174,38 @@ if (mainWindow != null) {
         javafx.scene.control.MenuItem mainWindowItem =
 		new javafx.scene.control.MenuItem("MainWindow");
         mainWindowItem.setOnAction(e -> {
-            if (mainWindow != null) {
-                mainWindow.getStage().show();
-                mainWindow.getStage().toFront();
-			}
+			System.out.println("■■■■■ MainWindow.getInstance()");
+			MainWindow mainWindow = MainWindow.getInstance();
+			if ( mainWindow != null )  mainWindow.toggleTheMainWindow();
 		});
 		
         javafx.scene.control.MenuItem closeItem = new javafx.scene.control.MenuItem("Close");
-        closeItem.setOnAction(e -> {
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-            System.out.println("[clockController.close] : " + theCityName );
-			//  stage.close();
+		
+		closeItem.setOnAction(e -> {
+			System.out.println("[clockController.close] : " + theCityName);
+			
+			MainWindow mw = MainWindow.getInstance();
+			
+			if (mw != null && theTimeZone != null) {
+				mw.closeTheCity(theTimeZone);
+				return;
+			}
+			
 			if (clockController != null && clockController.getStage() != null) {
 				clockController.getStage().close();
 			}
-			
-            if (mainWindow != null) mainWindow.getStage().hide();
-		});
+		});		
+		
+		//   closeItem.setOnAction(e -> {
+		//          System.out.println("[clockController.close] : " + theCityName );
+		//			MainWindow.getInstance().closeTheCity(theTimeZone);		
+		//			/*
+		//				if (clockController != null && clockController.getStage() != null) {
+		//				clockController.getStage().close();
+		//				}
+		//				if (mainWindow != null) mainWindow.getStage().hide();
+		//			*/
+		//   });
 		
         javafx.scene.control.MenuItem restartItem = new javafx.scene.control.MenuItem("Restart");
         restartItem.setOnAction(e -> {
@@ -2200,8 +2223,8 @@ if (mainWindow != null) {
             menuItem("트레이로 보내기"),
             autoStartItem,
             new javafx.scene.control.SeparatorMenuItem(),
-            mainWindowItem,
-            new javafx.scene.control.SeparatorMenuItem(),
+            // mainWindowItem,
+            // new javafx.scene.control.SeparatorMenuItem(),
             closeItem,
             restartItem,
             exitItem
@@ -2209,7 +2232,13 @@ if (mainWindow != null) {
 		
 		return system;
 	}
-	
+	/*
+		// ── 시스템 메뉴 ─────────────────────────────────────────────────────
+		private javafx.scene.control.Menu buildSystemMenu(
+		javafx.scene.control.ContextMenu popup) {
+        javafx.scene.control.Menu system = new javafx.scene.control.Menu("시스템...");
+		}
+	*/	
 	//  ──────────────────────────── 서브메뉴 팩토리 끝 ────────────────────────────
 	
 	

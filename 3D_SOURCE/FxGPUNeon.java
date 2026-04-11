@@ -153,13 +153,13 @@ public class FxGPUNeon {
 			
             root = new StackPane(subScene, overlay);
             root.setStyle("-fx-background-color: transparent;");
-
+			
             // YouTube 프레임 캡처용 숨겨진 그룹 (opacity=0, 씬 그래프 렌더링 필요)
             ytHiddenGroup = new javafx.scene.Group();
             ytHiddenGroup.setOpacity(0);
             ytHiddenGroup.setMouseTransparent(true);
             root.getChildren().add(ytHiddenGroup);
-
+			
             // YouTube 로딩 메시지 라벨 (화면 하단 중앙)
             statusLabel = new javafx.scene.control.Label();
             statusLabel.setVisible(false);
@@ -169,7 +169,7 @@ public class FxGPUNeon {
                 "-fx-text-fill: white;" +
                 "-fx-font-size: 13px;" +
                 "-fx-padding: 8 16 8 16;" +
-                "-fx-background-radius: 8;");
+			"-fx-background-radius: 8;");
             javafx.scene.layout.StackPane.setAlignment(statusLabel, javafx.geometry.Pos.BOTTOM_CENTER);
             javafx.scene.layout.StackPane.setMargin(statusLabel, new javafx.geometry.Insets(0, 0, 30, 0));
             root.getChildren().add(statusLabel);
@@ -214,18 +214,18 @@ public class FxGPUNeon {
         /** 제거된 YouTube/WebView 기능 호환용 no-op 메서드. */
         void stopYoutube() {
             if (stopYoutubeCallback != null) stopYoutubeCallback.run();
-        }
-
+		}
+		
         private Runnable stopYoutubeCallback = null;
         /** KootPanKingThree에서 주입. 테마 변경 시 YouTube 중지에 사용. */
         public void setStopYoutubeCallback(Runnable cb) { this.stopYoutubeCallback = cb; }
-
+		
         private Runnable onDigitalSettingsRequest = null;
         /** 디지탈 영역 더블클릭 시 설정 다이얼로그 콜백. KootPanKingThree에서 주입. */
         public void setOnDigitalSettingsRequest(Runnable cb) {
             this.onDigitalSettingsRequest = cb;
             assembler.setFaceTimeClickHandler(cb);
-        }
+		}
 		
         private void installHandlers(Scene scene) {
             // ── 마우스 이벤트 (구 MenuController.install) ───────────────
@@ -271,13 +271,13 @@ public class FxGPUNeon {
                 assembler.applyGeometryScale();
                 updateCamera();
                 e.consume();
-            });
-
+			});
+			
             subScene.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                     popup.show(subScene, e.getScreenX(), e.getScreenY());
-                }
-            });
+				}
+			});
             scene.setOnKeyPressed(e -> {
                 KeyCode code = e.getCode();
                 if (code == KeyCode.SPACE) {
@@ -311,8 +311,8 @@ public class FxGPUNeon {
             popup.setOnShowing(e -> {
                 menuSwing.setSelected(!state.paused);
                 if (onPopupShowing != null) onPopupShowing.run();
-            });
-
+			});
+			
             // header + 흔들림만 추가.
             // 중앙고정·디지탈on/off·디지탈시계설정·메인시계설정·separator 는
             // appMenuBuilder(KootPanKingThree.addAppMenuItems) 가 순서대로 추가한다.
@@ -340,7 +340,7 @@ public class FxGPUNeon {
                     this::configureSlideshowFromSelectedFile,
                     this::toggleSetup,
                     this::updateSubSceneBloom,
-                    this::stopYoutube);  // 테마 변경 시 YouTube 중지
+				this::stopYoutube);  // 테마 변경 시 YouTube 중지
                 setupStage = panel.build(mainStage);
                 setupStage.setOnHidden(e -> setupStage = null);
 				} finally {
@@ -350,7 +350,7 @@ public class FxGPUNeon {
 		
         /** 메인 시계 설정 패널 열기 — KootPanKingThree 등 외부에서 호출 가능. */
         public void openSetup() { toggleSetup(); }
-
+		
         // ── 종료 확인 다이얼로그 ─────────────────────────────────────
         void confirmExit() {
             Stage dialog = new Stage();
@@ -471,7 +471,7 @@ public class FxGPUNeon {
 					}
                     assembler.applyRootRotation();
 					
-                    LocalTime t = LocalTime.now(state.timeZone);
+                    LocalTime t = LocalTime.now(state.theTimeZone);
                     double ns = t.getNano() / 1_000_000_000.0;
                     double sec = t.getSecond() + ns;
                     double min = t.getMinute() + sec / 60.0;
@@ -504,8 +504,8 @@ public class FxGPUNeon {
                     // showDigital OR showFaceDate 중 하나라도 켜져 있으면 그룹 표시
                     boolean dtVisible = (state.showDigital || state.showFaceDate) && !state.transparentMode;
                     assembler.faceDateTimeGroup.setVisible(dtVisible);
-                }			};
-            timer.start();
+				}			};
+				timer.start();
 		}
         void loadBackgroundImageFromFile(File file) {
             if (file == null) return;
@@ -758,7 +758,7 @@ public class FxGPUNeon {
                 assembler.applyVisibilityState();
 			}
 		}
-
+		
         /** 중앙 고정: GOLD 테마 + 기본 반지름 + 주 모니터 중앙으로 이동. */
         public void resetToDefault() {
             state.applyTheme(AppState.Theme.GOLD);
@@ -767,58 +767,58 @@ public class FxGPUNeon {
             javafx.geometry.Rectangle2D vb0 = javafx.stage.Screen.getPrimary().getVisualBounds();
             mainStage.setX(vb0.getMinX() + (vb0.getWidth()  - mainStage.getWidth())  / 2);
             mainStage.setY(vb0.getMinY() + (vb0.getHeight() - mainStage.getHeight()) / 2);
-        }
-
+		}
+		
         /** 디지탈 표시 여부 반환 — 날짜 OR 시분초 중 하나라도 켜져 있으면 true. */
         public static boolean getDigitalState(ClockController cc) {
             return cc.state.showDigital || cc.state.showFaceDate;
-        }
-
+		}
+		
         /**
-         * 팝업 메뉴 마스터 스위치 전용.
-         * ON: 날짜+시분초 둘 다 켜고 재빌드.
-         * OFF: 날짜+시분초 둘 다 끄고 씬에서 완전 제거.
-         * ※ 설정 다이얼로그에서는 이 메서드를 호출하지 말 것.
-         */
+			* 팝업 메뉴 마스터 스위치 전용.
+			* ON: 날짜+시분초 둘 다 켜고 재빌드.
+			* OFF: 날짜+시분초 둘 다 끄고 씬에서 완전 제거.
+			* ※ 설정 다이얼로그에서는 이 메서드를 호출하지 말 것.
+		*/
         public static void setDigitalState(ClockController cc, boolean on) {
             cc.state.showDigital  = on;
             cc.state.showFaceDate = on;
             if (on) {
                 cc.assembler.buildFaceDateTimeGroup();
-            } else {
+				} else {
                 cc.assembler.removeDigitalGroup();
-            }
+			}
             // 메뉴 체크 상태 동기화
             if (cc.onPopupShowing != null) cc.onPopupShowing.run();
-        }
-
+		}
+		
         /**
-         * 설정 다이얼로그 전용 재빌드.
-         * showDigital/showFaceDate 는 이미 AppState 에 설정된 값을 그대로 사용.
-         * 둘 다 false 이면 씬에서 제거, 하나라도 true 이면 재빌드.
-         */
+			* 설정 다이얼로그 전용 재빌드.
+			* showDigital/showFaceDate 는 이미 AppState 에 설정된 값을 그대로 사용.
+			* 둘 다 false 이면 씬에서 제거, 하나라도 true 이면 재빌드.
+		*/
         public static void applyDigitalSettings(ClockController cc) {
             if (cc == null) return;
             boolean anyOn = cc.state.showDigital || cc.state.showFaceDate;
             if (anyOn) {
                 cc.assembler.buildFaceDateTimeGroup();
-            } else {
+				} else {
                 cc.assembler.removeDigitalGroup();
-            }
-        }
-
+			}
+		}
+		
         /** removeDigitalGroup 외부 접근용 */
         public static void removeDigitalObjects(ClockController cc) {
             if (cc != null) cc.assembler.removeDigitalGroup();
-        }
-
+		}
+		
         /** AppState 직접 접근 (KootPanKingThree 설정 다이얼로그용). */
         public static AppState getAppState(ClockController cc) { return cc.state; }
-
+		
         /** KootPanKingThree 에서 페이스 날짜/시간 그룹 재빌드 요청 */
         public static void rebuildFaceDateTimeGroup(ClockController cc) {
             if (cc != null) cc.assembler.buildFaceDateTimeGroup();
-        }
+		}
         /** 페이스 날짜/시간 ON/OFF — showFaceDate 와 showDigital 을 함께 고려 */
         public static void setFaceDateTimeVisible(ClockController cc, boolean on) {
             if (cc == null) return;
@@ -827,30 +827,30 @@ public class FxGPUNeon {
             boolean groupVisible = (on || cc.state.showDigital) && !cc.state.transparentMode;
             cc.assembler.faceDateTimeGroup.setVisible(groupVisible);
             if (cc.assembler.faceDateBox != null) cc.assembler.faceDateBox.setVisible(on);
-        }
-
+		}
+		
         public void showStatusMessage(String message) {
             if (statusLabel == null) return;
             if (message == null || message.isEmpty()) {
                 statusLabel.setVisible(false);
-            } else {
+				} else {
                 statusLabel.setText(message);
                 statusLabel.setVisible(true);
-            }
-        }
-
+			}
+		}
+		
         // ── YouTube 프레임 캡처용 MediaView 관리 ──────────────────
         /** MediaView를 숨겨진 그룹에 추가 (스냅샷용, 화면에는 안 보임). FX 스레드 전용. */
         public void attachMediaView(javafx.scene.Node view) {
             if (ytHiddenGroup != null) {
                 ytHiddenGroup.getChildren().setAll(view);
-            }
-        }
-
+			}
+		}
+		
         /** MediaView를 숨겨진 그룹에서 제거. FX 스레드 전용. */
         public void detachMediaView() {
             if (ytHiddenGroup != null) ytHiddenGroup.getChildren().clear();
-        }
+		}
 	}
 	
     // ───────────────────────── State ─────────────────────────
@@ -997,24 +997,24 @@ public class FxGPUNeon {
         /** 핑퐁 전용 이동 방향 */
         int digitalPingPongDir = 1;
         /** 스크롤 속도 */
-        double digitalScrollSpeed = 1.5;
+        double digitalScrollSpeed = 3.0;
         /** 스크롤 X 오프셋 (NaN=미초기화) */
         double digitalScrollOffset = Double.NaN;
         /** 페이스 시간 행 스크롤 오프셋 */
         double faceScrollOffset = Double.NaN;
         /** 페이스 시간 행 핑퐁 방향 */
         int    facePingPongDir  = 1;
-
+		
         // ── 날짜 행 스크롤 (Bug7 추가) ──────────────────────────────
         /** 날짜 행 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
         int    faceDateScrollDir   = 3;    // 핑퐁
         /** 날짜 행 스크롤 속도 */
-        double faceDateScrollSpeed = 2.9;  // 기본 속도
+        double faceDateScrollSpeed = 1.5;  // 기본 속도
         /** 날짜 행 스크롤 X 오프셋 (NaN=미초기화) */
         double faceDateScrollOffset = Double.NaN;
         /** 날짜 행 핑퐁 방향 */
         int    faceDatePingPongDir  = 1;
-
+		
         // ── 날짜 행 (상단) ───────────────────────────────────────────
         /** 날짜 행 표시 ON/OFF */
         boolean showFaceDate = true;
@@ -1029,7 +1029,7 @@ public class FxGPUNeon {
         /** 날짜 네온 효과 ON/OFF */
         boolean neonFaceDate = false;
         NeonBlinkStyle digitalNeonBlinkStyle = NeonBlinkStyle.NONE;
-
+		
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
         Image backgroundImage = null;
@@ -1048,13 +1048,13 @@ public class FxGPUNeon {
         String dialogBgColor    = "#ffffff";
         /** 설정창 메뉴 폰트. "System"이면 JavaFX 기본 폰트 사용. */
         String dialogFontFamily = "System";
-
+		
         // ── 세계시계 타임존 / 도시명 ──────────────────────────────────
         /** 세계시계용 타임존. 기본값은 시스템(Local). */
-        java.time.ZoneId timeZone  = java.time.ZoneId.systemDefault();
+        java.time.ZoneId theTimeZone  = java.time.ZoneId.systemDefault();
         /** 날짜 앞에 표시할 도시명. 빈 문자열이면 표시 안 함. */
         String cityPrefix = "";
-
+		
         // ── 테마 프리셋 ──────────────────────────────────────────────
         enum Theme { GOLD, SILVER, COPPER, MIDNIGHT, ROSE_GOLD }
 		
@@ -1166,7 +1166,7 @@ public class FxGPUNeon {
         private final Group crystalGroup = new Group();
         private final List<Node> crystalNodes = new ArrayList<>();
         private Cylinder coinBodyView;
-
+		
         // ── 페이스 날짜/시간 3D 노드 (coinGroup 자식 — 코인과 함께 회전) ──
         private final Group  faceDateTimeGroup = new Group();
         private Box          faceDateBox     = null;
@@ -1390,10 +1390,10 @@ public class FxGPUNeon {
 			
             coinGroup.getTransforms().setAll(coinScale, rootRotY, rootRotX);
             root3D.getChildren().addAll(coinGroup, lightsGroup, imageLayerGroup);
-
+			
             // ── 페이스 날짜/시간: coinGroup 자식으로 추가 ─────────────
             buildFaceDateTimeGroup();
-
+			
             applyGeometryScale();
             applyVisibilityState();
             applyInteractiveResizeState(); // 내부에서 applyBackgroundImage() 호출
@@ -1405,7 +1405,7 @@ public class FxGPUNeon {
         void applyRootRotation() {
             rootRotY.setAngle(state.autoRotAngleY + state.manualRotAngleY);
             rootRotX.setAngle(AppState.clamp(state.baseAngleX + state.autoRotAngleX + state.manualRotAngleX, AppState.ROOT_ROTATE_X_MIN, AppState.ROOT_ROTATE_X_MAX));
-        }
+		}
 		
         /**
 			* 사용자가 선택한 이미지를 시계 앞면(동그라미)의 배경으로 설정한다.
@@ -1484,8 +1484,8 @@ public class FxGPUNeon {
                 double scaleMax = Math.max(texSize / imgW, texSize / imgH); // 꽉 채우기
                 // cameraActive(YouTube/카메라)일 때 youtubeScale 적용, 이미지 파일은 항상 꽉채우기
                 double scale = cameraActive
-                    ? scaleMin + (scaleMax - scaleMin) * state.youtubeScale
-                    : scaleMax;
+				? scaleMin + (scaleMax - scaleMin) * state.youtubeScale
+				: scaleMax;
                 double drawW = imgW * scale;
                 double drawH = imgH * scale;
                 double drawX = (texSize - drawW) * 0.5;
@@ -1601,7 +1601,7 @@ public class FxGPUNeon {
             buildMaterials();
             buildAll();
             applyNeonEffects();   // 재빌드 후 네온 상태 복원
-        }
+		}
 		
         void rebuildAllGeometry() {
             applyGeometryScale();
@@ -1619,52 +1619,52 @@ public class FxGPUNeon {
             // faceDateBox/faceTimeBox 의 translateZ 는 스케일 적용 전 로컬 좌표다.
             // numberFrontZ() 를 다시 호출해 최신 numberHeightScale 기반 Z 를 재적용한다.
             updateFaceDateTimeZ();
-        }
-
+		}
+		
         // ════════════════════════════════════════════════════════════
         //  페이스 날짜/시간 — 코인 앞면에 직접 새겨진 3D 텍스트 패널
         // ════════════════════════════════════════════════════════════
-
+		
         /**
-         * 숫자(1~12) 돌출 높이(numberHeightScale)에 맞춰
-         * faceDateTimeGroup 의 Z 위치를 계산.
-         *
-         * 숫자 노드 배치 Z = -(BASE_COIN_HEIGHT/2 + 7.2)
-         * 돌출 두께 = max(1, fontSize * EXTRUDE_THICKNESS_RATIO * scale)
-         * → 앞면 Z = 배치Z - halfThickness
-         * faceDateTimeBox 는 그보다 1.0 단위 앞에 배치.
-         */
+			* 숫자(1~12) 돌출 높이(numberHeightScale)에 맞춰
+			* faceDateTimeGroup 의 Z 위치를 계산.
+			*
+			* 숫자 노드 배치 Z = -(BASE_COIN_HEIGHT/2 + 7.2)
+			* 돌출 두께 = max(1, fontSize * EXTRUDE_THICKNESS_RATIO * scale)
+			* → 앞면 Z = 배치Z - halfThickness
+			* faceDateTimeBox 는 그보다 1.0 단위 앞에 배치.
+		*/
         private double numberFrontZ() {
             double fontSize  = AppState.BASE_COIN_RADIUS * AppState.NUMBER_FONT_SIZE_RATIO;
             double thickness = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
             return -(AppState.BASE_COIN_HEIGHT * 0.5 + 7.2 + thickness * 0.5 + 1.0);
-        }
-
+		}
+		
         /** 날짜/시분초 디지탈 패널은 손 네온보다 앞, 베젤보다 뒤에 둔다. */
         private double digitalFrontZ() {
             return -20.15;
-        }
-
+		}
+		
         /**
-         * 코인 앞면에 날짜(상단)·시간(하단)을 표시하는 두 개의 Box를 생성.
-         * buildAll() / numberHeightScale 변경 시 호출. coinGroup 에 추가.
-         */
+			* 코인 앞면에 날짜(상단)·시간(하단)을 표시하는 두 개의 Box를 생성.
+			* buildAll() / numberHeightScale 변경 시 호출. coinGroup 에 추가.
+		*/
         void buildFaceDateTimeGroup() {
             coinGroup.getChildren().remove(faceDateTimeGroup);
             faceDateTimeGroup.getChildren().clear();
-
+			
             if (!state.showDigital && !state.showFaceDate) return;
-
+			
             double r = AppState.BASE_COIN_RADIUS;
             // 텍스트 패널 Z: 시계 앞면(-9.45)보다 앞에 배치해 가려지지 않게 함
             final double textPanelZ = digitalFrontZ();
-
+			
             double bW    = r * 0.90;
             double dateH = r * 0.18;
             double timeH = r * 0.22;
             double dateY = -r * 0.22;
             double timeY =  r * 0.22;
-
+			
             // ── 날짜 텍스처 패널 ──────────────────────────────────────────
             int dtW = 512, dtH = 80;
             faceDateTexImg = new WritableImage(dtW, dtH);
@@ -1673,14 +1673,14 @@ public class FxGPUNeon {
             faceDateMat.setDiffuseColor(javafx.scene.paint.Color.WHITE);
             faceDateMat.setSpecularColor(javafx.scene.paint.Color.color(0.04, 0.04, 0.04));
             faceDateMat.setSpecularPower(2);
-
+			
             faceDateBox = new Box(bW, dateH, 0.1);
             faceDateBox.setMaterial(faceDateMat);
             faceDateBox.setTranslateX(0);
             faceDateBox.setTranslateY(dateY);
             faceDateBox.setTranslateZ(textPanelZ);
             faceDateBox.setMouseTransparent(true);
-
+			
             // ── 시분초 텍스처 패널 ────────────────────────────────────────
             int tmW = 512, tmH = 96;
             faceTimeTexImg = new WritableImage(tmW, tmH);
@@ -1689,33 +1689,33 @@ public class FxGPUNeon {
             faceTimeMat.setDiffuseColor(javafx.scene.paint.Color.WHITE);
             faceTimeMat.setSpecularColor(javafx.scene.paint.Color.color(0.04, 0.04, 0.04));
             faceTimeMat.setSpecularPower(2);
-
+			
             faceTimeBox = new Box(bW, timeH, 0.1);
             faceTimeBox.setMaterial(faceTimeMat);
             faceTimeBox.setTranslateX(0);
             faceTimeBox.setTranslateY(timeY);
             faceTimeBox.setTranslateZ(textPanelZ);
             faceTimeBox.setMouseTransparent(false);
-
+			
             faceDateTimeGroup.getChildren().addAll(faceDateBox, faceTimeBox);
             faceDateTimeGroup.setVisible(state.showDigital || state.showFaceDate);
             coinGroup.getChildren().add(faceDateTimeGroup);
-
+			
             if (faceTimeClickCallback != null) setFaceTimeClickHandler(faceTimeClickCallback);
-
+			
             state.faceScrollOffset     = Double.NaN;
             state.facePingPongDir      = 1;
             state.faceDateScrollOffset = Double.NaN;
             state.faceDatePingPongDir  = 1;
-
+			
             updateFaceDateTimeTextures();
-        }
-
+		}
+		
         /**
-         * 디지탈 OFF 시 faceDateTimeGroup 의 모든 자식을 제거하고
-         * coinGroup 에서도 분리한다. 렌더링 비용 완전 제거.
-         * ON 복구는 buildFaceDateTimeGroup() 재호출.
-         */
+			* 디지탈 OFF 시 faceDateTimeGroup 의 모든 자식을 제거하고
+			* coinGroup 에서도 분리한다. 렌더링 비용 완전 제거.
+			* ON 복구는 buildFaceDateTimeGroup() 재호출.
+		*/
         void removeDigitalGroup() {
             faceDateTimeGroup.getChildren().clear();
             coinGroup.getChildren().remove(faceDateTimeGroup);
@@ -1724,76 +1724,74 @@ public class FxGPUNeon {
             faceDateMat = null;  faceTimeMat = null;
             _dateCachedCanvas = null;
             _timeCachedCanvas = null;
-        }
-
+		}
+		
         /**
-         * 숫자 높이 변경 시 Z만 갱신 (buildFaceDateTimeGroup 전체 재빌드 없이).
-         * rebuildNumbers() 끝에서 호출.
-         */
+			* 숫자 높이 변경 시 Z만 갱신 (buildFaceDateTimeGroup 전체 재빌드 없이).
+			* rebuildNumbers() 끝에서 호출.
+		*/
         void updateFaceDateTimeZ() {
             if (faceDateBox == null || faceTimeBox == null) return;
             final double textPanelZ = digitalFrontZ();
             faceDateBox.setTranslateZ(textPanelZ);
             faceTimeBox.setTranslateZ(textPanelZ);
-        }
-
+		}
+		
         /** 매 프레임 날짜·시간 텍스처 갱신. AnimationTimer 에서 호출. */
         void updateFaceDateTimeTextures() {
             // 날짜 또는 시간 중 하나라도 켜져 있어야 진입
             if (!state.showDigital && !state.showFaceDate) return;
             if (faceDateTexImg == null || faceTimeTexImg == null) return;
-
-            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(state.timeZone);
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(state.theTimeZone);
             String[] wd = {"일","월","화","수","목","금","토"};
             String dow = wd[now.getDayOfWeek().getValue() % 7];
             int h24  = now.getHour();
             int h12  = h24 % 12 == 0 ? 12 : h24 % 12;
             String ampm = h24 < 12 ? "오전" : "오후";
-
             // ── 날짜 행 (상단) ───────────────────────────────────────
             faceDateBox.setVisible(state.showFaceDate);
             if (state.showFaceDate) {
                 String dateStr;
                 switch (state.faceDateFormatIndex) {
                     case 1  -> dateStr = String.format("%d-%02d-%02d (%s)",
-                                    now.getYear(), now.getMonthValue(), now.getDayOfMonth(), dow);
+					now.getYear(), now.getMonthValue(), now.getDayOfMonth(), dow);
                     case 2  -> dateStr = String.format("%02d/%02d (%s)",
-                                    now.getMonthValue(), now.getDayOfMonth(), dow);
+					now.getMonthValue(), now.getDayOfMonth(), dow);
                     case 3  -> dateStr = String.format("%d월 %d일",
-                                    now.getMonthValue(), now.getDayOfMonth());
-                    default -> dateStr = String.format("%d월 %d일 %s",
-                                    now.getMonthValue(), now.getDayOfMonth(), dow);
-                }
+					now.getMonthValue(), now.getDayOfMonth());
+                    default -> dateStr = String.format("%d월 %d일 (%s)",
+					now.getMonthValue(), now.getDayOfMonth(), dow);
+				}
                 // 세계시계 도시명 prefix
                 if (state.cityPrefix != null && !state.cityPrefix.isEmpty())
-                    dateStr = "(" + state.cityPrefix + ") " + dateStr;
+				dateStr = "(" + state.cityPrefix + ") " + dateStr;
                 int drgb = state.faceDateColorRgb;
                 javafx.scene.paint.Color dcol = javafx.scene.paint.Color.rgb(
                     (drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF,
-                    ((drgb >> 24) & 0xFF) / 255.0);
+				((drgb >> 24) & 0xFF) / 255.0);
                 renderFaceText(faceDateTexImg, dateStr, dcol,
                     state.faceDateFontFamily, state.faceDateFontSize > 0
-                        ? state.faceDateFontSize : (int) faceDateTexImg.getHeight() * 0.68);
-            }
-
+				? state.faceDateFontSize : (int) faceDateTexImg.getHeight() * 0.68);
+			}
             // ── 시간 행 (하단) ───────────────────────────────────────
             faceTimeBox.setVisible(state.showDigital);
             if (state.showDigital) {
                 String timeStr;
                 switch (state.digitalFormatIndex) {
-                    case 1  -> timeStr = String.format("%02d:%02d %s [%s]", h12, now.getMinute(), ampm, dow);
-                    case 2  -> timeStr = String.format("%02d:%02d %s", h12, now.getMinute(), ampm);
-                    case 3  -> timeStr = String.format("%02d:%02d:%02d", h12, now.getMinute(), now.getSecond());
-                    default -> timeStr = String.format("%02d:%02d:%02d %s", h12, now.getMinute(), now.getSecond(), ampm);
-                }
-                int trgb = state.digitalColorRgb;
+                    case 1  -> timeStr = String.format("%02d:%02d %s [%s]", h24, now.getMinute(), ampm, dow);
+                    case 2  -> timeStr = String.format("%02d:%02d [%s]", h24, now.getMinute(), ampm);
+                    case 3  -> timeStr = String.format("%02d:%02d:%02d", h24, now.getMinute(), now.getSecond());
+                    default -> timeStr = String.format("%02d:%02d:%02d [%s]", h24, now.getMinute(), now.getSecond(), ampm);
+				}
+                if (state.cityPrefix != null && !state.cityPrefix.isEmpty())
+				timeStr = timeStr + " (" + state.cityPrefix + ")";
+				int trgb = state.digitalColorRgb;
                 javafx.scene.paint.Color tcol = javafx.scene.paint.Color.rgb(
                     (trgb >> 16) & 0xFF, (trgb >> 8) & 0xFF, trgb & 0xFF,
-                    ((trgb >> 24) & 0xFF) / 255.0);
+				((trgb >> 24) & 0xFF) / 255.0);
                 renderFaceTimeScrolled(faceTimeTexImg, timeStr, tcol);
-            }
-        }
-
+			}
+		}
         private double computeBlinkOpacity(AppState.NeonBlinkStyle style) {
             switch (style) {
                 case NONE -> { return 1.0; }
@@ -1802,27 +1800,27 @@ public class FxGPUNeon {
                     if (state.neonFlickerPhase >= 2.0 * Math.PI) state.neonFlickerPhase -= 2.0 * Math.PI;
                     double wave = 0.5 + 0.5 * Math.sin(state.neonFlickerPhase);
                     return AppState.clamp(1.0 - state.neonFlickerDepth * (1.0 - wave), 0.0, 1.0);
-                }
+				}
                 case SHARP -> {
                     state.neonFlickerPhase += state.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
                     if (state.neonFlickerPhase >= 2.0 * Math.PI) state.neonFlickerPhase -= 2.0 * Math.PI;
                     double norm = state.neonFlickerPhase / (2.0 * Math.PI);
                     return (norm < 0.70) ? 1.0 : AppState.clamp(1.0 - state.neonFlickerDepth, 0.0, 1.0);
-                }
+				}
                 case RANDOM -> {
                     if (state.neonRandomCounter <= 0) {
                         state.neonRandomOn = !state.neonRandomOn;
                         int base = (int) (60.0 / Math.max(0.2, state.neonFlickerSpeed));
                         if (state.neonRandomOn) state.neonRandomCounter = base + (int) (Math.random() * base);
                         else state.neonRandomCounter = Math.max(1, base / 4 + (int) (Math.random() * base / 4));
-                    }
+					}
                     state.neonRandomCounter--;
                     return state.neonRandomOn ? 1.0 : AppState.clamp(1.0 - state.neonFlickerDepth, 0.0, 1.0);
-                }
+				}
                 default -> { return 1.0; }
-            }
-        }
-
+			}
+		}
+		
         private javafx.scene.paint.Color neonCoreColor(javafx.scene.paint.Color base) {
             double maxc = Math.max(base.getRed(), Math.max(base.getGreen(), base.getBlue()));
             if (maxc < 0.35) {
@@ -1832,70 +1830,70 @@ public class FxGPUNeon {
                     Math.min(1.0, base.getGreen() * 0.35 + 0.88),
                     Math.min(1.0, base.getBlue()  * 0.35 + 0.88),
                     1.0
-                );
-            }
+				);
+			}
             return javafx.scene.paint.Color.color(
                 Math.min(1.0, base.getRed()   * 0.55 + 0.52),
                 Math.min(1.0, base.getGreen() * 0.55 + 0.52),
                 Math.min(1.0, base.getBlue()  * 0.55 + 0.52),
                 1.0
-            );
-        }
-
+			);
+		}
+		
         private javafx.scene.paint.Color mixColor(
-                javafx.scene.paint.Color a,
-                javafx.scene.paint.Color b,
-                double t,
-                double alpha) {
+			javafx.scene.paint.Color a,
+			javafx.scene.paint.Color b,
+			double t,
+			double alpha) {
             double u = AppState.clamp(t, 0.0, 1.0);
             return javafx.scene.paint.Color.color(
                 a.getRed()   * (1.0 - u) + b.getRed()   * u,
                 a.getGreen() * (1.0 - u) + b.getGreen() * u,
                 a.getBlue()  * (1.0 - u) + b.getBlue()  * u,
                 alpha
-            );
-        }
-
+			);
+		}
+		
         private void drawFaceTextWithOptionalNeon(
-                javafx.scene.canvas.GraphicsContext gc,
-                String text,
-                double x,
-                double y,
-                javafx.scene.text.TextAlignment align,
-                javafx.scene.paint.Color color,
-                boolean neonOn) {
+			javafx.scene.canvas.GraphicsContext gc,
+			String text,
+			double x,
+			double y,
+			javafx.scene.text.TextAlignment align,
+			javafx.scene.paint.Color color,
+			boolean neonOn) {
             gc.setTextAlign(align);
-
+			
             if (!neonOn) {
                 gc.setFill(color);
                 gc.fillText(text, x, y);
                 return;
-            }
-
+			}
+			
             double blink = computeBlinkOpacity(state.digitalNeonBlinkStyle);
             javafx.scene.paint.Color core = neonCoreColor(color);
-
+			
             // 네온이 켜지면 중심 텍스트 자체도 밝아져야 점멸이 눈에 들어온다.
             double fillMix = 0.58 + 0.42 * blink;
             javafx.scene.paint.Color fillColor = mixColor(color, core, fillMix, 1.0);
             javafx.scene.paint.Color lineColor = mixColor(color, core, 0.82 + 0.18 * blink, 1.0);
-
+			
             javafx.scene.effect.DropShadow outerGlow = new javafx.scene.effect.DropShadow(
                 javafx.scene.effect.BlurType.GAUSSIAN,
                 javafx.scene.paint.Color.color(core.getRed(), core.getGreen(), core.getBlue(), 0.42 * blink),
                 5.5,
                 0.35,
                 0, 0
-            );
+			);
             javafx.scene.effect.DropShadow innerGlow = new javafx.scene.effect.DropShadow(
                 javafx.scene.effect.BlurType.GAUSSIAN,
                 javafx.scene.paint.Color.color(core.getRed(), core.getGreen(), core.getBlue(), 0.90 * blink),
                 2.2,
                 0.18,
                 0, 0
-            );
+			);
             innerGlow.setInput(outerGlow);
-
+			
             gc.setEffect(innerGlow);
             gc.setStroke(lineColor);
             gc.setLineWidth(0.95);
@@ -1903,48 +1901,49 @@ public class FxGPUNeon {
             gc.setFill(fillColor);
             gc.fillText(text, x, y);
             gc.setEffect(null);
-
+			
             // 코어 라인을 한 번 더 얇게 덮어 네온 튜브 중심선을 또렷하게 만든다.
             gc.setStroke(mixColor(core, javafx.scene.paint.Color.WHITE, 0.35, 0.95));
             gc.setLineWidth(0.36);
             gc.strokeText(text, x, y);
             gc.setFill(fillColor);
             gc.fillText(text, x, y);
-        }
-
+		}
+		
         // Bug4: renderFaceText / renderFaceTimeScrolled 에서 매 프레임 Canvas 를 생성하면
         // GC 부담이 크다. 크기가 동일하면 같은 Canvas 인스턴스를 재사용한다.
         private javafx.scene.canvas.Canvas _dateCachedCanvas  = null;
         private javafx.scene.canvas.Canvas _timeCachedCanvas  = null;
-
+		
         /**
-         * 날짜 행 — Bug7: 스크롤 지원 (state.faceDateScrollDir 사용).
-         *   0=고정(중앙), 1=우→좌, 2=좌→우, 3=핑퐁
-         * Bug4: Canvas 재사용.
-         */
+			* 날짜 행 — Bug7: 스크롤 지원 (state.faceDateScrollDir 사용).
+			*   0=고정(중앙), 1=우→좌, 2=좌→우, 3=핑퐁
+			* Bug4: Canvas 재사용.
+		*/
         private void renderFaceText(WritableImage target, String text,
-                                    javafx.scene.paint.Color col,
-                                    String fontFamily, double fontSize) {
+			javafx.scene.paint.Color col,
+			String fontFamily, double fontSize) {
             int W = (int) target.getWidth(), H = (int) target.getHeight();
+			int WW = W + W ;
             if (_dateCachedCanvas == null
-                    || (int) _dateCachedCanvas.getWidth()  != W
-                    || (int) _dateCachedCanvas.getHeight() != H) {
+				|| (int) _dateCachedCanvas.getWidth()  != W
+				|| (int) _dateCachedCanvas.getHeight() != H) {
                 _dateCachedCanvas = new javafx.scene.canvas.Canvas(W, H);
-            }
+			}
             javafx.scene.canvas.Canvas c = _dateCachedCanvas;
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, W, H);
             // 음각 효과는 3D 벽이 담당 → 텍스처는 투명 배경에 글자만
-
+			
             gc.setFont(javafx.scene.text.Font.font(fontFamily, FontWeight.BOLD, fontSize));
             gc.setTextBaseline(VPos.CENTER);
-
+			
             // ── X 위치 계산 (스크롤 처리) ────────────────────────────
             double drawX;
             if (state.faceDateScrollDir == 0) {
                 drawX = W / 2.0;
                 gc.setTextAlign(TextAlignment.CENTER);
-            } else {
+				} else {
                 javafx.scene.text.Text m = new javafx.scene.text.Text(text);
                 m.setFont(gc.getFont());
                 double tw = m.getLayoutBounds().getWidth();
@@ -1952,107 +1951,132 @@ public class FxGPUNeon {
                     if (Double.isNaN(state.faceDateScrollOffset)) state.faceDateScrollOffset = 0;
                     drawX = state.faceDateScrollOffset;
                     state.faceDateScrollOffset += state.faceDatePingPongDir * state.faceDateScrollSpeed * 0.5;
-                    if (state.faceDateScrollOffset + tw > W) { state.faceDateScrollOffset = W - tw; state.faceDatePingPongDir = -1; }
-                    if (state.faceDateScrollOffset < 0)       { state.faceDateScrollOffset = 0;     state.faceDatePingPongDir =  1; }
-                } else {
+					// 오른쪽으로 진행 중: 글자가 완전히 오른쪽 밖으로 사라진 뒤 반전
+					if (state.faceDatePingPongDir > 0 && state.faceDateScrollOffset > W) {
+						state.faceDateScrollOffset = W;
+						state.faceDatePingPongDir = -1;
+					}
+					// 왼쪽으로 진행 중: 글자가 완전히 왼쪽 밖으로 사라진 뒤 반전
+					if (state.faceDatePingPongDir < 0 && state.faceDateScrollOffset + tw < 0) {
+						state.faceDateScrollOffset = -tw;
+						state.faceDatePingPongDir = 1;
+					}
+					/*
+						if (state.faceDateScrollOffset + tw > W) { state.faceDateScrollOffset = W - tw; state.faceDatePingPongDir = -1; }
+						if (state.faceDateScrollOffset < 0)       { state.faceDateScrollOffset = 0;     state.faceDatePingPongDir =  1; }
+					*/
+					} else {
                     if (Double.isNaN(state.faceDateScrollOffset))
-                        state.faceDateScrollOffset = (state.faceDateScrollDir == 1) ? W : -tw;
+					state.faceDateScrollOffset = (state.faceDateScrollDir == 1) ? W : -tw;
                     drawX = state.faceDateScrollOffset;
                     if (state.faceDateScrollDir == 1) {
                         state.faceDateScrollOffset -= state.faceDateScrollSpeed * 0.5;
                         if (state.faceDateScrollOffset + tw < 0) state.faceDateScrollOffset = W;
-                    } else {
+						} else {
                         state.faceDateScrollOffset += state.faceDateScrollSpeed * 0.5;
                         if (state.faceDateScrollOffset > W) state.faceDateScrollOffset = -tw;
-                    }
-                }
+					}
+				}
                 gc.setTextAlign(TextAlignment.LEFT);
-            }
-
+			}
+			
             // 얇은 네온 + 본문 렌더링
             drawFaceTextWithOptionalNeon(
                 gc, text, drawX, H / 2.0,
                 state.faceDateScrollDir == 0 ? javafx.scene.text.TextAlignment.CENTER : javafx.scene.text.TextAlignment.LEFT,
                 col,
                 state.neonFaceDate
-            );
-
+			);
+			
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
             c.snapshot(sp, target);
-        }
-
+		}
+		
         /**
-         * 시간 행 — 스크롤 렌더링, 그림자 없음.
-         * state.digitalScrollDir / digitalScrollSpeed / faceScrollOffset / facePingPongDir 사용.
-         *
-         * Bug3 수정: 방향 1(우→좌) / 2(좌→우) 에서 텍스트가 완전히 화면 밖으로 나가는
-         * 순간 오프셋을 리셋할 때 texW (또는 -tw) 로 설정하면 한 프레임 동안 텍스트가
-         * 보이지 않는다. texW + tw (또는 -tw - padding) 로 초기화해 연속성을 보장한다.
-         */
+			* 시간 행 — 스크롤 렌더링, 그림자 없음.
+			* state.digitalScrollDir / digitalScrollSpeed / faceScrollOffset / facePingPongDir 사용.
+			*
+			* Bug3 수정: 방향 1(우→좌) / 2(좌→우) 에서 텍스트가 완전히 화면 밖으로 나가는
+			* 순간 오프셋을 리셋할 때 texW (또는 -tw) 로 설정하면 한 프레임 동안 텍스트가
+			* 보이지 않는다. texW + tw (또는 -tw - padding) 로 초기화해 연속성을 보장한다.
+		*/
         private void renderFaceTimeScrolled(WritableImage target, String text,
-                                             javafx.scene.paint.Color col) {
+			javafx.scene.paint.Color col) {
             int texW = (int) target.getWidth();
             int texH = (int) target.getHeight();
-
+			
             if (_timeCachedCanvas == null
-                    || (int) _timeCachedCanvas.getWidth()  != texW
-                    || (int) _timeCachedCanvas.getHeight() != texH) {
+				|| (int) _timeCachedCanvas.getWidth()  != texW
+				|| (int) _timeCachedCanvas.getHeight() != texH) {
                 _timeCachedCanvas = new javafx.scene.canvas.Canvas(texW, texH);
-            }
+			}
             javafx.scene.canvas.Canvas c = _timeCachedCanvas;
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, texW, texH);
             // 음각 효과는 3D 벽이 담당 → 텍스처는 투명 배경에 글자만
-
+			
             double fs = Math.max(10, state.digitalFontSize > 0
-                ? state.digitalFontSize : texH * 0.7);
+			? state.digitalFontSize : texH * 0.7);
             gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, fs));
             gc.setTextBaseline(VPos.CENTER);
-
+			
             // ── X 위치 계산 (스크롤 처리) ────────────────────────────
             javafx.scene.text.Text m = new javafx.scene.text.Text(text);
             m.setFont(gc.getFont());
             double tw = m.getLayoutBounds().getWidth();
             double drawX;
-
+			
             if (state.digitalScrollDir == 0) {
                 drawX = texW / 2.0;
                 gc.setTextAlign(TextAlignment.CENTER);
-            } else if (state.digitalScrollDir == 3) {
+				} else if (state.digitalScrollDir == 3) {
                 if (Double.isNaN(state.faceScrollOffset)) state.faceScrollOffset = 0;
                 drawX = state.faceScrollOffset;
                 state.faceScrollOffset += state.facePingPongDir * state.digitalScrollSpeed * 0.5;
-                if (state.faceScrollOffset + tw > texW) { state.faceScrollOffset = texW - tw; state.facePingPongDir = -1; }
-                if (state.faceScrollOffset < 0)          { state.faceScrollOffset = 0;         state.facePingPongDir =  1; }
+				
+				// 👉 오른쪽 완전 이탈 후 반사
+				if (state.facePingPongDir > 0 && state.faceScrollOffset > texW) {
+					state.faceScrollOffset = texW;
+					state.facePingPongDir = -1;
+				}
+				// 👉 왼쪽 완전 이탈 후 반사
+				if (state.facePingPongDir < 0 && state.faceScrollOffset + tw < 0) {
+					state.faceScrollOffset = -tw;
+					state.facePingPongDir = 1;
+				}				
+				/*
+					if (state.faceScrollOffset + tw > texW) { state.faceScrollOffset = texW - tw; state.facePingPongDir = -1; }
+					if (state.faceScrollOffset < 0)          { state.faceScrollOffset = 0;         state.facePingPongDir =  1; }
+				*/
                 gc.setTextAlign(TextAlignment.LEFT);
-            } else {
+				} else {
                 if (Double.isNaN(state.faceScrollOffset))
-                    state.faceScrollOffset = (state.digitalScrollDir == 1) ? texW : -tw;
+				state.faceScrollOffset = (state.digitalScrollDir == 1) ? texW : -tw;
                 drawX = state.faceScrollOffset;
                 if (state.digitalScrollDir == 1) {
                     state.faceScrollOffset -= state.digitalScrollSpeed * 0.5;
                     if (state.faceScrollOffset + tw < 0) state.faceScrollOffset = texW;
-                } else {
+					} else {
                     state.faceScrollOffset += state.digitalScrollSpeed * 0.5;
                     if (state.faceScrollOffset > texW) state.faceScrollOffset = -tw;
-                }
+				}
                 gc.setTextAlign(TextAlignment.LEFT);
-            }
-
+			}
+			
             // 얇은 네온 + 본문 렌더링
             drawFaceTextWithOptionalNeon(
                 gc, text, drawX, texH / 2.0,
                 state.digitalScrollDir == 0 ? javafx.scene.text.TextAlignment.CENTER : javafx.scene.text.TextAlignment.LEFT,
                 col,
                 state.neonFaceTime
-            );
-
+			);
+			
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
             c.snapshot(sp, target);
-        }
-
+		}
+		
         /** faceTimeBox 더블클릭 핸들러 등록 (설정 다이얼로그 열기). ClockController 에서 주입. */
         private Runnable faceTimeClickCallback = null;
         void setFaceTimeClickHandler(Runnable onDoubleClick) {
@@ -2061,12 +2085,12 @@ public class FxGPUNeon {
             faceTimeBox.setMouseTransparent(false);
             faceTimeBox.setOnMouseClicked(e -> {
                 if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY
-                        && e.getClickCount() == 2) {
+					&& e.getClickCount() == 2) {
                     faceTimeClickCallback.run();
-                }
-            });
-        }
-
+				}
+			});
+		}
+		
         void applyVisibilityState() {
             // ── 투명 모드: 앞면·본체·뒷면·유리 숨김, 베젤·바늘·눈금·숫자는 유지 ──
 			if (state.transparentMode) {
@@ -2994,7 +3018,7 @@ public class FxGPUNeon {
             double boxW = fontSize * 1.1;
             double boxH = fontSize * 1.2;
             double boxD = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
-
+			
             // 텍스처 생성
             int tw = (int) Math.max(32, boxW * 4);
             int th = (int) Math.max(32, boxH * 4);
@@ -3011,10 +3035,10 @@ public class FxGPUNeon {
             SnapshotParameters sp = new SnapshotParameters();
             sp.setFill(Color.TRANSPARENT);
             canvas.snapshot(sp, texImg);
-
+			
             PhongMaterial mat = extrudedMetalMaterial(state.numberColor, 0.06, 128);
             mat.setDiffuseMap(texImg);
-
+			
             Box box = new Box(boxW, boxH, boxD);
             box.setMaterial(mat);
             box.setCullFace(CullFace.BACK);
@@ -3351,21 +3375,21 @@ public class FxGPUNeon {
     static final class OverlayRenderer {
         private final AppState state;
         OverlayRenderer(AppState state) { this.state = state; }
-
+		
         void draw(Canvas overlay) {
             GraphicsContext gc = overlay.getGraphicsContext2D();
             gc.clearRect(0, 0, state.viewportWidth, state.viewportHeight);
-
+			
             if (state.paused) {
                 gc.setFill(Color.color(1.0, 0.85, 0.20, 0.90));
                 gc.setFont(Font.font("Consolas", FontWeight.BOLD, 14));
                 gc.setTextAlign(TextAlignment.CENTER);
                 gc.setTextBaseline(VPos.TOP);
                 gc.fillText("[ PAUSED ]", state.viewportWidth / 2.0, 10);
-            }
+			}
             // 디지탈 시계는 faceDateTimeGroup(코인 페이스)에서 렌더링
-        }
-    }
+		}
+	}
 	
     // ───────────────────────── Setup Panel ─────────────────────────
     static final class SetupPanelController {
@@ -3378,14 +3402,14 @@ public class FxGPUNeon {
         private final Runnable onRebuild;
         private final Runnable onBloomUpdate;
         private final Runnable onStopYoutube; // 테마 변경 시 YouTube 중지
-
+		
         SetupPanelController(AppState state, SceneAssembler assembler, Canvas overlay,
-                Runnable onCameraSettingsChanged,
-                java.util.function.Consumer<File> onLoadBackgroundFile,
-                java.util.function.Consumer<File> onStartSlideshow,
-                Runnable onRebuild,
-                Runnable onBloomUpdate,
-                Runnable onStopYoutube) {
+			Runnable onCameraSettingsChanged,
+			java.util.function.Consumer<File> onLoadBackgroundFile,
+			java.util.function.Consumer<File> onStartSlideshow,
+			Runnable onRebuild,
+			Runnable onBloomUpdate,
+			Runnable onStopYoutube) {
             this.state = state;
             this.assembler = assembler;
             this.overlay = overlay;
@@ -3395,7 +3419,7 @@ public class FxGPUNeon {
             this.onRebuild = onRebuild;
             this.onBloomUpdate = onBloomUpdate;
             this.onStopYoutube = onStopYoutube;
-        }
+		}
 		
         Stage build(Stage owner) {
             Stage s = new Stage();
@@ -3428,7 +3452,7 @@ public class FxGPUNeon {
                     if (onStopYoutube != null) onStopYoutube.run(); // YouTube 중지
                     state.applyTheme(AppState.Theme.valueOf(t[1]));
                     assembler.rebuildMaterialsAndScene();
-                });
+				});
                 themeRow.getChildren().add(btn);
 			}
 			
@@ -3624,7 +3648,7 @@ public class FxGPUNeon {
                 if (!state.interactiveResizing) assembler.applyVisibilityState();
 			});
             root.getChildren().add(new HBox(8, plain("크기"), size, sizeLabel));
-
+			
             // YouTube 확대/축소 슬라이더 (0=전체보기, 1=꽉채우기)
             Slider ytZoom = slider(0.0, 1.0, state.youtubeScale);
             Label ytZoomLabel = value(String.format("%.0f%%", state.youtubeScale * 100));
@@ -3632,7 +3656,7 @@ public class FxGPUNeon {
                 state.youtubeScale = nv.doubleValue();
                 ytZoomLabel.setText(String.format("%.0f%%", state.youtubeScale * 100));
                 assembler.applyBackgroundImage(); // 즉시 반영
-            });
+			});
             root.getChildren().add(new HBox(8, plain("YouTube 확대"), ytZoom, ytZoomLabel));
 			
             Slider opacity = slider(0.10, 1.00, state.clockOpacity);
@@ -3673,7 +3697,7 @@ public class FxGPUNeon {
             root.getChildren().add(new HBox(8, plain("상하"), swingX, swingXLabel));
 			
             addDigitalSettingsSection(root);
-
+			
             // ── 배경 이미지 / 슬라이드쇼 (통합) ─────────────────────────
             root.getChildren().add(section("● 배경 이미지 / 슬라이드쇼"));
 			
@@ -3951,30 +3975,30 @@ public class FxGPUNeon {
             return s;
 		}
 		
-
+		
         private void addDigitalSettingsSection(VBox root) {
             root.getChildren().add(section("● 디지탈 시계 설정"));
-
+			
             java.util.List<String> allFonts = javafx.scene.text.Font.getFamilies();
-
+			
             Label note = plain("날짜 행과 시분초 행의 모든 설정을 메인 설정으로 통합했습니다.");
             note.setStyle(note.getStyle() + " -fx-font-style:italic;");
             root.getChildren().add(note);
-
+			
             GridPane dateGrid = new GridPane();
             dateGrid.setHgap(10);
             dateGrid.setVgap(8);
-
+			
             CheckBox dateOnOff = checkbox("날짜 표시", state.showFaceDate, v -> {
                 state.showFaceDate = v;
                 refreshDigitalSection();
-            });
+			});
             CheckBox dateNeonOn = checkbox("날짜 네온", state.neonFaceDate, v -> {
                 state.neonFaceDate = v;
                 assembler.updateFaceDateTimeTextures();
                 refreshDigitalSection();
-            });
-
+			});
+			
             ComboBox<String> dateFmtBox = new ComboBox<>();
             dateFmtBox.getItems().addAll("N월 N일, 요일", "YYYY-MM-DD (요일)", "MM/DD (요일)", "N월 N일");
             dateFmtBox.getSelectionModel().select(state.faceDateFormatIndex);
@@ -3982,8 +4006,8 @@ public class FxGPUNeon {
             dateFmtBox.valueProperty().addListener((ob, ov, nv) -> {
                 state.faceDateFormatIndex = Math.max(0, dateFmtBox.getSelectionModel().getSelectedIndex());
                 refreshDigitalSection();
-            });
-
+			});
+			
             ComboBox<String> dateFontBox = new ComboBox<>();
             dateFontBox.getItems().addAll(allFonts);
             dateFontBox.setValue(state.faceDateFontFamily);
@@ -3992,31 +4016,31 @@ public class FxGPUNeon {
                 if (nv != null) {
                     state.faceDateFontFamily = nv;
                     refreshDigitalSection();
-                }
-            });
-
+				}
+			});
+			
             Spinner<Integer> dateSizeSpinner = new Spinner<>(8, 120, (int) state.faceDateFontSize);
             dateSizeSpinner.setEditable(true);
             dateSizeSpinner.valueProperty().addListener((ob, ov, nv) -> {
                 if (nv != null) {
                     state.faceDateFontSize = nv;
                     refreshDigitalSection();
-                }
-            });
-
+				}
+			});
+			
             int drgb = state.faceDateColorRgb;
             ColorPicker dateColorPicker = new ColorPicker(
-                Color.rgb((drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF, ((drgb >> 24) & 0xFF) / 255.0));
+			Color.rgb((drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF, ((drgb >> 24) & 0xFF) / 255.0));
             dateColorPicker.setOnAction(e -> {
                 Color c = dateColorPicker.getValue();
                 state.faceDateColorRgb =
-                    (((int) Math.round(c.getOpacity() * 255)) << 24) |
-                    (((int) Math.round(c.getRed() * 255)) << 16) |
-                    (((int) Math.round(c.getGreen() * 255)) << 8) |
-                    ((int) Math.round(c.getBlue() * 255));
+				(((int) Math.round(c.getOpacity() * 255)) << 24) |
+				(((int) Math.round(c.getRed() * 255)) << 16) |
+				(((int) Math.round(c.getGreen() * 255)) << 8) |
+				((int) Math.round(c.getBlue() * 255));
                 refreshDigitalSection();
-            });
-
+			});
+			
             ToggleGroup dateDirGroup = new ToggleGroup();
             RadioButton drbFixed = neonRadio("고정", dateDirGroup, state.faceDateScrollDir == 0);
             RadioButton drbRTL   = neonRadio("우→좌", dateDirGroup, state.faceDateScrollDir == 1);
@@ -4029,17 +4053,17 @@ public class FxGPUNeon {
                 else state.faceDateScrollDir = 1;
                 state.faceDateScrollOffset = Double.NaN;
                 refreshDigitalSection();
-            });
+			});
             HBox dateDirRow = new HBox(10, drbFixed, drbRTL, drbLTR, drbPing);
             dateDirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-
+			
             Slider dateSpeedSlider = slider(0.2, 6.0, state.faceDateScrollSpeed);
             Label dateSpeedVal = value(String.format("%.1f", state.faceDateScrollSpeed));
             dateSpeedSlider.valueProperty().addListener((ob, ov, nv) -> {
                 state.faceDateScrollSpeed = nv.doubleValue();
                 dateSpeedVal.setText(String.format("%.1f", state.faceDateScrollSpeed));
-            });
-
+			});
+			
             dateGrid.add(dateOnOff, 0, 0);
             dateGrid.add(dateNeonOn, 1, 0);
             dateGrid.add(plain("날짜 형식"), 0, 1); dateGrid.add(dateFmtBox, 1, 1, 3, 1);
@@ -4049,21 +4073,21 @@ public class FxGPUNeon {
             dateGrid.add(plain("날짜 스크롤"), 0, 4); dateGrid.add(dateDirRow, 1, 4, 3, 1);
             dateGrid.add(plain("날짜 속도"), 0, 5); dateGrid.add(dateSpeedSlider, 1, 5, 2, 1); dateGrid.add(dateSpeedVal, 3, 5);
             root.getChildren().add(dateGrid);
-
+			
             GridPane timeGrid = new GridPane();
             timeGrid.setHgap(10);
             timeGrid.setVgap(8);
-
+			
             CheckBox timeOnOff = checkbox("시분초 표시", state.showDigital, v -> {
                 state.showDigital = v;
                 refreshDigitalSection();
-            });
+			});
             CheckBox timeNeonOn = checkbox("시분초 네온", state.neonFaceTime, v -> {
                 state.neonFaceTime = v;
                 assembler.updateFaceDateTimeTextures();
                 refreshDigitalSection();
-            });
-
+			});
+			
             ComboBox<String> timeFmtBox = new ComboBox<>();
             timeFmtBox.getItems().addAll("HH:mm:ss", "hh:mm:ss a", "HH:mm", "hh:mm a");
             timeFmtBox.getSelectionModel().select(state.digitalFormatIndex);
@@ -4071,8 +4095,8 @@ public class FxGPUNeon {
             timeFmtBox.valueProperty().addListener((ob, ov, nv) -> {
                 state.digitalFormatIndex = Math.max(0, timeFmtBox.getSelectionModel().getSelectedIndex());
                 refreshDigitalSection();
-            });
-
+			});
+			
             ComboBox<String> timeFontBox = new ComboBox<>();
             timeFontBox.getItems().addAll(allFonts);
             timeFontBox.setValue(state.digitalFontFamily);
@@ -4081,31 +4105,31 @@ public class FxGPUNeon {
                 if (nv != null) {
                     state.digitalFontFamily = nv;
                     refreshDigitalSection();
-                }
-            });
-
+				}
+			});
+			
             Spinner<Integer> timeSizeSpinner = new Spinner<>(8, 120, (int) state.digitalFontSize);
             timeSizeSpinner.setEditable(true);
             timeSizeSpinner.valueProperty().addListener((ob, ov, nv) -> {
                 if (nv != null) {
                     state.digitalFontSize = nv;
                     refreshDigitalSection();
-                }
-            });
-
+				}
+			});
+			
             int trgb = state.digitalColorRgb;
             ColorPicker timeColorPicker = new ColorPicker(
-                Color.rgb((trgb >> 16) & 0xFF, (trgb >> 8) & 0xFF, trgb & 0xFF, ((trgb >> 24) & 0xFF) / 255.0));
+			Color.rgb((trgb >> 16) & 0xFF, (trgb >> 8) & 0xFF, trgb & 0xFF, ((trgb >> 24) & 0xFF) / 255.0));
             timeColorPicker.setOnAction(e -> {
                 Color c = timeColorPicker.getValue();
                 state.digitalColorRgb =
-                    (((int) Math.round(c.getOpacity() * 255)) << 24) |
-                    (((int) Math.round(c.getRed() * 255)) << 16) |
-                    (((int) Math.round(c.getGreen() * 255)) << 8) |
-                    ((int) Math.round(c.getBlue() * 255));
+				(((int) Math.round(c.getOpacity() * 255)) << 24) |
+				(((int) Math.round(c.getRed() * 255)) << 16) |
+				(((int) Math.round(c.getGreen() * 255)) << 8) |
+				((int) Math.round(c.getBlue() * 255));
                 refreshDigitalSection();
-            });
-
+			});
+			
             ToggleGroup timeDirGroup = new ToggleGroup();
             RadioButton trbFixed = neonRadio("고정", timeDirGroup, state.digitalScrollDir == 0);
             RadioButton trbRTL   = neonRadio("우→좌", timeDirGroup, state.digitalScrollDir == 1);
@@ -4119,17 +4143,17 @@ public class FxGPUNeon {
                 state.digitalScrollOffset = Double.NaN;
                 state.faceScrollOffset = Double.NaN;
                 refreshDigitalSection();
-            });
+			});
             HBox timeDirRow = new HBox(10, trbFixed, trbRTL, trbLTR, trbPing);
             timeDirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-
+			
             Slider timeSpeedSlider = slider(0.2, 6.0, state.digitalScrollSpeed);
             Label timeSpeedVal = value(String.format("%.1f", state.digitalScrollSpeed));
             timeSpeedSlider.valueProperty().addListener((ob, ov, nv) -> {
                 state.digitalScrollSpeed = nv.doubleValue();
                 timeSpeedVal.setText(String.format("%.1f", state.digitalScrollSpeed));
-            });
-
+			});
+			
             ComboBox<String> digitalBlinkBox = new ComboBox<>();
             digitalBlinkBox.getItems().addAll("NONE", "PULSE", "SHARP", "RANDOM");
             digitalBlinkBox.setValue(String.valueOf(state.digitalNeonBlinkStyle));
@@ -4138,9 +4162,9 @@ public class FxGPUNeon {
                 if (nv != null) {
                     state.digitalNeonBlinkStyle = AppState.NeonBlinkStyle.valueOf(nv);
                     refreshDigitalSection();
-                }
-            });
-
+				}
+			});
+			
             timeGrid.add(timeOnOff, 0, 0);
             timeGrid.add(timeNeonOn, 1, 0);
             timeGrid.add(plain("시분초 형식"), 0, 1); timeGrid.add(timeFmtBox, 1, 1, 3, 1);
@@ -4151,19 +4175,19 @@ public class FxGPUNeon {
             timeGrid.add(plain("시분초 속도"), 0, 5); timeGrid.add(timeSpeedSlider, 1, 5, 2, 1); timeGrid.add(timeSpeedVal, 3, 5);
             timeGrid.add(plain("디지탈 네온 점멸"), 0, 6); timeGrid.add(digitalBlinkBox, 1, 6);
             root.getChildren().add(timeGrid);
-        }
-
+		}
+		
         private void refreshDigitalSection() {
             assembler.updateFaceDateTimeTextures();
             boolean visible = (state.showDigital || state.showFaceDate) && !state.transparentMode;
             assembler.faceDateTimeGroup.setVisible(visible);
             if (state.showDigital || state.showFaceDate) {
                 assembler.buildFaceDateTimeGroup();
-            } else {
+				} else {
                 assembler.removeDigitalGroup();
-            }
-        }
-
+			}
+		}
+		
         /** [...] 버튼 클릭 → 설정창 외관(배경색·메뉴 폰트) 변경 팝업 */
         private void openAppearanceDialog(Stage owner) {
             Stage popup = new Stage();

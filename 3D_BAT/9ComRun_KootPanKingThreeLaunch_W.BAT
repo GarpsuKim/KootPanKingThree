@@ -3,7 +3,7 @@ chcp 65001 > nul
 
 set "CURRENT_DIR=%~dp0"
 set "ROOT_DIR=%~dp0.."
-set "CLASS_NAME=KootPanKingThree"
+set "CLASS_NAME=KootPanKingThreeLaunch"
 set "CLASS_DIR=%ROOT_DIR%\3D_Class"
 set "SOURCE_DIR=%ROOT_DIR%\3D_Source"
 set "SOURCE_FILE=%SOURCE_DIR%\%CLASS_NAME%.java"

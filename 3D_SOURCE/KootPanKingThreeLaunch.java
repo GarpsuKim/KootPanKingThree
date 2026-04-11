@@ -5,13 +5,12 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-public class KootPanKingThree  {
+public class KootPanKingThreeLaunch extends Application {
 	// public static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
     // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     // public static Properties config = new Properties();
-    public static MainWindow mainWindow ;	
-	
-    public static IniController iniController ;
+
+	public static IniController iniController ;
 	public static String APP_DIR = "";
 	public static String SETTINGS_DIR = IniController.getDefaultSettingsDir();
 	public static String configFile  = IniController.getPrimaryConfigFilePath();
@@ -26,34 +25,46 @@ public class KootPanKingThree  {
 	public static String startupScheduleText = "";
 	public static KootPanKingThreeApp app ;
 	public static Kakao kakao = new Kakao();
-	
-	/*
+	public static MainWindow mainWindow = new MainWindow();;
+
+	public KootPanKingThreeLaunch () {
+		System.out.println("[KootPanKingThreeLaunch]");
+	};
+
 	@Override
-    public void start(Stage stage) {
-		System.out.println("[start(Stage stage)-------000]");
-	    showStartupScheduleTextLater() ;
-        this.app = new KootPanKingThreeApp();
-        this.app.startInstance(stage, getParameters().getRaw());
-		System.out.println("[start(Stage stage)-------999]");
+    public void start(Stage primaryStage) {
+		System.out.println("■■■■■ start(Stage primaryStage)");	
+		showStartupScheduleTextLater();
+        mainWindow.theMainWindow(primaryStage);
 	}
-	*/
 	private static void showStartupScheduleTextLater() {
 		new Thread(() -> {
 			try {
-				Thread.sleep(30_000); // 30초 대기
+				Thread.sleep(30_000);
 			} catch (InterruptedException ignored) {}
-			while (app == null) {
+			
+			int waitCount = 0;
+			while (mainWindow == null && waitCount < 200) { // 최대 10초
 				try {
 					Thread.sleep(50);
 				} catch (InterruptedException ignored) {}
-			}			
+				waitCount++;
+			}
+			
+			if (mainWindow == null) {
+				System.out.println("mainWindow 초기화 안 됨");
+				return;
+			}
+			
 			if (startupScheduleText != null && !startupScheduleText.isEmpty()) {
-				Platform.runLater(() -> {
-					app.showScheduleDialog("📅 향후 3일 일정", startupScheduleText);
+				javafx.application.Platform.runLater(() -> {
+					System.out.println("일정 통보 다이알로그 등록");
+					mainWindow.showScheduleDialog("📅 향후 3일 일정", startupScheduleText);
 				});
 			}
 		}, "StartupScheduleDelay").start();
 	}
+	
     private static void firstFinalGmail() {
 		// GmailSender gmail = GmailSender.getInstance();
 		gmail.init(ini);
@@ -187,12 +198,12 @@ public class KootPanKingThree  {
 				if (googleCalendarService.isInitialized()) {
 					java.util.List<GoogleCalendarService.CalendarEvent> gEvents =
 					googleCalendarService.getNextDays(3);
-					sb.append(GoogleCalendarService.formatEvents("📧 구글", gEvents)).append("\n");
+					sb.append(GoogleCalendarService.formatEvents("📧 구글 📧", gEvents)).append("\n\n\n");
 				}
 				if (naverCalendarService.isInitialized()) {
 					java.util.List<NaverCalendarService.CalendarEvent> nEvents =
 					naverCalendarService.getNextDays(3);
-					sb.append(NaverCalendarService.formatEvents("🟢 네이버", nEvents));
+					sb.append(NaverCalendarService.formatEvents("🟢 네이버 🟢", nEvents));
 				}
 				startupScheduleText = sb.toString().trim();
 				if (startupScheduleText.isEmpty()) return;
@@ -237,7 +248,7 @@ public class KootPanKingThree  {
             // tg.sendStartupNotice();
 		}, "KakaoAutoLogin").start();
 	}	
-
+	
 	public static void main(String[] args) {
 		AppLogger.init();
 		ini.ensureInitialized();
@@ -247,7 +258,7 @@ public class KootPanKingThree  {
 		KakaoSetup();
 		try {
 			System.out.println("[(Application.launch)-------000]");
-			Application.launch(MainWindow.class);
+			launch();
 			System.out.println("[(Application.launch)-------999]");
 			} finally {
 			System.out.println("[Launcher] bye bye");
@@ -259,5 +270,5 @@ public class KootPanKingThree  {
 		} catch (Exception ignored) {}
 		AppLogger.close();
 	}
-
+	
 }

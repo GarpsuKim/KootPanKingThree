@@ -72,8 +72,7 @@ public class AppLogger {
     private static final Object INIT_LOCK   = new Object();
 
     // J. thread-safe 포맷터로 교체
-    private static final DateTimeFormatter TS =
-	DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    private static final DateTimeFormatter TS =	DateTimeFormatter.ofPattern("MM-dd HH:mm:ss.SSS");
     private static final DateTimeFormatter FILE_TS =
 	DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
