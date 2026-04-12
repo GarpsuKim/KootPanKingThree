@@ -1,3 +1,5 @@
+import java.net.URI;
+
 /**
 	* AppRestarter - 앱 생명주기 관리 통합 클래스
 	*

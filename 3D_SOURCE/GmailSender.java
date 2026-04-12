@@ -1,5 +1,6 @@
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URI;
 
 /**
 	* GmailSender - 순수 Java SMTP 메일 전송 클래스
@@ -33,16 +34,15 @@ public class GmailSender {
 	public static GmailSender getInstance() {
         return INSTANCE;
 	}
-	public synchronized  void init(IniController ini) {
+	public synchronized  void init() {
 		if (initialized) return;
-	    if (ini == null) return;
 		initialized = true;
 		
-		this.from   = ini.getProperties().getProperty("gmail.from", "");
-		this.pass   = ini.getProperties().getProperty("gmail.pass", "");
-		this.lastTo = ini.getProperties().getProperty("gmail.lastTo", "");
+		this.from   = AppContext.get("gmail.from", "");
+		this.pass   = AppContext.get("gmail.pass", "");
+		this.lastTo = AppContext.get("gmail.lastTo", "");
 		
-		this.exeFilePath = AppLogger.getExeFilePath();
+		this.exeFilePath = AppContext.theExePath;
 		this.logFilePath = AppLogger.getLogFilePath();
 	}
     // ── 공개 API ──────────────────────────────────────────────────
@@ -91,37 +91,37 @@ public class GmailSender {
             return;
 		}
         // new Thread(() -> {
-            try {
-				Thread.sleep(10_000); // 10초 대기
-                String now      = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
-                String pcName   = java.net.InetAddress.getLocalHost().getHostName();
-                String userId   = System.getProperty("user.name");
-                String osName   = System.getProperty("os.name") + " " + System.getProperty("os.version");
-                String javaVer  = System.getProperty("java.version");
-                String localIp  = java.net.InetAddress.getLocalHost().getHostAddress();
-                String publicIp = getPublicIp();
-                String body = APP_SIGNATURE
-                + "PC가 시작되었습니다.\n\n"
-                + "시작 시각: " + now + "\n\n"
-                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                + "PC 이름  : " + pcName  + "\n"
-                + "사용자   : " + userId  + "\n"
-                + "IP (내부) : " + localIp   + "\n"
-                + "IP (외부) : " + publicIp  + "\n"
-                + "OS       : " + osName  + "\n"
-                + "Java     : " + javaVer + "\n"
-                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                + "실행 파일: " + exeFilePath + "\n"
-                + "로그 파일: " + logFilePath + "\n"
-                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + "\n"
-				+ textContent + "\n" ;
-                System.out.println("[Gmail][sendStartupNotice] from=" + from + " to=" + lastTo);
-                // System.out.println("[Gmail][sendStartupNotice] body=\n" + body);
-                sendOneSmtp(lastTo, "PC 시작 알림", body);
-                System.out.println("[Gmail][sendStartupNotice] 발송 완료 → " + lastTo);
-				} catch (Exception e) {
-                System.out.println("[Gmail][sendStartupNotice] 발송 실패: " + e.getMessage());
-			}
+		try {
+			Thread.sleep(10_000); // 10초 대기
+			String now      = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
+			String pcName   = java.net.InetAddress.getLocalHost().getHostName();
+			String userId   = System.getProperty("user.name");
+			String osName   = System.getProperty("os.name") + " " + System.getProperty("os.version");
+			String javaVer  = System.getProperty("java.version");
+			String localIp  = java.net.InetAddress.getLocalHost().getHostAddress();
+			String publicIp = getPublicIp();
+			String body = APP_SIGNATURE
+			+ "PC가 시작되었습니다.\n\n"
+			+ "시작 시각: " + now + "\n\n"
+			+ "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+			+ "PC 이름  : " + pcName  + "\n"
+			+ "사용자   : " + userId  + "\n"
+			+ "IP (내부) : " + localIp   + "\n"
+			+ "IP (외부) : " + publicIp  + "\n"
+			+ "OS       : " + osName  + "\n"
+			+ "Java     : " + javaVer + "\n"
+			+ "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+			+ "실행 파일: " + exeFilePath + "\n"
+			+ "로그 파일: " + logFilePath + "\n"
+			+ "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + "\n"
+			+ textContent + "\n" ;
+			System.out.println("[Gmail][sendStartupNotice] from=" + from + " to=" + lastTo);
+			// System.out.println("[Gmail][sendStartupNotice] body=\n" + body);
+			sendOneSmtp(lastTo, "PC 시작 알림", body);
+			System.out.println("[Gmail][sendStartupNotice] 발송 완료 → " + lastTo);
+			} catch (Exception e) {
+			System.out.println("[Gmail][sendStartupNotice] 발송 실패: " + e.getMessage());
+		}
 		// }, "StartupEmail").start();
 	}
 	
@@ -392,9 +392,14 @@ public class GmailSender {
 	}
 	
     // ── 유틸 ──────────────────────────────────────────────────────
-    @SuppressWarnings("deprecation")
-    private static URL toUrl(String s) {
-        try { return new URL(s); }
-        catch (Exception e) { throw new RuntimeException(e); }
-	}
+
+
+private static URL toUrl(String s) {
+    try {
+        return URI.create(s).toURL();
+    } catch (Exception e) {
+        throw new IllegalArgumentException(e);
+    }
+}
+
 }

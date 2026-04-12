@@ -10,6 +10,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URI;
+
 /**
 	* BackgroundPlayer — 배경 재생 관련 기능 모음
 	*

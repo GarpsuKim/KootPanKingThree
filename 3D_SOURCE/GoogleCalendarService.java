@@ -45,7 +45,7 @@ public class GoogleCalendarService {
     // tg/kakao 는 APP_DIR 을 받아 내부에서 settings\ 를 붙이지만,
     // GoogleCalendarService 는 SETTINGS_DIR 을 직접 받아 파일명만 붙인다.
     // ★ KootPanKing 에서 calendarService.setAppDir(SETTINGS_DIR) 로 호출할 것.
-    private String appDir = "";
+    private String appDir = AppContext.APP_DIR;
 
     // ── OAuth 토큰 상태 ────────────────────────────────────────────
     private String clientId     = "";
@@ -57,9 +57,7 @@ public class GoogleCalendarService {
     private boolean initialized = false;
 
     /** KootPanKing.SETTINGS_DIR 을 주입한다. init() 호출 전에 반드시 설정해야 한다. */
-    public void setAppDir(String dir) {
-        this.appDir = (dir != null) ? dir : "";
-    }
+
 
     // ── 초기화 ────────────────────────────────────────────────────
 
@@ -146,16 +144,6 @@ public class GoogleCalendarService {
         return false;
     }
 
-    /**
-     * 하위 호환용 static 오버로드.
-     * KootPanKing 외부에서 settingsDir 없이 호출하는 기존 코드를 위해 유지.
-     * ★ settingsDirPath 에는 KootPanKing.SETTINGS_DIR 을 넘길 것.
-     */
-    public static boolean credentialsExist(String settingsDirPath) {
-        GoogleCalendarService tmp = new GoogleCalendarService();
-        tmp.setAppDir(settingsDirPath);
-        return tmp.credentialsExist();
-    }
 
     /**
      * 로그아웃 - 메모리 토큰 초기화 + token.json 삭제.

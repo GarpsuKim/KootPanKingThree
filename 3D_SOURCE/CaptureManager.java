@@ -18,6 +18,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.net.URI;
 
 /**
  * CaptureManager - 화면 캡처 + IP 카메라 스트림 통합 클래스 (JavaFX 전용)
@@ -292,9 +293,10 @@ public class CaptureManager {
         // ── MJPEG 스트림 파싱 ───────────────────────────────────────
 
         private void connectAndRead(String streamUrl) throws Exception {
-            @SuppressWarnings("deprecation")
-            URL url = new URL(streamUrl + "/video");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            //  @SuppressWarnings("deprecation")
+            // URL url = new URL(streamUrl + "/video")	;
+			URL url = URI.create(streamUrl + "/video").toURL();
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(10000);
             conn.connect();

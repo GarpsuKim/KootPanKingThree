@@ -23,6 +23,7 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.net.URI;
 /**
 	* TelegramBot - 텔레그램 Bot API 연동 클래스
 	*
@@ -90,7 +91,7 @@ public class TelegramBot {
 	private static String  botToken  = "";  // BotFather 에서 발급받은 Bot Token
     private static String  myChatId  = "";  // 허용된 Chat ID (보안) - 비어있으면 전체 허용
     public volatile boolean polling = false; // 폴링 활성화 여부
-    public static String  appDir    = "";  // KootPanKing.APP_DIR 주입 — txt/ini 파일 경로 기준
+    public static String  appDir    = AppContext.theExeFile.getParent();
     // ── 내부 상태 ─────────────────────────────────────────────────
     private volatile long              lastUpdateId  = 0;    // 마지막 처리한 update_id
     private ScheduledExecutorService   pollScheduler = null; // 폴링 스케줄러
@@ -121,20 +122,20 @@ public class TelegramBot {
 		return INSTANCE;
 	}
 	
-	public   void init(IniController ini) {
+	public   void init() {
 		// public synchronized  void init(IniController ini) {
 		try {
 			System.out.println("[TelegramBot] init()1");
 			if (initialized) return;
 			System.out.println("[TelegramBot] init()2");
-			if (ini == null) return;
+			
 			System.out.println("[TelegramBot] init()3");
 			initialized = true;
 			
-			this.botToken   = ini.getProperties().getProperty("tg.botToken", "");
-			this.myChatId   = ini.getProperties().getProperty("tg.myChatId", "");
+			this.botToken   = AppContext.get("tg.botToken", "");
+			this.myChatId   = AppContext.get("tg.myChatId", "");
 			
-			this.exeFilePath = AppLogger.getExeFilePath();
+			this.exeFilePath = AppContext.theExePath;
 			this.logFilePath = AppLogger.getLogFilePath();
 			System.out.println("[TelegramBot] init()4");
 			} catch (Exception e) {
@@ -187,9 +188,9 @@ public class TelegramBot {
 				pollScheduler = null;
 		        System.out.println("[Telegram] 폴링 종료 성공");
 			}
-	    } catch (Exception e) {
+			} catch (Exception e) {
 	        System.out.println("[Telegram] 폴링 종료 실패");
-			AppLogger.logException(e);		}
+		AppLogger.logException(e);		}
 	}
 	/** 폴링 시작 전 기존 메시지를 모두 건너뜀 - 재시작 후 이전 명령 재처리 방지 */
 	private void skipOldUpdates() {
@@ -1473,12 +1474,20 @@ public class TelegramBot {
 	}
 	
     // ── 유틸 ──────────────────────────────────────────────────────
+	/*
     @SuppressWarnings("deprecation")
     private static URL toUrl(String s) {
         try { return new URL(s); }
         catch (Exception e) { throw new RuntimeException(e); }
 	}
-	
+	*/
+    private static URL toUrl(String s) {
+    try {
+        return URI.create(s).toURL();
+    } catch (Exception e) {
+        throw new IllegalArgumentException(e);
+    }
+	}
     // ── 텔레그램 설정 다이얼로그 (JavaFX) ────────────────────────
     /**
 		* 텔레그램 설정 다이얼로그 (JavaFX Stage).

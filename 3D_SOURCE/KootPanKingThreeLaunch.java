@@ -9,12 +9,13 @@ public class KootPanKingThreeLaunch extends Application {
 	// public static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
     // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     // public static Properties config = new Properties();
-
+/*
 	public static IniController iniController ;
 	public static String APP_DIR = "";
 	public static String SETTINGS_DIR = IniController.getDefaultSettingsDir();
 	public static String configFile  = IniController.getPrimaryConfigFilePath();
 	public static IniController ini = new IniController(	APP_DIR, SETTINGS_DIR, configFile,"Local"	);
+	*/
 	public static final GmailSender gmail = GmailSender.getInstance();
 	public static TelegramBot tg;
     public static CaptureManager screenCapture;             // 화면 캡처
@@ -67,7 +68,7 @@ public class KootPanKingThreeLaunch extends Application {
 	
     private static void firstFinalGmail() {
 		// GmailSender gmail = GmailSender.getInstance();
-		gmail.init(ini);
+		gmail.init();
 		// gmail.sendStartupNotice(startupScheduleText);  // 쓰레드 동기화 안되어서 텔레그램으로 이동
 		// 5. 종료 메일 hook (1회)
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -148,7 +149,7 @@ public class KootPanKingThreeLaunch extends Application {
 			}
 		});
 		
-		tg.init(ini);
+		tg.init();
 		
 		/*
 			this.appRestarter = KootPanKingThree.getAppRestarter();
@@ -171,16 +172,14 @@ public class KootPanKingThreeLaunch extends Application {
 		*/
         
 		screenCapture = new CaptureManager(null);
-		tg.appDir = APP_DIR;
 		
-		googleCalendarService.setAppDir(SETTINGS_DIR);
 		tg.calendarService = googleCalendarService;
 		tg.naverCalendarService = naverCalendarService;
 		
 		// ── 네이버 캘린더 자격증명 로드 ───────────────────────
 		naverCalendarService.setCredentials(
-			ini.getProperties().getProperty("naver.caldav.id", ""),
-			ini.getProperties().getProperty("naver.caldav.password", "")
+			AppContext.get("naver.caldav.id", ""),
+			AppContext.get("naver.caldav.password", "")
 		);
 		tg.naverCalendarService = naverCalendarService;
 		
@@ -227,10 +226,10 @@ public class KootPanKingThreeLaunch extends Application {
 	
 	private static void KakaoSetup() {
 		tg.kakao = kakao;
-		kakao.appDir = APP_DIR;
-		kakao.kakaoRestApiKey   = ini.getProperties().getProperty("kakao.apiKey", "");
-		kakao.kakaoClientSecret = ini.getProperties().getProperty("kakao.clientSecret", "");
-		kakao.kakaoRefreshToken = ini.getProperties().getProperty("kakao.refreshToken", "");
+		kakao.appDir = AppContext.APP_DIR;
+		kakao.kakaoRestApiKey   = AppContext.get("kakao.apiKey", "");
+		kakao.kakaoClientSecret = AppContext.get("kakao.clientSecret", "");
+		kakao.kakaoRefreshToken = AppContext.get("kakao.refreshToken", "");
 		
 		// 필요하면
 		// kakao.onTokenSaved = KootPanKingThree::saveMainIni;
@@ -251,8 +250,7 @@ public class KootPanKingThreeLaunch extends Application {
 	
 	public static void main(String[] args) {
 		AppLogger.init();
-		ini.ensureInitialized();
-		ini.load();
+		AppContext.init();
 		firstFinalGmail();
 		telegramSetup();
 		KakaoSetup();

@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
 
+
 public class MainWindow {
 	
 	private static volatile MainWindow instance;
@@ -45,7 +46,7 @@ public class MainWindow {
 	
     // ── 테마 모드 ───────────────────────────────────────────────
     private enum ThemeMode { BASIC, PINK_GLASS }
-    private ThemeMode themeMode = ThemeMode.PINK_GLASS;
+    private static  ThemeMode themeMode = ThemeMode.PINK_GLASS;
 	
     private static final String LOG_STYLE =
 	"-fx-font-family: 'Malgun Gothic'; -fx-font-size: 13px;"
@@ -58,36 +59,37 @@ public class MainWindow {
 	+ "-fx-border-width: 1;";
 	
     // ── UI 컴포넌트 ───────────────────────────────────────────────
-    private Stage    stage;
-    private TextArea logArea;
-    private Label    statusBar;
+    private static  Stage    stage;
+    private static  TextArea logArea;
+    private static  Label    statusBar;
 	
     // ─────────────────────────────────────────────────────────────
     private static final String APP_NAME = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
 	
-    private String       appDir;
-    private String       settingsDir;
-    private String       configFile;
+    private static String       appDir;
+    private static String       settingsDir;
+    private static String       configFile;
     private Properties   config     = new Properties();
-    private IniController iniController;
+    // private IniController iniController;
 	
     // ── 세계시계 자식 창 ──────────────────────────────────────────
     // private final java.util.Map<java.time.ZoneId, Stage> childStages = new java.util.LinkedHashMap<>();
-	private interface CityWindowHandle {
+	private static interface CityWindowHandle {
 		void focus();
 		void close();
 		boolean isShowing();
 	}	
-	private final java.util.Map<java.time.ZoneId, CityWindowHandle> childStages = new java.util.LinkedHashMap<>();
+	private static final java.util.Map<java.time.ZoneId, CityWindowHandle> childStages = new java.util.LinkedHashMap<>();
 	
-    private String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
-    private final GmailSender gmail  = GmailSender.getInstance();
-    private final Kakao        kakao  = new Kakao();
-    private TelegramBot        tg;
-    private ChimeController    chimeController; // lazy-init
+    private static String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
+    private static  GmailSender gmail  = GmailSender.getInstance();
+    private static  Kakao        kakao  = new Kakao();
+    private static  TelegramBot        tg;
+    private static  ChimeController    chimeController; // lazy-init
 	
-    private final GoogleCalendarService googleCalendarService = new GoogleCalendarService();
-    private final NaverCalendarService  naverCalendarService  = new NaverCalendarService();
+	
+    private static  GoogleCalendarService googleCalendarService = new GoogleCalendarService();
+    private static  NaverCalendarService  naverCalendarService  = new NaverCalendarService();
 	
     // ═══════════════════════════════════════════════════════════
     //  생성자 / JavaFX 진입점
@@ -127,15 +129,8 @@ public class MainWindow {
     //  UI 초기화
     // ═══════════════════════════════════════════════════════════
     public void theMainWindow(Stage primaryStage) {
-		
-        appDir      = resolveAppDir();
-        settingsDir = resolveSettingsDir();
-        configFile  = IniController.getPrimaryConfigFilePath();
-        iniController = new IniController(appDir, settingsDir, configFile, "Local");
-        iniController.ensureInitialized();
-        iniController.load();
-        config = iniController.getProperties();
-		
+        appDir      = AppContext.APP_DIR;
+        settingsDir = AppContext.SETTINGS_DIR;		
 		System.out.println("■■■■■ theMainWindow(Stage primaryStage)");	
 		
 		this.stage = primaryStage;
@@ -199,55 +194,42 @@ public class MainWindow {
 		Platform.runLater(w::toggleTheMainWindow);
 	}	
     // ═══════════════════════════════════════════════════════════
-    /** %APPDATA%\KootPanKingThree\ 경로 결정 */
-    private String resolveAppDir() {
-        String appData = System.getenv("APPDATA");
-        if (appData == null) appData = System.getProperty("user.home");
-        java.io.File dir = new java.io.File(appData + java.io.File.separator + "KootPanKingThree");
-        if (!dir.exists()) dir.mkdirs();
-        return dir.getAbsolutePath() + java.io.File.separator;
-	}
-	
-    /** %APPDATA%\KootPanKingThree\settings\ 경로 결정 */
-    private String resolveSettingsDir() {
-        String appData = System.getenv("APPDATA");
-        if (appData == null) appData = System.getProperty("user.home");
-        return appData + java.io.File.separator + "KootPanKingThree"
-		+ java.io.File.separator + "settings" + java.io.File.separator;
+    private void saveConfig() {
 	}
 	
     /** config 저장 */
-    private void saveConfig() {
+	/*
+		private void saveConfig() {
         try {
-            config.setProperty("gmail.from",            gmail.from);
-            config.setProperty("gmail.pass",            gmail.pass);
-            config.setProperty("gmail.lastTo",          gmail.lastTo);
-            config.setProperty("kakao.apiKey",          kakao.kakaoRestApiKey);
-            config.setProperty("kakao.clientSecret",    kakao.kakaoClientSecret);
-            config.setProperty("kakao.refreshToken",    kakao.kakaoRefreshToken);
-            if (chimeController != null) {
-                config.setProperty("chimeEnabled",  String.valueOf(chimeController.isEnabled()));
-                config.setProperty("chimeFile",     chimeController.getFile());
-                config.setProperty("chimeDuration", String.valueOf(chimeController.getDuration()));
-                config.setProperty("chimeVolume",   String.valueOf(chimeController.getVolume()));
-                boolean[] mins = chimeController.getMinutes();
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < 60; i++) if (mins[i]) { if (sb.length() > 0) sb.append(','); sb.append(i); }
-                config.setProperty("chimeMinutes", sb.toString());
-			}
-            if (iniController != null) {
-                iniController.save();
-				} else {
-                try (FileOutputStream fos = new FileOutputStream(configFile)) {
-                    config.store(fos, "KootPanKingThree Settings");
-				} catch (IOException ignored) {}
-			}
-			} catch (Exception e) {
-            System.out.println("saveConfig() Exception: " + e.getMessage());
+		config.setProperty("gmail.from",            gmail.from);
+		config.setProperty("gmail.pass",            gmail.pass);
+		config.setProperty("gmail.lastTo",          gmail.lastTo);
+		config.setProperty("kakao.apiKey",          kakao.kakaoRestApiKey);
+		config.setProperty("kakao.clientSecret",    kakao.kakaoClientSecret);
+		config.setProperty("kakao.refreshToken",    kakao.kakaoRefreshToken);
+		if (chimeController != null) {
+		config.setProperty("chimeEnabled",  String.valueOf(chimeController.isEnabled()));
+		config.setProperty("chimeFile",     chimeController.getFile());
+		config.setProperty("chimeDuration", String.valueOf(chimeController.getDuration()));
+		config.setProperty("chimeVolume",   String.valueOf(chimeController.getVolume()));
+		boolean[] mins = chimeController.getMinutes();
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < 60; i++) if (mins[i]) { if (sb.length() > 0) sb.append(','); sb.append(i); }
+		config.setProperty("chimeMinutes", sb.toString());
 		}
-	}
-	
-    /** 로그 파일 열기 */
+		if (iniController != null) {
+		iniController.save();
+		} else {
+		try (FileOutputStream fos = new FileOutputStream(configFile)) {
+		config.store(fos, "KootPanKingThree Settings");
+		} catch (IOException ignored) {}
+		}
+		} catch (Exception e) {
+		System.out.println("saveConfig() Exception: " + e.getMessage());
+		}
+		}
+	*/
+    //   로그 파일 열기 
     private void openLogFile() {
         try {
             String path = AppLogger.getLogFilePath();
@@ -262,13 +244,10 @@ public class MainWindow {
 	}
 	
     /** 설정 파일 열기 */
-    private void openConfigFile() {
-        try {
-            java.io.File f = new java.io.File(IniController.getPrimaryConfigFilePath());
-            if (!f.exists()) { System.out.println("설정 파일 없음: " + f.getAbsolutePath()); return; }
-            IniController.openPrimaryConfigFile();
-			} catch (Exception e) {
-            System.err.println("설정 파일 열기 실패: " + e.getMessage());
+	private void openConfigFile() {
+		boolean ok = AppContext.openCONFIG_FILE();
+		if (!ok) {
+			showAlert("설정 파일을 열지 못했습니다.\n" + AppContext.CONFIG_FILE, "기본 설정 파일");
 		}
 	}
 	
@@ -354,20 +333,10 @@ public class MainWindow {
 			}
 		}
 		Stage childStage = new Stage();
-		String safeName = cityName.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
-		String childConfigFile = settingsDir + "clock_settings_" + safeName + ".ini";
-		java.io.File childIni = new java.io.File(childConfigFile);
-		if (!childIni.exists()) {
-			java.util.Properties copy = new java.util.Properties();
-			copy.putAll(config);
-			copy.setProperty("cityName", clockPrefix);
-			copy.setProperty("timeZone", zoneId.getId());
-			try (java.io.FileOutputStream fos = new java.io.FileOutputStream(childIni)) {
-				copy.store(fos, "KootPanKingThree Child Settings - " + cityName);
-				} catch (Exception ex) {
-				AppLogger.logException(ex);
-			}
-		}
+		
+		String childConfigFile =
+		AppContext.ensureCityConfigFile(cityName, clockPrefix, zoneId.getId());
+		
 		KootPanKingThreeApp childApp =
         new KootPanKingThreeApp(childConfigFile, clockPrefix, zoneId);
 		childApp.startInstance(childStage, Arrays.asList(startArg1, startArg2, startArg3));

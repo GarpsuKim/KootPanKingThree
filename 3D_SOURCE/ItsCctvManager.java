@@ -16,6 +16,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.net.URI;
 
 /**
  * ItsCctvManager (JavaFX 버전)
@@ -414,8 +415,9 @@ public class ItsCctvManager {
     // ── 내부: HTTP 유틸 ──────────────────────────────────────
 
     private BufferedImage fetchImage(String urlStr) throws Exception {
-        @SuppressWarnings("deprecation")
-        URL url = new URL(urlStr);
+        // @SuppressWarnings("deprecation")
+        // URL url = new URL(urlStr);
+		URL url = URI.create(urlStr).toURL();
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setConnectTimeout(CONNECT_TIMEOUT);
         con.setReadTimeout(READ_TIMEOUT);
@@ -429,8 +431,9 @@ public class ItsCctvManager {
     }
 
     private String httpGet(String urlStr) throws Exception {
-        @SuppressWarnings("deprecation")
-        URL url = new URL(urlStr);
+        // @SuppressWarnings("deprecation")
+        // URL url = new URL(urlStr);
+		URL url = URI.create(urlStr).toURL();
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setConnectTimeout(CONNECT_TIMEOUT);
         con.setReadTimeout(READ_TIMEOUT);

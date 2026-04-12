@@ -132,12 +132,12 @@ public class KootPanKingThreeApp {
 	
     // AlarmController alarmController;
     private Properties config = new Properties();
-    private IniController iniController ;
+    // private IniController iniController ;
 	
 	
     // ── 설정 파일 저장 폴더 결정 (우선순위 3단계) ─────────────────
     String EXE_PATH = ""; // ← 추가
-    private final String APP_DIR;
+    private String APP_DIR ;
     final String SETTINGS_DIR;
 	final String CONFIG_FILE;
     // ── 인스턴스별 설정 파일 경로 및 자식 여부 ─────────────────────
@@ -281,23 +281,18 @@ public class KootPanKingThreeApp {
         this(null, "Local", java.time.ZoneId.systemDefault());
 		System.out.println ("■[KootPanKingThreeApp]-0");
 		System.out.println("this.cityName = [" + this.theCityName + "]");
-	}	
+	}
 	
     public KootPanKingThreeApp(String configFile, String cityName, java.time.ZoneId zoneId) {
 		System.out.println ("■■■■■[KootPanKingThreeApp]-1");
-        this.APP_DIR = resolveAppDir();
-        this.SETTINGS_DIR = resolveSettingsDir();
-        this.CONFIG_FILE = SETTINGS_DIR + "clock_settings.ini";
+        this.APP_DIR = AppContext.APP_DIR;
+        this.SETTINGS_DIR = AppContext.SETTINGS_DIR;
+        this.CONFIG_FILE = AppContext.CONFIG_FILE;
         this.myConfigFile = (configFile == null || configFile.isEmpty()) ? CONFIG_FILE : configFile;
         this.theCityName = (cityName == null || cityName.isEmpty()) ? "Local" : cityName;
         this.theTimeZone = (zoneId == null) ? java.time.ZoneId.systemDefault() : zoneId;
 		
         this.config = new Properties();
-        this.iniController = new IniController(APP_DIR, SETTINGS_DIR, myConfigFile, this.theCityName);
-        this.iniController.initialize();
-        this.iniController.load();
-        this.config = this.iniController.getProperties();
-		this.tg = TelegramBot.getInstance() ;
 		
 		/*
 			this.appRestarter = KootPanKingThree.getAppRestarter();
@@ -307,93 +302,22 @@ public class KootPanKingThreeApp {
 			this.appRestarter.setTelegramBot(this.tg);
 		*/
 		
-        loadConfig();
-		
-        // this.gmail.exeFilePath = !EXE_PATH.isEmpty() ? EXE_PATH : AppLogger.getExeFilePath();
-        // this.gmail.logFilePath = AppLogger.getLogFilePath();
-		/*	
-			if (this.appRestarter != null) {
-            this.appRestarter.setCachedPaths(
-			config.getProperty("app.exePath", ""),
-			config.getProperty("app.javawPath", ""),
-			config.getProperty("app.jsaPath", "")
-			);
-			}
-		*/	
-        this.screenCapture = new CaptureManager(null);
-		/*	
-			this.tg.kakao = kakao;
-			this.tg.appDir = APP_DIR;
-			this.kakao.appDir = APP_DIR;
-			this.kakao.onTokenSaved = this::saveConfig;
-			
-			this.googleCalendarService.setAppDir(SETTINGS_DIR);
-			this.tg.calendarService = googleCalendarService;
-			this.tg.naverCalendarService = naverCalendarService;
-		*/	
-		/*
-			new Thread(() -> {
-            if (NaverCalendarService.credentialsExist(
-			naverCalendarService.naverId, naverCalendarService.naverPassword)) {
-			naverCalendarService.init();
-            }
-            if (googleCalendarService.credentialsExist()) {
-			googleCalendarService.init();
-			}
-            if (tg.myChatId.isEmpty() || tg.botToken.isEmpty()) return;
-            try {
-			StringBuilder sb = new StringBuilder("📅 향후 3일 일정\n\n");
-			if (googleCalendarService.isInitialized()) {
-			java.util.List<GoogleCalendarService.CalendarEvent> gEvents =
-			googleCalendarService.getNextDays(3);
-			sb.append(GoogleCalendarService.formatEvents("📧 구글", gEvents)).append("\n");
-			}
-			if (naverCalendarService.isInitialized()) {
-			java.util.List<NaverCalendarService.CalendarEvent> nEvents =
-			naverCalendarService.getNextDays(3);
-			sb.append(NaverCalendarService.formatEvents("🟢 네이버", nEvents));
-			}
-			String content = sb.toString().trim();
-			if (content.isEmpty()) return;
-			tg.send(tg.myChatId, content);
-			javafx.application.Platform.runLater(() ->
-			showScheduleDialog("📅 향후 3일 일정", content));
-			} catch (Exception e) {
-			System.out.println("[CalendarInit] 일정 조회 실패: " + e.getMessage());
-			AppLogger.logException(e);
-			}
-			}, "CalendarInit").start();
-		*/
-		/*
-			new Thread(() -> {
-            if (!kakao.kakaoRestApiKey.isEmpty()
-			&& !kakao.kakaoClientSecret.isEmpty()
-			&& !kakao.kakaoRefreshToken.isEmpty()) {
-			try {
-			kakao.autoRefreshLogin();
-			} catch (Exception e) {
-			AppLogger.logException(e);
-			}
-			}
-            // gmail.sendStartupNotice();
-            tg.sendStartupNotice();
-			}, "KakaoAutoLogin").start();
-		*/
-		
         // this.shutdownGuard = new AppRestarter.ShutdownGuard(gmail, tg);
         // this.appRestarter.buildAppCdsIfNeeded(this::saveConfig);
-        // this.shutdownGuard.register();		
-        
+        // this.shutdownGuard.register();
+		
 		// if (tg.polling && this.cityName == "Local" ) tg.startPolling();
 		
-		System.out.println("this.cityName = [" + this.theCityName + "]");	
+		System.out.println("this.cityName = [" + this.theCityName + "]");
 	}  //  KootPanKingThreeApp
 	
+	public void saveConfig() {
+	}
 	public void close() {
 		System.out.println("[KootPanKingThreeApp.close] " + theCityName);
 		
 		try {
-			saveConfig();
+			// saveConfig();
 			} catch (Exception e) {
 			AppLogger.logException(e);
 		}
@@ -436,276 +360,6 @@ public class KootPanKingThreeApp {
 	
 	
 	
-	
-	
-	
-	
-	String resolveAppDir() {
-        // ── EXE_PATH 탐색 (실행파일 위치 파악용 — 데이터 경로와 무관) ──
-        // ① sun.java.command — quoted 경로(공백 포함) 대응 (AppLogger 기준)
-		try {
-            String sc = System.getProperty("sun.java.command", "").trim();
-            String first;
-            if (sc.startsWith("\"")) {
-                int end = sc.indexOf("\"", 1);
-                first = (end > 1) ? sc.substring(1, end) : "";
-				} else {
-                first = sc.split("\\s+")[0];
-			}
-			
-            if (first.endsWith(".exe")) {
-                EXE_PATH = new File(first).getAbsolutePath();
-                System.out.println("[AppDir] EXE 감지: " + EXE_PATH);
-				} else if (first.endsWith(".jar")) {
-                File jarFile = new File(first).getAbsoluteFile();
-                File exeCandidate = new File(jarFile.getParentFile(), "KootPanKingThree.exe");
-                if (exeCandidate.exists()) {
-                    EXE_PATH = exeCandidate.getAbsolutePath();
-                    System.out.println("[AppDir] JAR 옆 EXE 감지: " + EXE_PATH);
-					} else {
-                    EXE_PATH = jarFile.getAbsolutePath();
-                    System.out.println("[AppDir] JAR 감지 (EXE 없음): " + EXE_PATH);
-				}
-			}
-		} catch (Exception ignored) {}
-		
-        // ② CodeSource 폴백 — javaw.exe 반환 시 건너뜀 (AppLogger 기준)
-        if (EXE_PATH.isEmpty()) {
-            try {
-                java.security.CodeSource cs = KootPanKingThreeApp.class.getProtectionDomain().getCodeSource();
-                if (cs != null) {
-                    File loc = new File(cs.getLocation().toURI()).getAbsoluteFile();
-                    String locName = loc.getName().toLowerCase();
-                    if (locName.equals("java.exe") || locName.equals("javaw.exe")
-                        || locName.equals("java") || locName.equals("javaw")) {
-                        // skip
-						} else if (loc.isDirectory()) {
-                        File exeCandidate = new File(loc, "KootPanKingThree.exe");
-                        if (exeCandidate.exists()) {
-                            EXE_PATH = exeCandidate.getAbsolutePath();
-                            System.out.println("[AppDir] CodeSource(dir) EXE 감지: " + EXE_PATH);
-						}
-						} else if (locName.endsWith(".jar")) {
-                        File exeCandidate = new File(loc.getParentFile(), "KootPanKingThree.exe");
-                        if (exeCandidate.exists()) {
-                            EXE_PATH = exeCandidate.getAbsolutePath();
-							} else {
-                            EXE_PATH = loc.getAbsolutePath();
-						}
-                        System.out.println("[AppDir] CodeSource(jar) 감지: " + EXE_PATH);
-						} else {
-                        EXE_PATH = loc.getAbsolutePath();
-                        System.out.println("[AppDir] CodeSource 감지: " + EXE_PATH);
-					}
-				}
-			} catch (Exception ignored) {}
-		}
-        // ③ ProcessHandle (Java 9+) - Java 8 비호환으로 생략
-		
-        // ── 데이터 폴더는 항상 %APPDATA%\KootPanKingThree\ 고정 ──
-        // 실행파일(exe/jar) 위치와 무관하게 데이터는 APPDATA 에만 저장
-		
-        String appData = System.getenv("APPDATA");
-        if (appData == null) appData = System.getProperty("user.home");
-        File dir = new File(appData + File.separator + "KootPanKingThree");
-        if (!dir.exists()) dir.mkdirs();
-        System.out.println("[AppDir] 데이터 폴더(APPDATA 고정): " + dir.getAbsolutePath());
-        return dir.getAbsolutePath() + File.separator;
-	}
-	
-    /**
-		* settings 폴더 경로 결정.
-		* %APPDATA%\KootPanKingThree\settings\ 로 고정.
-		* 재설치 시 삭제되지 않도록 실행 폴더 대신 APPDATA 아래에 위치.
-	*/
-    private String resolveSettingsDir() {
-        String appData = System.getenv("APPDATA");
-        if (appData == null) appData = System.getProperty("user.home");
-        return appData + File.separator + "KootPanKingThree"
-		+ File.separator + "settings" + File.separator;
-	}
-	
-    // ═══════════════════════════════════════════════════════════
-    //  Config load / save
-    // ═══════════════════════════════════════════════════════════
-	
-    private void loadConfig() {
-        if (config == null) config = new Properties();
-		
-        try {
-            // ── 공통 항목 (부모/자식 모두 로드) ──────────────────────
-			alwaysOnTop = Boolean.parseBoolean(config.getProperty("alwaysOnTop", "true"));
-            showDigital = Boolean.parseBoolean(config.getProperty("showDigital", "true"));
-            showNumbers = Boolean.parseBoolean(config.getProperty("showNumbers", "true"));
-            theme = config.getProperty("theme", "Light");
-            opacity = Float.parseFloat(config.getProperty("opacity", "1.0"));
-            // theCityName = config.getProperty("cityName", "Local");
-            String tz = config.getProperty("timeZone", "local");
-            theTimeZone = tz.equals("local") ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(tz);
-            showInterval = Integer.parseInt(config.getProperty("showInterval", "0"));
-            animInterval = Integer.parseInt(config.getProperty("animInterval", "0"));
-			
-            numberFont = new java.awt.Font(
-                config.getProperty("fontName", "Georgia"),
-                java.awt.Font.BOLD,
-                Integer.parseInt(config.getProperty("fontSize", "14"))
-			);
-            digitalFont = new java.awt.Font(
-                config.getProperty("digFontName", "Consolas"),
-                java.awt.Font.PLAIN,
-                Integer.parseInt(config.getProperty("digFontSize", "14"))
-			);
-			
-            String tc = config.getProperty("tickColor", "");
-            if (!tc.isEmpty()) tickColor = new java.awt.Color(Integer.parseInt(tc));
-            tickVisible = Boolean.parseBoolean(config.getProperty("tickVisible", "true"));
-            secondVisible = Boolean.parseBoolean(config.getProperty("secondVisible", "true"));
-			
-            String hc = config.getProperty("hourColor", "");
-            if (!hc.isEmpty()) hourColor = new java.awt.Color(Integer.parseInt(hc));
-            String mc = config.getProperty("minuteColor", "");
-            if (!mc.isEmpty()) minuteColor = new java.awt.Color(Integer.parseInt(mc));
-            String sc2 = config.getProperty("secondColor", "");
-            if (!sc2.isEmpty()) secondColor = new java.awt.Color(Integer.parseInt(sc2));
-            String nc = config.getProperty("numberColor", "");
-            if (!nc.isEmpty()) numberColor = new java.awt.Color(Integer.parseInt(nc));
-            String dc = config.getProperty("digitalColor", "");
-            digitalColor = dc.isEmpty() ? java.awt.Color.WHITE : new java.awt.Color(Integer.parseInt(dc));
-			
-            showLunar = Boolean.parseBoolean(config.getProperty("showLunar", "false"));
-			
-            String bc = config.getProperty("borderColor", "");
-            if (!bc.isEmpty()) borderColor = new java.awt.Color(Integer.parseInt(bc));
-            borderWidth = Integer.parseInt(config.getProperty("borderWidth", "-1"));
-            borderAlpha = Integer.parseInt(config.getProperty("borderAlpha", "255"));
-            borderVisible = Boolean.parseBoolean(config.getProperty("borderVisible", "true"));
-			
-            galaxyMode = Boolean.parseBoolean(config.getProperty("galaxyMode", "false"));
-            try { galaxySpeed = Float.parseFloat(config.getProperty("galaxySpeed", "0.004")); } catch (Exception ignored) {}
-            matrixMode = Boolean.parseBoolean(config.getProperty("matrixMode", "false"));
-            try { matrixSpeed = Float.parseFloat(config.getProperty("matrixSpeed", "1.5")); } catch (Exception ignored) {}
-            matrix2Mode = Boolean.parseBoolean(config.getProperty("matrix2Mode", "false"));
-            try { matrix2Speed = Float.parseFloat(config.getProperty("matrix2Speed", "1.5")); } catch (Exception ignored) {}
-            matrix3Mode = Boolean.parseBoolean(config.getProperty("matrix3Mode", "false"));
-            try { matrix3Speed = Float.parseFloat(config.getProperty("matrix3Speed", "1.5")); } catch (Exception ignored) {}
-            rainMode = Boolean.parseBoolean(config.getProperty("rainMode", "false"));
-            snowMode = Boolean.parseBoolean(config.getProperty("snowMode", "false"));
-            fireMode = Boolean.parseBoolean(config.getProperty("fireMode", "false"));
-            sparkleMode = Boolean.parseBoolean(config.getProperty("sparkleMode", "false"));
-            bubbleMode = Boolean.parseBoolean(config.getProperty("bubbleMode", "false"));
-            neonMode = Boolean.parseBoolean(config.getProperty("neonMode", "false"));
-            neonDigital = Boolean.parseBoolean(config.getProperty("neonDigital", "false"));
-            digitalNoBg = Boolean.parseBoolean(config.getProperty("digitalNoBg", "false"));
-			
-            try {
-                int r = Integer.parseInt(config.getProperty("clockRadius", "-1"));
-                if (r >= 80 && r <= 700) pendingRadius = r;
-			} catch (Exception ignored) {}
-			
-            rainbowSeconds = Integer.parseInt(config.getProperty("rainbowSeconds", "30"));
-            pendingRainbowIntervalSec = Double.parseDouble(config.getProperty("rainbowIntervalSec", "0.5"));
-            cameraUrl   = config.getProperty("camera.url", "http://192.168.0.100:8080");
-            cameraFlipH = Boolean.parseBoolean(config.getProperty("camera.flipH", "false"));
-            cameraFlipV = Boolean.parseBoolean(config.getProperty("camera.flipV", "false"));
-            ffmpegPath  = config.getProperty("ffmpeg.path", "");
-            // 구버전 키 마이그레이션 (MP4.FFMPEG / youtube.ffmpeg.path → ffmpeg.path)
-            // 파일이 실제로 존재하는 경로만 채택
-            if (ffmpegPath.isEmpty() || !new java.io.File(ffmpegPath).exists()) {
-                String leg1 = config.getProperty("MP4.FFMPEG", "");
-                String leg2 = config.getProperty("youtube.ffmpeg.path", "");
-                if (!leg1.isEmpty() && new java.io.File(leg1).exists())       ffmpegPath = leg1;
-                else if (!leg2.isEmpty() && new java.io.File(leg2).exists())  ffmpegPath = leg2;
-                if (!ffmpegPath.isEmpty())
-				System.out.println("[Config] ffmpeg.path 마이그레이션: " + ffmpegPath);
-			}
-            // ITS 교통 CCTV API 키 복원
-            { String _itsKey = config.getProperty("its.cctv.apiKey", "");
-			if (!_itsKey.isEmpty()) getItsCctv().setApiKey(_itsKey); }
-            youtubeUrl     = config.getProperty("youtube.url", "");
-            ytdlpPath      = config.getProperty("youtube.ytdlp.path", "");
-            localMp4LastFile = config.getProperty("localmp4.lastFile", "");
-            localMp4Volume   = Double.parseDouble(config.getProperty("localmp4.volume", "1.0"));
-            // ── 시분초 행 설정 ────────────────────────────────────────
-            pendingDigitalShow        = Boolean.parseBoolean(config.getProperty("digital.show", "true"));
-            pendingDigitalFormatIndex = Integer.parseInt(config.getProperty("digital.formatIndex", "0"));
-            pendingDigitalFontFamily  = config.getProperty("digital.fontFamily", "Consolas");
-            pendingDigitalFontSize    = Double.parseDouble(config.getProperty("digital.fontSize", "50"));
-            pendingDigitalColorRgb    = Integer.parseInt(config.getProperty("digital.colorRgb", String.valueOf(0xFFFFFFFF)));
-            pendingDigitalScrollDir   = Integer.parseInt(config.getProperty("digital.scrollDir", "3"));
-            pendingDigitalScrollSpeed = Double.parseDouble(config.getProperty("digital.scrollSpeed", "1.5"));
-            pendingDigitalNeon        = Boolean.parseBoolean(config.getProperty("digital.neon", "false"));
-            // ── 날짜 행 설정 ─────────────────────────────────────────
-            pendingFaceDateShow        = Boolean.parseBoolean(config.getProperty("faceDate.show", "true"));
-            pendingFaceDateFormatIndex = Integer.parseInt(config.getProperty("faceDate.formatIndex", "0"));
-            pendingFaceDateFontFamily  = config.getProperty("faceDate.fontFamily", "HY견고딕");
-            pendingFaceDateFontSize    = Double.parseDouble(config.getProperty("faceDate.fontSize", "60"));
-            pendingFaceDateColorRgb    = Integer.parseInt(config.getProperty("faceDate.colorRgb", String.valueOf(0xFF003333)));
-            pendingFaceDateNeon      = Boolean.parseBoolean(config.getProperty("faceDate.neon", "false"));
-            try {
-                pendingDigitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.valueOf(
-				config.getProperty("digital.neonBlinkStyle", "NONE"));
-				} catch (Exception ignored) {
-                pendingDigitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.NONE;
-			}
-            // Bug7: 날짜 스크롤 복원
-            pendingFaceDateScrollDir   = Integer.parseInt(config.getProperty("faceDate.scrollDir", "3"));
-            pendingFaceDateScrollSpeed = Double.parseDouble(config.getProperty("faceDate.scrollSpeed", "2.9"));
-		} catch (Exception ignored) {}
-		
-        try {
-            // ── 차임벨 설정 로드 (chimeController 생성 전 → pending 보관) ──
-            pendingChimeEnabled  = Boolean.parseBoolean(config.getProperty("chimeEnabled", "false"));
-            pendingChimeFile     = config.getProperty("chimeFile", "");
-            pendingChimeDuration = Integer.parseInt(config.getProperty("chimeDuration", "0"));
-            pendingChimeVolume   = Integer.parseInt(config.getProperty("chimeVolume", "80"));
-            String minsStr = config.getProperty("chimeMinutes", "0");
-            boolean[] loadedMins = new boolean[60];
-            if (!minsStr.isEmpty()) {
-                for (String s : minsStr.split(",")) {
-                    try {
-                        int idx = Integer.parseInt(s.trim());
-                        if (idx >= 0 && idx < 60) loadedMins[idx] = true;
-					} catch (NumberFormatException ignored2) {}
-				}
-			}
-            pendingChimeMinutes = loadedMins;
-		} catch (Exception ignored) {}
-		
-        try {
-            // ── 서비스/계정 설정 로드 ─────────────────────────────
-			gmail.from = config.getProperty("gmail.from", "");
-            gmail.pass = config.getProperty("gmail.pass", "");
-            gmail.lastTo = config.getProperty("gmail.lastTo", "");
-			
-            kakao.kakaoRestApiKey = config.getProperty("kakao.apiKey", "");
-            kakao.kakaoClientSecret = config.getProperty("kakao.clientSecret", "");
-            kakao.kakaoRefreshToken = config.getProperty("kakao.refreshToken", "");
-			
-            // tg.botToken = config.getProperty("tg.botToken", "");
-            // tg.myChatId = config.getProperty("tg.myChatId", "");
-            tg.polling = Boolean.parseBoolean(config.getProperty("tg.polling", "false"));
-			
-            // ── 네이버 캘린더 자격증명 로드 ───────────────────────
-            naverCalendarService.setCredentials(
-                config.getProperty("naver.caldav.id", ""),
-                config.getProperty("naver.caldav.password", "")
-			);
-			
-            if (appRestarter != null) {
-                appRestarter.setCachedPaths(
-                    config.getProperty("app.exePath", ""),
-                    config.getProperty("app.javawPath", ""),
-                    config.getProperty("app.jsaPath", "")
-				);
-			}
-		} catch (Exception ignored) {}
-		
-		if (clockController != null) {
-			applyCityContextToClock(null);
-		}
-	}
-	
-	
     private void applyCityContextToClock(String clockPrefix) {
         if (clockController == null) return;
 		
@@ -734,175 +388,13 @@ public class KootPanKingThreeApp {
         System.out.println("[applyCityContextToClock] cityPrefix = [" + st.cityPrefix + "]");
 	}
 	
-    void saveConfig() {
-		try {
-			
-			// ── 공통 항목 (부모/자식 모두 저장) ──────────────────────────
-			config.setProperty("alwaysOnTop", String.valueOf(alwaysOnTop));
-			// showDigital 은 AppState 실제값으로 저장 (legacy 인스턴스 필드 아님)
-			boolean _showDig = clockController != null
-			&& FxGPUNeon.ClockController.getDigitalState(clockController);
-			config.setProperty("showDigital", String.valueOf(_showDig));
-			config.setProperty("showNumbers", String.valueOf(showNumbers));
-			config.setProperty("theme", theme);
-			config.setProperty("opacity", String.valueOf(opacity));
-			// config.setProperty("cityName", theCityName);
-			
-			// ★ 저장은 앱 필드가 아니라 실제 시계 상태(AppState) 기준으로 한다.
-			java.time.ZoneId saveZone = theTimeZone;
-			if (clockController != null) {
-				FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
-				if (st != null && st.theTimeZone != null) {
-					saveZone = st.theTimeZone;
-				}
-			}
-			config.setProperty("timeZone", saveZone.getId());
-			
-			System.out.println("[saveConfig] theCityName = [" + theCityName + "]");
-			System.out.println("[saveConfig] saveZone = [" + saveZone + "]");
-			config.setProperty("showInterval", String.valueOf(showInterval));
-			config.setProperty("animInterval", String.valueOf(animInterval));
-			config.setProperty("fontName", numberFont.getFamily());
-			config.setProperty("fontSize", String.valueOf(numberFont.getSize()));
-			config.setProperty("digFontName", digitalFont.getFamily());
-			config.setProperty("digFontSize", String.valueOf(digitalFont.getSize()));
-			if (tickColor != null) config.setProperty("tickColor", String.valueOf(tickColor.getRGB()));
-			config.setProperty("tickVisible", String.valueOf(tickVisible));
-			config.setProperty("secondVisible", String.valueOf(secondVisible));
-			config.setProperty("hourColor", String.valueOf(hourColor.getRGB()));
-			config.setProperty("minuteColor", String.valueOf(minuteColor.getRGB()));
-			config.setProperty("secondColor", String.valueOf(secondColor.getRGB()));
-			if (numberColor != null) config.setProperty("numberColor", String.valueOf(numberColor.getRGB()));
-			config.setProperty("digitalColor", String.valueOf(digitalColor.getRGB()));
-			config.setProperty("showLunar", String.valueOf(showLunar));
-			config.setProperty("borderWidth", String.valueOf(borderWidth));
-			config.setProperty("borderAlpha", String.valueOf(borderAlpha));
-			config.setProperty("borderVisible", String.valueOf(borderVisible));
-			if (borderColor != null) config.setProperty("borderColor", String.valueOf(borderColor.getRGB()));
-			
-			config.setProperty("galaxyMode", String.valueOf(galaxyMode));
-			config.setProperty("galaxySpeed", String.valueOf(galaxySpeed));
-			config.setProperty("matrixMode", String.valueOf(matrixMode));
-			config.setProperty("matrixSpeed", String.valueOf(matrixSpeed));
-			config.setProperty("matrix2Mode", String.valueOf(matrix2Mode));
-			config.setProperty("matrix2Speed", String.valueOf(matrix2Speed));
-			config.setProperty("matrix3Mode", String.valueOf(matrix3Mode));
-			config.setProperty("matrix3Speed", String.valueOf(matrix3Speed));
-			config.setProperty("rainMode", String.valueOf(rainMode));
-			config.setProperty("snowMode", String.valueOf(snowMode));
-			config.setProperty("fireMode", String.valueOf(fireMode));
-			config.setProperty("sparkleMode", String.valueOf(sparkleMode));
-			config.setProperty("bubbleMode", String.valueOf(bubbleMode));
-			config.setProperty("neonMode", String.valueOf(neonMode));
-			config.setProperty("neonDigital", String.valueOf(neonDigital));
-			config.setProperty("digitalNoBg", String.valueOf(digitalNoBg));
-			config.setProperty("rainbowSeconds", String.valueOf(rainbowSeconds));
-			if (clockController != null)
-			config.setProperty("rainbowIntervalSec", String.valueOf(clockController.getRainbowInterval()));
-			config.setProperty("camera.url",   cameraUrl);
-			config.setProperty("camera.flipH", String.valueOf(cameraFlipH));
-			config.setProperty("camera.flipV", String.valueOf(cameraFlipV));
-			config.setProperty("ffmpeg.path",   ffmpegPath);
-			config.setProperty("its.cctv.apiKey", itsCctv != null ? itsCctv.getApiKey() : "");
-			config.setProperty("youtube.url", youtubeUrl);
-			config.setProperty("youtube.ytdlp.path", ytdlpPath);
-			config.setProperty("localmp4.lastFile", localMp4LastFile);
-			config.setProperty("localmp4.volume",   String.valueOf(localMp4Volume));
-			
-			// ── 차임벨 설정 저장 ─────────────────────────────────
-			if (chimeController != null) {
-				config.setProperty("chimeEnabled",  String.valueOf(chimeController.isEnabled()));
-				config.setProperty("chimeFile",     chimeController.getFile());
-				config.setProperty("chimeDuration", String.valueOf(chimeController.getDuration()));
-				config.setProperty("chimeVolume",   String.valueOf(chimeController.getVolume()));
-				boolean[] mins = chimeController.getMinutes();
-				StringBuilder sb = new StringBuilder();
-				for (int i = 0; i < 60; i++) if (mins[i]) { if (sb.length() > 0) sb.append(','); sb.append(i); }
-				config.setProperty("chimeMinutes", sb.toString());
-			}
-			
-			// app.exePath 는 부모/자식 모두 저장
-			// ★ 우선순위: EXE_PATH(resolveAppDir .exe 직접 감지) > AppLogger > appRestarter 캐시(이전 ini값)
-			String exePath = EXE_PATH;
-			if (exePath == null || exePath.isEmpty()) {
-				String fromLogger = AppLogger.getExeFilePath();
-				if (fromLogger != null && !fromLogger.isEmpty() && !fromLogger.equals("(unknown)")) {
-					exePath = fromLogger;
-				}
-			}
-			if ((exePath == null || exePath.isEmpty()) && appRestarter != null) {
-				exePath = appRestarter.getCachedExePath();
-			}
-			if (exePath != null && !exePath.isEmpty()) {
-				config.setProperty("app.exePath", exePath);
-				if (appRestarter != null && !appRestarter.getCachedExePath().equals(exePath)) {
-					appRestarter.setCachedPaths(
-						exePath,
-						config.getProperty("app.javawPath", ""),
-						config.getProperty("app.jsaPath", "")
-					);
-				}
-			}
-			// ── 부모 전용 항목 ────────────────────────────────────
-			config.setProperty("gmail.from", gmail.from);
-			config.setProperty("gmail.pass", gmail.pass);
-			config.setProperty("gmail.lastTo", gmail.lastTo);
-			config.setProperty("kakao.apiKey", kakao.kakaoRestApiKey);
-			config.setProperty("kakao.clientSecret", kakao.kakaoClientSecret);
-			config.setProperty("kakao.refreshToken", kakao.kakaoRefreshToken);
-			// config.setProperty("tg.botToken", tg.botToken);
-			// config.setProperty("tg.myChatId", tg.myChatId);
-			config.setProperty("tg.polling", String.valueOf(tg.polling));
-			if (appRestarter != null) {
-				if (!appRestarter.getCachedJavawPath().isEmpty()) {
-					config.setProperty("app.javawPath", appRestarter.getCachedJavawPath());
-				}
-				if (!appRestarter.getCachedJsaPath().isEmpty()) {
-					config.setProperty("app.jsaPath", appRestarter.getCachedJsaPath());
-				}
-			}
-			// ── 디지탈 시계 설정 (digital.show / faceDate.show 등) ─────
-			saveDigitalConfig();
-			// ── 파일 저장 (각 인스턴스 자신의 ini 에 기록) ──────────────
-			if (iniController != null) {
-				iniController.save();
-				} else {
-				try (FileOutputStream fos = new FileOutputStream(myConfigFile)) {
-					config.store(fos, "KootPanKingThree Settings");
-				} catch (IOException ignored) {}
-			}	
-			} catch (Exception e) {
-            System.out.println("saveConfig() Exception : " + e.getMessage());
-		}	
-	}
-	private void sendStartupNoticeController() {
-		// ── Gmail + Telegram: ini 로드 → 시작 알림 ───────────────
-        // AppLogger.init() 이 이미 호출된 이후이므로 두 경로 모두 확정 상태
-        // gmail.exeFilePath = AppLogger.getExeFilePath();
-        // gmail.logFilePath = AppLogger.getLogFilePath();
-		try {
-            IniController ini = new IniController(APP_DIR, SETTINGS_DIR, CONFIG_FILE, "Local");
-            ini.initialize();
-            ini.load();
-            Properties p = ini.getProperties();
-            // gmail.from = p.getProperty("gmail.from", "");
-            // gmail.pass = p.getProperty("gmail.pass", "");
-            // gmail.lastTo = p.getProperty("gmail.lastTo", "");
-            // tg.botToken = p.getProperty("tg.botToken", "");
-            // tg.myChatId = p.getProperty("tg.myChatId", "");
-            tg.polling = Boolean.parseBoolean(p.getProperty("tg.polling", "false"));
-			} catch (Exception e) {
-            System.out.println("[main] ini 로드 실패: " + e.getMessage());
-		}
-        // gmail.sendStartupNotice();  // from/pass/lastTo 미설정 시 내부에서 자동 스킵
-		tg.sendStartupNotice();  // from/pass/lastTo 미설정 시 내부에서 자동 스킵
-	}
+	
 	public void startInstance(Stage stage, java.util.List<String> rawArgs) {
-		System.out.println ("■■■■■[startInstance]");		
+		System.out.println ("■■■■■[startInstance] , myConfigFile = [" + myConfigFile + "]");
         String arg1 = rawArgs.size() > 0 ? rawArgs.get(0) : "default1";
         String arg2 = rawArgs.size() > 1 ? rawArgs.get(1) : "default2";
         String arg3 = rawArgs.size() > 2 ? rawArgs.get(2) : "default3";
-        startArg1 = arg1; startArg2 = arg2; startArg3 = arg3; 
+        startArg1 = arg1; startArg2 = arg2; startArg3 = arg3;
 		
         // ── 1. mainWindow 생성 (시계보다 먼저) ─────────────────
         // Stage mainStage = new Stage();
@@ -919,7 +411,7 @@ public class KootPanKingThreeApp {
         clockController.setOnDigitalSettingsRequest(() ->
             Platform.runLater(() ->
 			showDigitalSettingsDialog((javafx.stage.Stage) stage)));
-			/*			
+			/*
 				// ── 4. ClockHostCallback 주입 ─────────────────────────────
 				mainWindow.setClockHost(new MainWindow.ClockHostCallback() {
 				
@@ -1046,7 +538,7 @@ public class KootPanKingThreeApp {
             menu.getItems().add(item);
 		}
         return menu;
-	}		
+	}
 	
     private static final String POPUP_NEON_STYLE = """
     -fx-background-color: linear-gradient(to bottom, rgba(255,105,180,0.95), rgba(255,182,193,0.92));
@@ -1227,12 +719,13 @@ public class KootPanKingThreeApp {
 		}
 	}
 	
-	
 	private void emphasizePopupProgramTitle(javafx.scene.control.ContextMenu popup) {
 		if (popup == null || popup.getItems().isEmpty()) return;
 		javafx.scene.control.MenuItem first = popup.getItems().get(0);
 		if (first == null || first instanceof javafx.scene.control.SeparatorMenuItem) return;
 		first.getProperties().put("popupProgramTitle", Boolean.TRUE);
+		String title = "[" + theCityName + "] KootPanKingThree";
+		first.setText(title);
 		first.setStyle(MENU_TITLE_STYLE);
 	}
 	
@@ -1255,7 +748,7 @@ public class KootPanKingThreeApp {
 		
 		javafx.scene.control.Menu     gmailMenu    = buildGmailMenu(popup);
 		javafx.scene.control.Menu     kakaoMenu    = buildKakaoMenu();
-		javafx.scene.control.Menu     telegramMenu = buildTelegramMenu(popup);		
+		javafx.scene.control.Menu     telegramMenu = buildTelegramMenu(popup);
 		
 		javafx.scene.control.Menu     lifeMenu     = buildLifeMenu(popup);
 		javafx.scene.control.Menu     system       = buildSystemMenu(popup);
@@ -1791,7 +1284,7 @@ public class KootPanKingThreeApp {
 				new javafx.stage.FileChooser.ExtensionFilter("MP4 동영상", "*.mp4"));
                 String ts = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
                 fc.setInitialFileName("cam_" + ts + ".mp4");
-                fc.setInitialDirectory(new File(APP_DIR));
+                fc.setInitialDirectory(new File(AppContext.theExePath));
                 File chosen = fc.showSaveDialog(owner);
                 if (chosen != null) {
                     startVideoRecording(chosen);
@@ -2152,18 +1645,24 @@ public class KootPanKingThreeApp {
         javafx.scene.control.Menu system = new javafx.scene.control.Menu("시스템...");
         javafx.scene.control.MenuItem logItem = new javafx.scene.control.MenuItem("Log");
         logItem.setOnAction(e -> openLogFile());
-        javafx.scene.control.MenuItem configItem = new javafx.scene.control.MenuItem("기본설정파일...");
-        configItem.setOnAction(e -> openConfigFile());
-        javafx.scene.control.MenuItem iniItem = new javafx.scene.control.MenuItem("ini 다운로드");
-        iniItem.setOnAction(e -> downloadIniFile());
+        javafx.scene.control.MenuItem configItem = new javafx.scene.control.MenuItem("[" + theCityName + "] 설정파일 수정");
+		configItem.setOnAction(e -> AppContext.openCONFIG_FILE(myConfigFile));
 		
+		javafx.scene.control.MenuItem iniCopyItem =
+        new javafx.scene.control.MenuItem("[" + theCityName + "] 설정파일 복사");
+		iniCopyItem.setOnAction(e -> copyIniFile());
+		/*
+			javafx.scene.control.MenuItem iniItem = new javafx.scene.control.MenuItem("ini 다운로드");
+			iniItem.setOnAction(e -> downloadIniFile());
+		*/
         // ── 부팅 자동 실행 (CheckMenuItem) ──────────────────────
-        javafx.scene.control.CheckMenuItem autoStartItem =
-		new javafx.scene.control.CheckMenuItem("PC 부팅 시 자동 실행");
-        autoStartItem.setSelected(isAutoStartRegistered());
-        autoStartItem.setOnAction(e -> toggleAutoStart(autoStartItem,
-		(javafx.stage.Stage) popup.getOwnerWindow()));
-		
+		/*
+			javafx.scene.control.CheckMenuItem autoStartItem =
+			new javafx.scene.control.CheckMenuItem("PC 부팅 시 자동 실행");
+			autoStartItem.setSelected(isAutoStartRegistered());
+			autoStartItem.setOnAction(e -> toggleAutoStart(autoStartItem,
+			(javafx.stage.Stage) popup.getOwnerWindow()));
+		*/
         // ── EXIT (15초 타이머 확인 다이얼로그) ───────────────────
         javafx.scene.control.MenuItem exitItem = new javafx.scene.control.MenuItem("EXIT");
         exitItem.setOnAction(e -> showExitDialog((javafx.stage.Stage) popup.getOwnerWindow()));
@@ -2194,11 +1693,11 @@ public class KootPanKingThreeApp {
 			if (clockController != null && clockController.getStage() != null) {
 				clockController.getStage().close();
 			}
-		});		
+		});
 		
 		//   closeItem.setOnAction(e -> {
 		//          System.out.println("[clockController.close] : " + theCityName );
-		//			MainWindow.getInstance().closeTheCity(theTimeZone);		
+		//			MainWindow.getInstance().closeTheCity(theTimeZone);
 		//			/*
 		//				if (clockController != null && clockController.getStage() != null) {
 		//				clockController.getStage().close();
@@ -2218,12 +1717,12 @@ public class KootPanKingThreeApp {
             aboutItem,
             logItem,
             configItem,
-            iniItem,
+            iniCopyItem,
             new javafx.scene.control.SeparatorMenuItem(),
-            menuItem("트레이로 보내기"),
-            autoStartItem,
+            // menuItem("트레이로 보내기"),
+            // autoStartItem,
             new javafx.scene.control.SeparatorMenuItem(),
-            // mainWindowItem,
+            mainWindowItem,
             // new javafx.scene.control.SeparatorMenuItem(),
             closeItem,
             restartItem,
@@ -2238,10 +1737,90 @@ public class KootPanKingThreeApp {
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu system = new javafx.scene.control.Menu("시스템...");
 		}
-	*/	
+	*/
 	//  ──────────────────────────── 서브메뉴 팩토리 끝 ────────────────────────────
+	private void copyIniFile() {
+		try {
+			String msgName = theCityName + " ini";
+			
+			// 1. 없으면 바로 복사
+			if (!AppContext.cityConfigFileExists(theCityName)) {
+				myConfigFile = AppContext.copyCityConfigFile(
+					theCityName,
+					theCityName,
+					theTimeZone.getId()
+				);
+				
+				javafx.scene.control.Alert ok = new javafx.scene.control.Alert(
+					javafx.scene.control.Alert.AlertType.INFORMATION
+				);
+				ok.setTitle("설정파일 복사");
+				ok.setHeaderText(null);
+				ok.setContentText("(" + msgName + ")복사하였습니다.");
+				ok.showAndWait();
+				return;
+			}
+			
+			// 2. 이미 있으면 확인
+			javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
+				javafx.scene.control.Alert.AlertType.CONFIRMATION
+			);
+			confirm.setTitle("설정파일 복사");
+			confirm.setHeaderText(null);
+			confirm.setContentText("(" + msgName + ")이미 존재합니다.");
+			
+			java.util.Optional<javafx.scene.control.ButtonType> result = confirm.showAndWait();
+			
+			// 3. yes 이면 복사
+			if (result.isPresent() && result.get() == javafx.scene.control.ButtonType.OK) {
+				myConfigFile = AppContext.copyCityConfigFile(
+					theCityName,
+					theCityName,
+					theTimeZone.getId()
+				);
+				
+				javafx.scene.control.Alert ok = new javafx.scene.control.Alert(
+					javafx.scene.control.Alert.AlertType.INFORMATION
+				);
+				ok.setTitle("설정파일 복사");
+				ok.setHeaderText(null);
+				ok.setContentText("(" + msgName + ")복사하였습니다.");
+				ok.showAndWait();
+			}
+			
+			} catch (Exception e) {
+			System.out.println("[INI COPY] 실패: " + e.getMessage());
+			AppLogger.logException(e);
+			
+			javafx.scene.control.Alert err = new javafx.scene.control.Alert(
+				javafx.scene.control.Alert.AlertType.ERROR
+			);
+			err.setTitle("설정파일 복사");
+			err.setHeaderText(null);
+			err.setContentText("설정파일 복사 실패:\n" + e.getMessage());
+			err.showAndWait();
+		}
+	}
 	
-	
+	/*
+		private void copyIniFile() {
+		try {
+		String copiedPath = AppContext.ensureCityConfigFile(
+		theCityName,
+		theCityName,
+		theTimeZone.getId()
+		);
+		
+		// 현재 인스턴스가 그 파일을 바로 가리키게 갱신
+		myConfigFile = copiedPath;
+		
+		System.out.println("[INI COPY] " + copiedPath);
+		} catch (Exception e) {
+		System.out.println("[INI COPY] 실패: " + e.getMessage());
+		AppLogger.logException(e);
+		}
+		}
+	*/
 	private void restoreParentPopupTextVisible(javafx.scene.control.ContextMenu popup) {
 		if (popup == null) return;
 		
@@ -2529,7 +2108,7 @@ public class KootPanKingThreeApp {
             countdown.stop(); dlg.close();
             saveConfig(); Platform.exit();
 		});
-        noBtn.setOnAction(e -> { 
+        noBtn.setOnAction(e -> {
 			System.out.println(" EXIT — 15초 타이머 확인 다이얼로그 (yesBtn.setOnAction)");
 		countdown.stop(); dlg.close(); });
         dlg.setOnHidden(e -> countdown.stop());
@@ -3475,7 +3054,7 @@ public class KootPanKingThreeApp {
     /** 현재 프레임을 APP_DIR 에 저장하고 결과 다이얼로그 표시 */
     void captureCamera(javafx.stage.Stage owner) {
         if (camera == null) return;
-        java.io.File saveDir = new java.io.File(APP_DIR);
+        java.io.File saveDir = new java.io.File(AppContext.theExePath);
         String saved = camera.capture(saveDir);
         if (saved != null) {
             System.out.println("[Camera] 캡처 저장: " + saved);
@@ -4040,24 +3619,28 @@ public class KootPanKingThreeApp {
 	}
 	
     private void openConfigFile() {
-        try {
+		/*
+			try {
             java.io.File f = new java.io.File(IniController.getPrimaryConfigFilePath());
             if (!f.exists()) { System.out.println("설정 파일 없음: " + f.getAbsolutePath()); return; }
             IniController.openPrimaryConfigFile();
 			} catch (Exception e) {
             System.err.println("설정 파일 열기 실패: " + e.getMessage());
-		}
+			}
+		*/
 	}
 	
     private void downloadIniFile() {
-        try {
+		/*
+			try {
             java.io.File f = new java.io.File(IniController.getPrimaryConfigFilePath());
             if (f.exists()) { System.out.println("ini 이미 존재: " + f.getAbsolutePath()); return; }
             boolean ok = IniController.ensurePrimaryConfigFile();
             System.out.println("ini 다운로드 " + (ok ? "완료" : "실패") + ": " + f.getAbsolutePath());
 			} catch (Exception e) {
             System.err.println("ini 다운로드 실패: " + e.getMessage());
-		}
+			}
+		*/
 	}
 	
     /** About 다이얼로그 — 48초 카운트다운 후 자동 닫힘, 컬러 항목 + 블로그 링크 */
@@ -4196,8 +3779,8 @@ public class KootPanKingThreeApp {
 			}));
 			tl.setCycleCount(300);
 			holder[0] = tl;
-			dlg.setOnHidden(e -> { if (holder[0] != null) holder[0].stop(); });			
+			dlg.setOnHidden(e -> { if (holder[0] != null) holder[0].stop(); });
 			dlg.show();
 			tl.play();
-	}	
+	}
 }

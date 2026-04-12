@@ -61,6 +61,6 @@ java -Dapplogger.callerTracking=true ^
 echo.
 echo [RUN] 종료 코드: %ERRORLEVEL%
 echo [RUN] 실행 로그: %ERROR_DIR%\run_%CLASS_NAME%.txt
-pause
+
 
 :end
