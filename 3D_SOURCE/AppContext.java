@@ -90,6 +90,11 @@ public final class AppContext {
         startTime = Instant.now();
         lastUpdateTime.set(System.currentTimeMillis());
 		
+        System.out.println("[init] APP_DIR      : " + APP_DIR );
+        System.out.println("[init] theExePath   : " + theExePath );
+        System.out.println("[init] theExeFile   : " + theExeFile.getAbsolutePath() );
+        System.out.println("[init] SETTINGS_DIR : " + SETTINGS_DIR );
+        System.out.println("[init] CONFIG_FILE  : " + CONFIG_FILE );
 	}
 	
 	/** %APPDATA%\KootPanKingThree\ 경로 결정 */
@@ -459,6 +464,121 @@ public final class AppContext {
 		return true;
 	}
 	
+	// =========================================================
+    // [16] 마스터 ini 전용 — Gmail / Naver / Telegram 계정 정보
+    //      모든 자식 인스턴스가 공유하며, 마스터 ini(CONFIG_FILE)에만 저장된다.
+    // =========================================================
+
+    // ── Gmail ───────────────────────────────────────────────────
+    /** Gmail 발신 계정 (예: xxx@gmail.com) */
+    public static String getGmailFrom() {
+        return get("gmail.from", "");
+    }
+    public static void setGmailFrom(String from) {
+        set("gmail.from", from != null ? from.trim() : "");
+        save();
+    }
+
+    /** Gmail 앱 비밀번호 */
+    public static String getGmailPass() {
+        return get("gmail.pass", "");
+    }
+    public static void setGmailPass(String pass) {
+        set("gmail.pass", pass != null ? pass.trim() : "");
+        save();
+    }
+
+    // ── Naver CalDAV ────────────────────────────────────────────
+    /** 네이버 CalDAV 아이디 */
+    public static String getNaverId() {
+        return get("naver.caldav.id", "");
+    }
+    public static void setNaverId(String id) {
+        set("naver.caldav.id", id != null ? id.trim() : "");
+        save();
+    }
+
+    /** 네이버 CalDAV 비밀번호 */
+    public static String getNaverPassword() {
+        return get("naver.caldav.password", "");
+    }
+    public static void setNaverPassword(String password) {
+        set("naver.caldav.password", password != null ? password.trim() : "");
+        save();
+    }
+
+    // ── Telegram ────────────────────────────────────────────────
+    /** 텔레그램 봇 토큰 */
+    public static String getTelegramBotToken() {
+        return get("tg.botToken", "");
+    }
+    public static void setTelegramBotToken(String token) {
+        set("tg.botToken", token != null ? token.trim() : "");
+        save();
+    }
+
+    /** 텔레그램 내 채팅 ID */
+    public static String getTelegramMyChatId() {
+        return get("tg.myChatId", "");
+    }
+    public static void setTelegramMyChatId(String chatId) {
+        set("tg.myChatId", chatId != null ? chatId.trim() : "");
+        save();
+    }
+
+	// =========================================================
+    // [17] 마스터 ini 전용 — 카메라 / YouTube / CCTV 공유 설정
+    //      모든 자식 인스턴스가 공유하며, 마스터 ini(CONFIG_FILE)에만 저장된다.
+    // =========================================================
+
+    // ── 스마트폰 카메라 ─────────────────────────────────────────
+    /** 마지막 카메라 스트림 주소 (예: http://192.168.0.70:8080) */
+    public static String getCameraUrl() {
+        return get("camera.url", "http://192.168.0.100:8080");
+    }
+    public static void setCameraUrl(String url) {
+        set("camera.url", url != null ? url : "");
+        save();
+    }
+
+    /** ffmpeg 실행 파일 경로 (카메라·YouTube 공용) */
+    public static String getFfmpegPath() {
+        return get("ffmpeg.path", "");
+    }
+    public static void setFfmpegPath(String path) {
+        set("ffmpeg.path", path != null ? path : "");
+        save();
+    }
+
+    // ── YouTube 실시간 ──────────────────────────────────────────
+    /** 마지막 YouTube 스트림 URL */
+    public static String getYoutubeUrl() {
+        return get("youtube.url", "");
+    }
+    public static void setYoutubeUrl(String url) {
+        set("youtube.url", url != null ? url : "");
+        save();
+    }
+
+    /** yt-dlp 실행 파일 경로 */
+    public static String getYtdlpPath() {
+        return get("youtube.ytdlp.path", "");
+    }
+    public static void setYtdlpPath(String path) {
+        set("youtube.ytdlp.path", path != null ? path : "");
+        save();
+    }
+
+    // ── ITS 교통 CCTV ───────────────────────────────────────────
+    /** ITS 교통 CCTV API 키 */
+    public static String getItsCctvApiKey() {
+        return get("its.cctv.apiKey", "");
+    }
+    public static void setItsCctvApiKey(String key) {
+        set("its.cctv.apiKey", key != null ? key : "");
+        save();
+    }
+
 	/*
 		public static void main(String[] args) {
         AppContext.init();

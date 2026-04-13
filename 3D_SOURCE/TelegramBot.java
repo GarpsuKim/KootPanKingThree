@@ -125,19 +125,14 @@ public class TelegramBot {
 	public   void init() {
 		// public synchronized  void init(IniController ini) {
 		try {
-			System.out.println("[TelegramBot] init()1");
 			if (initialized) return;
-			System.out.println("[TelegramBot] init()2");
-			
-			System.out.println("[TelegramBot] init()3");
-			initialized = true;
-			
+			initialized = true;			
 			this.botToken   = AppContext.get("tg.botToken", "");
 			this.myChatId   = AppContext.get("tg.myChatId", "");
 			
 			this.exeFilePath = AppContext.theExePath;
 			this.logFilePath = AppLogger.getLogFilePath();
-			System.out.println("[TelegramBot] init()4");
+			System.out.println("[TelegramBot] init()");
 			} catch (Exception e) {
 			System.out.println("[TelegramBot] init 실패: " + e.getMessage());		
 		}	

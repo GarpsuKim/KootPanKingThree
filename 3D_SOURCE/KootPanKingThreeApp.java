@@ -9,7 +9,6 @@ import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import javafx.application.Application;
 import javafx.animation.Animation;
 import javafx.animation.ScaleTransition;
@@ -19,42 +18,35 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.stage.Stage;
 import javafx.util.Duration;
-
 public class KootPanKingThreeApp {
 	// ─────────────────────────────────────────────────────────────
 	// 팝업의 "서브메뉴(Menu)"만 mac 스타일 적용
 	// 부모 ContextMenu 는 절대 수정하지 않음
 	// ─────────────────────────────────────────────────────────────
-	
-	private static final String SUBMENU_MAC_CAPTION_STYLE =
+	private static  String SUBMENU_MAC_CAPTION_STYLE =
     "-fx-background-color: rgba(255,255,255,0.01);" +
     "-fx-text-fill: #1f1f1f;" +
     "-fx-font-size: 13px;" +
     "-fx-font-weight: normal;";
-	
-	private static final String SUBMENU_MAC_ITEM_NORMAL_STYLE =
+	private static  String SUBMENU_MAC_ITEM_NORMAL_STYLE =
     "-fx-background-color: rgba(255,255,255,0.96);" +
     "-fx-text-fill: #1f1f1f;" +
     "-fx-font-size: 13px;" +
     "-fx-background-radius: 10;" +
     "-fx-padding: 7 16 7 16;";
-	
-	private static final String SUBMENU_MAC_ITEM_HOVER_STYLE =
+	private static  String SUBMENU_MAC_ITEM_HOVER_STYLE =
     "-fx-background-color: linear-gradient(to bottom, #4da3ff 0%, #0a84ff 100%);" +
     "-fx-text-fill: white;" +
     "-fx-font-size: 13px;" +
     "-fx-background-radius: 10;" +
     "-fx-padding: 7 16 7 16;";
-	
 	private void enhancePopupSubMenusMacOnly(javafx.scene.control.ContextMenu popup) {
 		if (popup == null) return;
-		
 		for (javafx.scene.control.MenuItem item : popup.getItems()) {
 			if (item instanceof javafx.scene.control.Menu subMenu) {
 				styleMacSubMenuRecursive(subMenu);
 			}
 		}
-		
 		popup.setOnShown(ev -> javafx.application.Platform.runLater(() -> {
 			for (javafx.scene.control.MenuItem item : popup.getItems()) {
 				if (item instanceof javafx.scene.control.Menu subMenu) {
@@ -63,15 +55,11 @@ public class KootPanKingThreeApp {
 			}
 		}));
 	}
-	
 	private void styleMacSubMenuRecursive(javafx.scene.control.Menu menu) {
 		if (menu == null) return;
-		
 		menu.setStyle(SUBMENU_MAC_CAPTION_STYLE);
-		
 		for (javafx.scene.control.MenuItem child : menu.getItems()) {
 			if (child instanceof javafx.scene.control.SeparatorMenuItem) continue;
-			
 			if (child instanceof javafx.scene.control.Menu nested) {
 				nested.setStyle(SUBMENU_MAC_CAPTION_STYLE);
 				styleMacSubMenuRecursive(nested);
@@ -80,10 +68,8 @@ public class KootPanKingThreeApp {
 			}
 		}
 	}
-	
 	private void wireMacSubMenuRecursive(javafx.scene.control.Menu menu) {
 		if (menu == null) return;
-		
 		javafx.scene.Node menuNode = menu.getStyleableNode();
 		if (menuNode != null && menuNode.getProperties().putIfAbsent("macSubmenuCaptionWired", Boolean.TRUE) == null) {
 			menuNode.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_ENTERED, e -> {
@@ -99,98 +85,78 @@ public class KootPanKingThreeApp {
 				menu.setStyle(SUBMENU_MAC_CAPTION_STYLE);
 			});
 		}
-		
 		for (javafx.scene.control.MenuItem child : menu.getItems()) {
 			if (child instanceof javafx.scene.control.SeparatorMenuItem) continue;
-			
 			javafx.scene.Node node = child.getStyleableNode();
 			if (node != null && node.getProperties().putIfAbsent("macSubmenuItemWired", Boolean.TRUE) == null) {
 				child.setStyle(SUBMENU_MAC_ITEM_NORMAL_STYLE);
-				
 				node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_ENTERED, e -> {
 					child.setStyle(SUBMENU_MAC_ITEM_HOVER_STYLE);
 					node.setScaleX(1.01);
 					node.setScaleY(1.01);
 				});
-				
 				node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> {
 					child.setStyle(SUBMENU_MAC_ITEM_NORMAL_STYLE);
 					node.setScaleX(1.0);
 					node.setScaleY(1.0);
 				});
 			}
-			
 			if (child instanceof javafx.scene.control.Menu nested) {
 				wireMacSubMenuRecursive(nested);
 			}
 		}
 	}
-	
-	private static final String thisProgramName = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
-	
+	private   String thisProgramName = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
 	private MainWindow mainWindow; // 인스턴스별 메인 윈도우
-	
     // AlarmController alarmController;
     private Properties config = new Properties();
     // private IniController iniController ;
-	
-	
     // ── 설정 파일 저장 폴더 결정 (우선순위 3단계) ─────────────────
     String EXE_PATH = ""; // ← 추가
     private String APP_DIR ;
-    final String SETTINGS_DIR;
-	final String CONFIG_FILE;
+	String SETTINGS_DIR;
+	String CONFIG_FILE;
     // ── 인스턴스별 설정 파일 경로 및 자식 여부 ─────────────────────
     // 기본 인스턴스 : clock_settings.ini  (CONFIG_FILE 과 동일)
     // 자식 인스턴스 : clock_settings_<CityName>.ini
     // String myConfigFile = CONFIG_FILE; // 기본값: 부모와 동일
 	String myConfigFile;
-	final GmailSender gmail = GmailSender.getInstance();
-	final Kakao kakao = new Kakao();
+	GmailSender gmail = GmailSender.getInstance();
+	Kakao kakao = new Kakao();
 	TelegramBot tg;
-	
     AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
     AppRestarter appRestarter;                // 재시작 / AppCDS 관리
     CaptureManager screenCapture;             // 화면 캡처
+    private final FxGPUNeon fxGPUNeon = new FxGPUNeon(); // FxGPUNeon 인스턴스 (inner class 생성용)
     FxGPUNeon.ClockController clockController; // FX 시계 컨트롤러 (카메라 프레임 주입용)
-	
     private String theCityName = "Local";
     private java.time.ZoneId theTimeZone = java.time.ZoneId.systemDefault();
-	
     // ── 세계시계 자식 창 목록 ─────────────────────────────────────────
     private String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
-	
     // ── 스마트폰 카메라 ────────────────────────────────────────────
     boolean cameraMode = false;
-	
     CaptureManager.Camera camera = null;
-    String cameraUrl   = "http://192.168.0.100:8080"; // 마지막 사용 URL
+    // cameraUrl → AppContext.getCameraUrl() / setCameraUrl() 로 이동
     boolean cameraFlipH = false; // 좌우 반전
     boolean cameraFlipV = false; // 상하 반전
-	
     // ── ITS 교통 CCTV ────────────────────────────────────────────────────
     ItsCctvManager itsCctv = null;   // lazy-init: getItsCctv() 로 접근
-	
     // ── YouTube 실시간 배경 ──────────────────────────────────────────
     BackgroundPlayer.YoutubePlayer ytPlayer = null; // lazy-init
-    String youtubeUrl = "";                         // 마지막 사용 URL
-    String ytdlpPath  = "";                         // ini: youtube.ytdlp.path
-	
+    // youtubeUrl → AppContext.getYoutubeUrl() / setYoutubeUrl() 로 이동
+    // ytdlpPath  → AppContext.getYtdlpPath()  / setYtdlpPath()  로 이동
     // ── 로컬 MP4 배경 재생 ───────────────────────────────────────────
     String localMp4LastFile = "";                   // ini: localmp4.lastFile
     double localMp4Volume   = 1.0;                  // ini: localmp4.volume (0.0~1.0)
-	
     // ── 동영상 녹화 ────────────────────────────────────────────
     volatile boolean      videoRecording  = false;   // 녹화 중 플래그
-	
     // ffmpeg 실행파일 경로 (ini 저장/로드)
-    String ffmpegPath = "";   // ffmpeg 경로 (ini 키: ffmpeg.path)
-	
+    // ffmpegPath → AppContext.getFfmpegPath() / setFfmpegPath() 로 이동
     // ── 5초 간격 이미지 시퀀스 저장 (ffmpeg 없을 때 대체 모드) ──
     volatile boolean      imageSeqRecording  = false;
     File                  imageSeqOutputDir  = null;
     volatile long         imageSeqLastSaveMs = 0L;
-    static final long     IMAGE_SEQ_INTERVAL_MS = 5_000L;
+	long     IMAGE_SEQ_INTERVAL_MS = 5_000L;
     File                  videoOutputFile = null;    // 최종 저장될 mp4 파일
     File                  videoTempDir    = null;    // 임시 JPEG 프레임 폴더
     AtomicInteger         videoFrameIndex = new AtomicInteger(0);
@@ -202,13 +168,10 @@ public class KootPanKingThreeApp {
     private int       pendingChimeDuration = 0;    // 0=15초, 1=30초, 2=끝까지
     private boolean[] pendingChimeMinutes  = null;
     private int       pendingChimeVolume   = 80;
-	
     GoogleCalendarService googleCalendarService = new GoogleCalendarService();
     NaverCalendarService  naverCalendarService  = new NaverCalendarService();
-	
     private int pendingRadius = -1;           // loadConfig에서 읽은 반지름 임시 보관
     private double pendingRainbowIntervalSec = 0.5; // loadConfig에서 읽은 레인보우 인터벌
-	
     // ── 시분초 행 pending ───────────────────────────────────────────────
     private boolean pendingDigitalShow        = true;
     /** 팝업 메뉴 디지탈 체크항목 — setOnShowing 에서 상태 동기화 */
@@ -231,7 +194,6 @@ public class KootPanKingThreeApp {
     // Bug7: 날짜 스크롤 pending
     private int     pendingFaceDateScrollDir   = 3;
     private double  pendingFaceDateScrollSpeed = 2.9;
-	
     boolean alwaysOnTop = true;
     boolean showDigital = true;
     boolean showNumbers = true;
@@ -239,7 +201,6 @@ public class KootPanKingThreeApp {
     float opacity = 1.0f;
     int showInterval = 0;
     int animInterval = 0;
-	
     java.awt.Font numberFont = new java.awt.Font("Georgia", java.awt.Font.BOLD, 14);
     java.awt.Font digitalFont = new java.awt.Font("Consolas", java.awt.Font.PLAIN, 14);
     java.awt.Color digitalColor = java.awt.Color.WHITE;
@@ -255,7 +216,6 @@ public class KootPanKingThreeApp {
     int borderWidth = -1;
     int borderAlpha = 255;
     boolean borderVisible = true;
-	
     boolean galaxyMode = false;
     float galaxySpeed = 0.004f;
     boolean matrixMode = false;
@@ -272,17 +232,13 @@ public class KootPanKingThreeApp {
     boolean neonMode = false;
     boolean neonDigital = false;
     boolean digitalNoBg = false;
-	
     private int rainbowSeconds = 30;   // INI: rainbowSeconds (기본 30초)
-	
-	
 	// ── Constructor (기본, ini 로드) ───────────────────────────
     public KootPanKingThreeApp() {
         this(null, "Local", java.time.ZoneId.systemDefault());
 		System.out.println ("■[KootPanKingThreeApp]-0");
 		System.out.println("this.cityName = [" + this.theCityName + "]");
 	}
-	
     public KootPanKingThreeApp(String configFile, String cityName, java.time.ZoneId zoneId) {
 		System.out.println ("■■■■■[KootPanKingThreeApp]-1");
         this.APP_DIR = AppContext.APP_DIR;
@@ -291,9 +247,7 @@ public class KootPanKingThreeApp {
         this.myConfigFile = (configFile == null || configFile.isEmpty()) ? CONFIG_FILE : configFile;
         this.theCityName = (cityName == null || cityName.isEmpty()) ? "Local" : cityName;
         this.theTimeZone = (zoneId == null) ? java.time.ZoneId.systemDefault() : zoneId;
-		
         this.config = new Properties();
-		
 		/*
 			this.appRestarter = KootPanKingThree.getAppRestarter();
 			if (this.appRestarter == null) {
@@ -301,45 +255,36 @@ public class KootPanKingThreeApp {
 			}
 			this.appRestarter.setTelegramBot(this.tg);
 		*/
-		
         // this.shutdownGuard = new AppRestarter.ShutdownGuard(gmail, tg);
         // this.appRestarter.buildAppCdsIfNeeded(this::saveConfig);
         // this.shutdownGuard.register();
-		
 		// if (tg.polling && this.cityName == "Local" ) tg.startPolling();
-		
 		System.out.println("this.cityName = [" + this.theCityName + "]");
 	}  //  KootPanKingThreeApp
-	
 	public void saveConfig() {
 	}
 	public void close() {
 		System.out.println("[KootPanKingThreeApp.close] " + theCityName);
-		
 		try {
 			// saveConfig();
 			} catch (Exception e) {
 			AppLogger.logException(e);
 		}
-		
 		try {
 			stopYoutube();
 			} catch (Exception e) {
 			AppLogger.logException(e);
 		}
-		
 		try {
 			stopItsCctv();
 			} catch (Exception e) {
 			AppLogger.logException(e);
 		}
-		
 		try {
 			stopCamera();
 			} catch (Exception e) {
 			AppLogger.logException(e);
 		}
-		
 		try {
 			if (ytPlayer != null) {
 				ytPlayer.stop();
@@ -347,7 +292,6 @@ public class KootPanKingThreeApp {
 			} catch (Exception e) {
 			AppLogger.logException(e);
 		}
-		
 		try {
 			if (clockController != null && clockController.getStage() != null) {
 				Stage st = clockController.getStage();
@@ -357,19 +301,13 @@ public class KootPanKingThreeApp {
 			AppLogger.logException(e);
 		}
 	}
-	
-	
-	
     private void applyCityContextToClock(String clockPrefix) {
         if (clockController == null) return;
-		
-        FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+        FxGPUNeon.AppState st = clockController.getAppState();
         if (st == null) return;
-		
         st.theTimeZone = (this.theTimeZone != null)
 		? this.theTimeZone
 		: java.time.ZoneId.systemDefault();
-		
         if (clockPrefix != null && !clockPrefix.trim().isEmpty()) {
             st.cityPrefix = clockPrefix.trim();
 			} else if (theCityName != null && !"Local".equalsIgnoreCase(theCityName.trim())) {
@@ -377,36 +315,30 @@ public class KootPanKingThreeApp {
 			} else {
             st.cityPrefix = "";
 		}
-		
         this.theTimeZone = st.theTimeZone;
         this.theCityName = (st.cityPrefix == null || st.cityPrefix.trim().isEmpty())
 		? "Local"
 		: st.cityPrefix.trim();
-		
         System.out.println("[applyCityContextToClock] theCityName = [" + theCityName + "]");
         System.out.println("[applyCityContextToClock] theTimeZone = [" + st.theTimeZone + "]");
         System.out.println("[applyCityContextToClock] cityPrefix = [" + st.cityPrefix + "]");
 	}
-	
-	
 	public void startInstance(Stage stage, java.util.List<String> rawArgs) {
 		System.out.println ("■■■■■[startInstance] , myConfigFile = [" + myConfigFile + "]");
         String arg1 = rawArgs.size() > 0 ? rawArgs.get(0) : "default1";
         String arg2 = rawArgs.size() > 1 ? rawArgs.get(1) : "default2";
         String arg3 = rawArgs.size() > 2 ? rawArgs.get(2) : "default3";
         startArg1 = arg1; startArg2 = arg2; startArg3 = arg3;
-		
         // ── 1. mainWindow 생성 (시계보다 먼저) ─────────────────
         // Stage mainStage = new Stage();
         // mainWindow = new MainWindow(mainStage);
         // mainWindow.log(thisProgramName + " 초기화 중...");
-		
         // ── 2. 시계 생성 ─────────────────────────────────────────
         clockController =
-		new FxGPUNeon.ClockController(stage, arg1, arg2, arg3, this::addAppMenuItems);
+		fxGPUNeon.new ClockController(stage, arg1, arg2, arg3, this::addAppMenuItems);
+        clockController.setIniFile(myConfigFile); // INI 파일 지정 → start() 에서 자동 복원
         clockController.start();
         applyCityContextToClock(null);
-		
         // ── 3. 디지탈 시계 더블클릭 → 설정 다이얼로그 ────────────
         clockController.setOnDigitalSettingsRequest(() ->
             Platform.runLater(() ->
@@ -414,20 +346,16 @@ public class KootPanKingThreeApp {
 			/*
 				// ── 4. ClockHostCallback 주입 ─────────────────────────────
 				mainWindow.setClockHost(new MainWindow.ClockHostCallback() {
-				
 				@Override public javafx.scene.control.Menu buildGlobalMenu() {
 				return buildWorldClockMenu();
 				}
-				
 				@Override public void exitAll() {
 				saveConfig();
 				AppLogger.close();
 				Platform.exit();
 				// System.exit(0);
 				}
-				
 				@Override public void showLogFile() { openLogFile(); }
-				
 				@Override public void deleteOldLogs() {
 				String p = AppLogger.getLogFilePath();
 				if (p == null || p.isEmpty()) return;
@@ -439,62 +367,47 @@ public class KootPanKingThreeApp {
 				&& !f.getAbsolutePath().equals(cur.getAbsolutePath()));
 				if (old != null) for (java.io.File f : old) f.delete();
 				}
-				
 				@Override public String getLogFilePath() {
 				return AppLogger.getLogFilePath();
 				}
-				
 				@Override public void showConfigFile() { openConfigFile(); }
-				
 				@Override public void showAbout() {
 				Platform.runLater(() -> showAboutDialog());
 				}
-				
 				@Override public String getConfigFilePath() {
 				return IniController.getPrimaryConfigFilePath();
 				}
-				
 				@Override public void onClose() {
 				config.remove("mainWindow");
 				saveConfig();
 				}
-				
 				@Override public void showChimeDialog() {
 				if (chimeController != null) chimeController.showChimeDialog();
 				}
-				
 				@Override public javafx.scene.control.Menu buildGmailCalendarMenu() {
 				return buildGmailMenu();
 				}
-				
 				@Override public javafx.scene.control.Menu buildKakaoMenu() {
 				return buildKakaoMenuFx();
 				}
-				
 				@Override public javafx.scene.control.Menu buildTelegramMenu() {
 				return buildTelegramMenuFx();
 				}
-				
 				@Override public String getConfig(String key, String defaultValue) {
 				return config.getProperty(key, defaultValue);
 				}
-				
 				@Override public void setMultipleConfigAndSave(String... entries) {
 				for (int i = 0; i + 1 < entries.length; i += 2)
 				config.setProperty(entries[i], entries[i + 1]);
 				saveConfig();
 				}
-				
 				@Override public void setConfigAndSave(String key, String value) {
 				config.setProperty(key, value);
 				saveConfig();
 				}
-				
 				@Override public GmailSender getGmail() { return gmail; }
-				
 				@Override public void moveToTopRight() { resetToCenter(); }
 				});
-				
 			*/
 			if (mainWindow != null) {
 				if (mainWindow != null) {
@@ -502,7 +415,6 @@ public class KootPanKingThreeApp {
 				}
 			}
 	}
-	
     /** 앱 제어 메뉴 항목을 팝업에 추가 — KootPanKingThree 전담 */
     /** 세계시계 서브메뉴 — popup과 mainWindow 양쪽에서 공유 */
     private javafx.scene.control.Menu buildWorldClockMenu() {
@@ -527,9 +439,9 @@ public class KootPanKingThreeApp {
 		};
         for (String[] c : cities) {
             javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(c[0]);
-            final String zoneStr  = c[1];
-            final String menuName = c[0]; // 창 제목용 (이모지 포함)
-            final String prefix   = c[2]; // 시계 날짜 prefix (한글/영문만)
+			String zoneStr  = c[1];
+			String menuName = c[0]; // 창 제목용 (이모지 포함)
+			String prefix   = c[2]; // 시계 날짜 prefix (한글/영문만)
             // item.setOnAction(e -> openChildClock(menuName, java.time.ZoneId.of(zoneStr), prefix));
             item.setOnAction(e -> {
 				System.out.println("■■■■■ MainWindow.getInstance()");
@@ -539,8 +451,7 @@ public class KootPanKingThreeApp {
 		}
         return menu;
 	}
-	
-    private static final String POPUP_NEON_STYLE = """
+    private static  String POPUP_NEON_STYLE = """
     -fx-background-color: linear-gradient(to bottom, rgba(255,105,180,0.95), rgba(255,182,193,0.92));
     -fx-border-color: #ff5fa2;
     -fx-border-width: 1.8;
@@ -550,36 +461,32 @@ public class KootPanKingThreeApp {
     -fx-padding: 6;
     -fx-effect: dropshadow(gaussian, rgba(255,105,180,0.70), 24, 0.45, 0, 0);
     """;
-	
-    private static final String MENU_ITEM_NORMAL_STYLE = """
+    private static  String MENU_ITEM_NORMAL_STYLE = """
     -fx-text-fill: black;
     -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-background-color: transparent;
     """;
-	
-    private static final String MENU_ITEM_HOVER_STYLE = """
+    private static  String MENU_ITEM_HOVER_STYLE = """
     -fx-text-fill: black;
     -fx-font-size: 15px;
     -fx-font-weight: bold;
     -fx-background-color: linear-gradient(to right, rgba(255,255,255,0.38), rgba(255,255,255,0.12));
     -fx-effect: dropshadow(gaussian, rgba(255,255,255,0.55), 16, 0.35, 0, 0);
     """;
-	
-	private static final String MENU_ITEM_DISABLED_STYLE = """
+	private static  String MENU_ITEM_DISABLED_STYLE = """
     -fx-text-fill: rgba(0,0,0,0.65);
     -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-background-color: transparent;
     -fx-opacity: 1.0;
 	""";
-	
-    private static final String MENU_CAPTION_STYLE = """
+    private static  String MENU_CAPTION_STYLE = """
     -fx-text-fill: black;
     -fx-font-size: 14px;
     -fx-font-weight: bold;
     """;
-	private static final String MENU_TITLE_STYLE = """
+	private static  String MENU_TITLE_STYLE = """
     -fx-text-fill: #111111;
     -fx-font-size: 15px;
     -fx-font-weight: 900;
@@ -614,7 +521,6 @@ public class KootPanKingThreeApp {
 			wirePopupPulseEffects(popup);
 		}));
 	}
-	
 	/*
 		private void enhancePopupMenuNeon(javafx.scene.control.ContextMenu popup) {
         popup.setStyle(POPUP_NEON_STYLE);
@@ -635,10 +541,8 @@ public class KootPanKingThreeApp {
 	private void applyNeonStyle(javafx.scene.control.MenuItem item) {
 		if (item instanceof javafx.scene.control.SeparatorMenuItem) return;
 		if (Boolean.TRUE.equals(item.getProperties().get("popupProgramTitle"))) return;
-		
 		// 현재 상태에 맞는 초기 스타일 적용
 		item.setStyle(item.isDisable() ? MENU_ITEM_DISABLED_STYLE : MENU_ITEM_NORMAL_STYLE);
-		
 		// disable 상태가 바뀔 때마다 자동으로 스타일 갱신
 		item.disableProperty().addListener((obs, wasDisabled, isNowDisabled) ->
 			item.setStyle(isNowDisabled ? MENU_ITEM_DISABLED_STYLE : MENU_ITEM_NORMAL_STYLE)
@@ -655,11 +559,9 @@ public class KootPanKingThreeApp {
             wireMenuItemPulseRecursively(item);
 		}
 	}
-	
     private void wireMenuItemPulseRecursively(javafx.scene.control.MenuItem item) {
         if (item == null || item instanceof javafx.scene.control.SeparatorMenuItem) return;
         if (Boolean.TRUE.equals(item.getProperties().get("popupProgramTitle"))) return;
-		
         javafx.scene.Node node = item.getStyleableNode();
         if (node != null && node.getProperties().putIfAbsent("neonPulseWired", Boolean.TRUE) == null) {
             node.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_ENTERED, e -> {
@@ -672,7 +574,6 @@ public class KootPanKingThreeApp {
 				stopPulse(item);
 			});
 		}
-		
         if (item instanceof javafx.scene.control.Menu subMenu) {
             javafx.scene.Node submenuNode = subMenu.getStyleableNode();
             if (submenuNode != null && submenuNode.getProperties().putIfAbsent("neonMenuCaptionStyled", Boolean.TRUE) == null) {
@@ -683,15 +584,12 @@ public class KootPanKingThreeApp {
 			}
 		}
 	}
-	
     private void startPulse(javafx.scene.control.MenuItem item) {
         javafx.animation.ScaleTransition oldPulse =
 		(javafx.animation.ScaleTransition) item.getProperties().get("pulseTransition");
         if (oldPulse != null) oldPulse.stop();
-		
         javafx.scene.Node node = item.getStyleableNode();
         if (node == null) return;
-		
         javafx.animation.ScaleTransition pulse =
 		new javafx.animation.ScaleTransition(javafx.util.Duration.millis(560), node);
         pulse.setFromX(1.0);
@@ -703,7 +601,6 @@ public class KootPanKingThreeApp {
         pulse.play();
         item.getProperties().put("pulseTransition", pulse);
 	}
-	
     private void stopPulse(javafx.scene.control.MenuItem item) {
         javafx.animation.ScaleTransition pulse =
 		(javafx.animation.ScaleTransition) item.getProperties().get("pulseTransition");
@@ -711,14 +608,12 @@ public class KootPanKingThreeApp {
             pulse.stop();
             item.getProperties().remove("pulseTransition");
 		}
-		
         javafx.scene.Node node = item.getStyleableNode();
         if (node != null) {
             node.setScaleX(1.0);
             node.setScaleY(1.0);
 		}
 	}
-	
 	private void emphasizePopupProgramTitle(javafx.scene.control.ContextMenu popup) {
 		if (popup == null || popup.getItems().isEmpty()) return;
 		javafx.scene.control.MenuItem first = popup.getItems().get(0);
@@ -728,31 +623,23 @@ public class KootPanKingThreeApp {
 		first.setText(title);
 		first.setStyle(MENU_TITLE_STYLE);
 	}
-	
 	private void addAppMenuItems(javafx.scene.control.ContextMenu popup) {
-		
 		System.out.println ("■[addAppMenuItems]-0");
-		
 		enhancePopupMenuNeon(popup);
 		restoreParentPopupTextVisible(popup);
-		
 		// ── chimeController 최초 초기화 ─────────────────────────────────
 		initChimeControllerIfNeeded((javafx.stage.Stage) popup.getOwnerWindow());
-		
 		// ── 서브메뉴 구성 ───────────────────────────────────────────────
 		javafx.scene.control.MenuItem chimeItem    = buildChimeMenuItem();
 		javafx.scene.control.Menu     phoneCam     = buildPhoneCamMenu(popup);
 		javafx.scene.control.Menu     ytMenu       = buildYtMenu(popup);
 		javafx.scene.control.Menu     localMp4Menu = buildLocalMp4Menu(popup);
 		javafx.scene.control.Menu     cctv         = buildCctvMenu(popup);
-		
 		javafx.scene.control.Menu     gmailMenu    = buildGmailMenu(popup);
 		javafx.scene.control.Menu     kakaoMenu    = buildKakaoMenu();
 		javafx.scene.control.Menu     telegramMenu = buildTelegramMenu(popup);
-		
 		javafx.scene.control.Menu     lifeMenu     = buildLifeMenu(popup);
 		javafx.scene.control.Menu     system       = buildSystemMenu(popup);
-		
 		javafx.scene.control.MenuItem mainWindowItem =
 		new javafx.scene.control.MenuItem("🪟 MainWindow");
 		mainWindowItem.setOnAction(e -> {
@@ -760,15 +647,11 @@ public class KootPanKingThreeApp {
 			MainWindow mainWindow = MainWindow.getInstance();
 			if (mainWindow != null) mainWindow.toggleTheMainWindow();
 		});
-		
-		
 		// ── Top-5 항목 생성 (child 시계 포함 표시) ──────────────────────
-		
 		// [중앙 고정]
 		javafx.scene.control.MenuItem centerItem =
 		new javafx.scene.control.MenuItem("📌 중앙 고정");
 		centerItem.setOnAction(e -> resetToCenter());
-		
 		// [디지탈 on/off]
 		javafx.scene.control.CheckMenuItem digitalItem =
 		new javafx.scene.control.CheckMenuItem("🕐 디지탈 on/off");
@@ -782,73 +665,60 @@ public class KootPanKingThreeApp {
 			clockController.onPopupShowing = () ->
 			digitalMenuItem.setSelected(getDigitalState());
 		}
-		
 		// [디지탈 시계 설정]
 		javafx.scene.control.MenuItem digitalSettingsItem =
 		new javafx.scene.control.MenuItem("디지탈 시계 설정");
 		digitalSettingsItem.setOnAction(e ->
 		showDigitalSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow()));
-		
 		// [메인 시계 설정]
 		javafx.scene.control.MenuItem menuSetup =
 		new javafx.scene.control.MenuItem("메인 시계 설정");
 		menuSetup.setOnAction(e -> {
 			if (clockController != null) clockController.openSetup();
 		});
-		
 		// ── 팝업 조립 ────────────────────────────────────────────────────
 		// [흔들림] 은 FxGPUNeon.buildGraphicsMenu() 가 이미 추가함
-		
 		// Top-5 + separator
 		popup.getItems().addAll(
 			centerItem, digitalItem, digitalSettingsItem, menuSetup,
 			new javafx.scene.control.SeparatorMenuItem()
 		);
-		
 		// [세계 시계] — 로컬 시계만
 		popup.getItems().addAll(
 			buildWorldClockMenu(),
 			new javafx.scene.control.SeparatorMenuItem()
 		);
-		
 		// 미디어 배경
 		popup.getItems().addAll(
 			phoneCam, ytMenu, localMp4Menu, cctv,
 			new javafx.scene.control.SeparatorMenuItem()
 		);
-		
 		// 차임벨
 		popup.getItems().addAll(
 			chimeItem,
 			new javafx.scene.control.SeparatorMenuItem()
 		);
-		
 		// 커뮤니케이션
 		popup.getItems().addAll(
 			gmailMenu, kakaoMenu, telegramMenu,
 			new javafx.scene.control.SeparatorMenuItem()
 		);
-		
 		// 생활도구
 		popup.getItems().addAll(
 			lifeMenu,
 			new javafx.scene.control.SeparatorMenuItem()
 		);
-		
 		// 시스템
 		popup.getItems().add(system);
-		
 		// 시스템
 		popup.getItems().addAll(
 			new javafx.scene.control.SeparatorMenuItem(),
 		mainWindowItem);
-		
 		applyNeonStylesRecursively(popup.getItems());
 		restoreParentPopupTextVisible(popup);
 		emphasizePopupProgramTitle(popup);
 		enhancePopupSubMenusMacOnly(popup);
 	}
-	
 	// ── chimeController 초기화 (Stage 확정 후 최초 1회) ───────────────────
 	private void initChimeControllerIfNeeded(javafx.stage.Stage owner) {
 		if (chimeController != null) return;
@@ -872,19 +742,19 @@ public class KootPanKingThreeApp {
 								if (clockController != null) clockController.detachMediaView();
 							}
 							@Override public void onYoutubeFrame(javafx.scene.image.WritableImage frame) {
-								FxGPUNeon.cameraActive = true;
+								fxGPUNeon.cameraActive = true;
 								if (clockController != null) clockController.setCameraFrame(frame);
 							}
 							@Override public void clearYoutubeFrame() {
-								FxGPUNeon.cameraActive = false;
+								fxGPUNeon.cameraActive = false;
 								if (clockController != null) clockController.setCameraFrame(null);
 							}
 							@Override public void onStatusMessage(String message) {
 								if (clockController != null) clockController.showStatusMessage(message);
 							}
 							@Override public String getSettingsDir() { return SETTINGS_DIR; }
-							@Override public String getYtDlpPath()   { return ytdlpPath; }
-							@Override public String getFfmpegPath()  { return ffmpegPath; }
+							@Override public String getYtDlpPath()   { return AppContext.getYtdlpPath(); }
+							@Override public String getFfmpegPath()  { return AppContext.getFfmpegPath(); }
 						});
 				}
 				return ytPlayer;
@@ -901,7 +771,7 @@ public class KootPanKingThreeApp {
 		if (clockController != null) clockController.setRainbowInterval(pendingRainbowIntervalSec);
 		// ── 시분초 / 날짜 pending → AppState 반영 ───────────────
 		if (clockController != null) {
-			FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+			FxGPUNeon.AppState st = clockController.getAppState();
 			// 날짜·시분초는 개별 설정값으로 독립 반영 (master switch 사용 금지)
 			st.showDigital  = pendingDigitalShow;
 			st.showFaceDate = pendingFaceDateShow;
@@ -918,32 +788,33 @@ public class KootPanKingThreeApp {
 			st.faceDateScrollDir   = pendingFaceDateScrollDir;
 			st.faceDateScrollSpeed = pendingFaceDateScrollSpeed;
 			// 상태 적용 후 씬 재빌드
-			FxGPUNeon.ClockController.applyDigitalSettings(clockController);
+			clockController.applyDigitalSettings();
 			// 팝업 메뉴 체크 상태 동기화
 			if (digitalMenuItem != null)
 			digitalMenuItem.setSelected(getDigitalState());
 		}
 	}
-	
 	// ── 차임벨 메뉴 아이템 ──────────────────────────────────────────────
 	private javafx.scene.control.MenuItem buildChimeMenuItem() {
-        // ── 차임벨 메뉴 아이템 ────────────────────────────────
         javafx.scene.control.MenuItem chimeItem =
 		new javafx.scene.control.MenuItem("🔔 차임벨 설정...");
         chimeItem.setOnAction(e -> {
-            chimeController.showChimeDialog();
-            saveConfig(); // showAndWait() 반환 후 즉시 저장
+            // MainWindow의 차임벨 다이얼로그 사용 (마스터 설정 공유)
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) {
+                mw.showChimeDialogPublic((javafx.stage.Stage) chimeItem.getParentPopup().getOwnerWindow());
+            } else if (chimeController != null) {
+                // fallback: 자체 컨트롤러 (자식 시계 등 MainWindow 없을 때)
+                chimeController.showChimeDialog();
+            }
 		});
-		
         javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 스마트폰 카메라");
 		return chimeItem;
 	}
-	
 	// ── YouTube 실시간 세계도시 메뉴 ─────────────────────────────────────
 	private javafx.scene.control.Menu buildYtMenu(
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu ytMenu = new javafx.scene.control.Menu("▶ YouTube 실시간 세계도시");
-		
         java.util.List<String[]> ytList = BackgroundPlayer.YoutubePlayer.loadStreamIni(SETTINGS_DIR);
         if (ytList.isEmpty()) {
             javafx.scene.control.MenuItem emptyItem =
@@ -958,8 +829,8 @@ public class KootPanKingThreeApp {
 				new javafx.scene.control.MenuItem(city);
                 cityItem.setOnAction(ev -> {
                     // exe 경로 미설정 시 → 메시지만 표시하고 종료
-                    String ytdlp  = ytdlpPath;
-                    String ffmpeg = ffmpegPath;
+                    String ytdlp  = AppContext.getYtdlpPath();
+                    String ffmpeg = AppContext.getFfmpegPath();
                     if (ytdlp.isEmpty() || !new java.io.File(ytdlp).exists()
 						|| ffmpeg.isEmpty() || !new java.io.File(ffmpeg).exists()) {
                         javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
@@ -973,7 +844,7 @@ public class KootPanKingThreeApp {
                         alert.showAndWait();
                         return;
 					}
-                    youtubeUrl = url;
+                    AppContext.setYoutubeUrl(url);
                     stopCamera(); stopItsCctv();
                     startYoutube(url);
                     saveConfig();
@@ -981,16 +852,13 @@ public class KootPanKingThreeApp {
                 ytMenu.getItems().add(cityItem);
 			}
 		}
-		
         ytMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-		
         javafx.scene.control.MenuItem ytUrlItem =
 		new javafx.scene.control.MenuItem("🔗 URL직접입력 & YouTube설정");
         ytUrlItem.setOnAction(ev -> {
             javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
             showYoutubeSettingsDialog(owner);
 		});
-		
         javafx.scene.control.MenuItem ytDlItem =
 		new javafx.scene.control.MenuItem("⬇ 도시 목록 다운로드");
         ytDlItem.setOnAction(ev ->
@@ -1006,26 +874,20 @@ public class KootPanKingThreeApp {
 				});
 			}, "YT-INI-Download").start()
 		);
-		
         javafx.scene.control.MenuItem ytStopItem =
 		new javafx.scene.control.MenuItem("⏹ 스트림 정지");
         ytStopItem.setOnAction(ev -> stopYoutube());
-		
         ytMenu.getItems().addAll(ytUrlItem, ytDlItem,
 		new javafx.scene.control.SeparatorMenuItem(), ytStopItem);
-		
         ytMenu.setOnShowing(ev ->
 		ytStopItem.setDisable(ytPlayer == null || !ytPlayer.isRunning()));
-		
 		return ytMenu;
 	}
-	
 	// ── 로컬 MP4 배경 재생 메뉴 ──────────────────────────────────────────
 	private javafx.scene.control.Menu buildLocalMp4Menu(
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu localMp4Menu =
 		new javafx.scene.control.Menu("📂 로컬 MP4 배경 재생");
-		
         javafx.scene.control.MenuItem mp4OpenItem =
 		new javafx.scene.control.MenuItem("📁 파일 선택...");
         mp4OpenItem.setOnAction(ev -> {
@@ -1048,7 +910,6 @@ public class KootPanKingThreeApp {
                 startLocalMp4(chosen);
 			}
 		});
-		
         javafx.scene.control.MenuItem mp4ReplayItem =
 		new javafx.scene.control.MenuItem("🔄 마지막 파일 다시 재생");
         mp4ReplayItem.setOnAction(ev -> {
@@ -1065,17 +926,14 @@ public class KootPanKingThreeApp {
 			}
             startLocalMp4(f);
 		});
-		
         javafx.scene.control.MenuItem mp4StopItem =
 		new javafx.scene.control.MenuItem("⏹ MP4 재생 정지");
         mp4StopItem.setOnAction(ev -> stopLocalMp4());
-		
         // ── 볼륨 슬라이더 ──────────────────────────────────────────
         javafx.scene.control.Label volLabel =
 		new javafx.scene.control.Label(
 		String.format("🔊 볼륨: %d%%", (int)(localMp4Volume * 100)));
         volLabel.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
-		
         javafx.scene.control.Slider volSlider =
 		new javafx.scene.control.Slider(0.0, 1.0, localMp4Volume);
         volSlider.setShowTickMarks(true);
@@ -1083,13 +941,11 @@ public class KootPanKingThreeApp {
         volSlider.setMajorTickUnit(0.5);
         volSlider.setMinorTickCount(4);
         volSlider.setPrefWidth(200);
-		
         volSlider.valueProperty().addListener((obs, ov, nv) -> {
             localMp4Volume = nv.doubleValue();
             volLabel.setText(String.format("🔊 볼륨: %d%%", (int)(localMp4Volume * 100)));
             if (ytPlayer != null) ytPlayer.setVolume(localMp4Volume);
 		});
-		
         // 🔇 음소거 토글 버튼
         javafx.scene.control.Button muteBtn = new javafx.scene.control.Button("🔇 음소거");
         muteBtn.setStyle("-fx-font-size:11px;");
@@ -1102,14 +958,11 @@ public class KootPanKingThreeApp {
                 volSlider.setValue(0.8);
 			}
 		});
-		
         javafx.scene.layout.VBox volBox = new javafx.scene.layout.VBox(4,
 		volLabel, volSlider, muteBtn);
         volBox.setPadding(new javafx.geometry.Insets(6, 14, 6, 14));
-		
         javafx.scene.control.CustomMenuItem volItem =
 		new javafx.scene.control.CustomMenuItem(volBox, false); // false = 드래그 중 메뉴 유지
-		
         localMp4Menu.getItems().addAll(
             mp4OpenItem, mp4ReplayItem,
             new javafx.scene.control.SeparatorMenuItem(),
@@ -1117,42 +970,34 @@ public class KootPanKingThreeApp {
             new javafx.scene.control.SeparatorMenuItem(),
             mp4StopItem
 		);
-		
         localMp4Menu.setOnShowing(ev -> {
             mp4ReplayItem.setDisable(localMp4LastFile.isEmpty());
             mp4StopItem.setDisable(ytPlayer == null || !ytPlayer.isRunning());
 		});
-		
 		return localMp4Menu;
 	}
-	
 	// ── 스마트폰 카메라 메뉴 ────────────────────────────────────────────
 	private javafx.scene.control.Menu buildPhoneCamMenu(
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 스마트폰 카메라");
-		
         javafx.scene.control.MenuItem camStart      = new javafx.scene.control.MenuItem("▶ 폰 카메라 연결");
         javafx.scene.control.MenuItem camSnapshot   = new javafx.scene.control.MenuItem("📸 이미지 저장");
         camVideoItem = new javafx.scene.control.MenuItem("🎬 동영상 녹화 시작");
         javafx.scene.control.MenuItem camCapture    = camVideoItem; // 별칭 (하위 코드 호환)
         javafx.scene.control.MenuItem camStop       = new javafx.scene.control.MenuItem("⏹ 폰 카메라 중지");
-		
         // 초기 활성화 상태: 연결 중일 때만 이미지 저장/중지 활성화
         camSnapshot .setDisable(!cameraMode);
         camVideoItem.setDisable(!cameraMode);
         camStop     .setDisable(!cameraMode);
-		
         camStart.setOnAction(e -> {
             // FX 스레드에서 커스텀 카메라 설정 다이얼로그 표시
             javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
-			
             javafx.stage.Stage dlg = new javafx.stage.Stage();
             dlg.initOwner(owner);
             dlg.initStyle(javafx.stage.StageStyle.UTILITY);
             dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
             dlg.setAlwaysOnTop(true);
             dlg.setTitle("스마트폰 카메라 설정");
-			
             // 안내 텍스트
             javafx.scene.control.Label header = new javafx.scene.control.Label(
                 "1. 스마트폰에서 [IP Webcam] 앱을 실행하세요\n" +
@@ -1160,31 +1005,25 @@ public class KootPanKingThreeApp {
                 "3. [서버 시작]을 누르세요\n" +
 			"4. 표시되는 주소를 입력하세요  예: http://192.168.0.70:8080");
             header.setStyle("-fx-font-size:12px;");
-			
             // 주소 입력 필드
             javafx.scene.control.Label urlLabel = new javafx.scene.control.Label("주소:");
-            javafx.scene.control.TextField urlField = new javafx.scene.control.TextField(cameraUrl);
+            javafx.scene.control.TextField urlField = new javafx.scene.control.TextField(AppContext.getCameraUrl());
             urlField.setPrefWidth(320);
-			
             javafx.scene.layout.HBox urlRow = new javafx.scene.layout.HBox(8, urlLabel, urlField);
             urlRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-			
             // 반전 체크박스
             javafx.scene.control.CheckBox cbFlipH = new javafx.scene.control.CheckBox("좌우 반전");
             cbFlipH.setSelected(cameraFlipH);
             javafx.scene.control.CheckBox cbFlipV = new javafx.scene.control.CheckBox("상하 반전");
             cbFlipV.setSelected(cameraFlipV);
-			
             javafx.scene.layout.HBox flipRow = new javafx.scene.layout.HBox(16, cbFlipH, cbFlipV);
             flipRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-			
             // ── 동영상 도구(FFmpeg) 지정 행 ──────────────────────
             javafx.scene.control.Label ffmpegLabel = new javafx.scene.control.Label(
-			"동영상 도구(ffmpeg.path): " + (ffmpegPath.isEmpty() ? "(미지정)" : ffmpegPath));
+			"동영상 도구(ffmpeg.path): " + (AppContext.getFfmpegPath().isEmpty() ? "(미지정)" : AppContext.getFfmpegPath()));
             ffmpegLabel.setStyle("-fx-font-size:11px; -fx-text-fill:#555;");
             ffmpegLabel.setWrapText(true);
             ffmpegLabel.setMaxWidth(380);
-			
             javafx.scene.control.Button btnFfmpeg = new javafx.scene.control.Button("동영상 도구 지정");
             btnFfmpeg.setOnAction(ev -> {
                 javafx.stage.FileChooser ffChooser = new javafx.stage.FileChooser();
@@ -1195,7 +1034,7 @@ public class KootPanKingThreeApp {
 					isWin2 ? "ffmpeg (ffmpeg.exe)" : "ffmpeg", isWin2 ? "ffmpeg.exe" : "ffmpeg"),
 				new javafx.stage.FileChooser.ExtensionFilter("모든 파일", "*.*"));
                 // 초기 디렉터리: 기존 경로 부모 → C:fmpegin → user.home
-                File initFf = ffmpegPath.isEmpty() ? null : new File(ffmpegPath).getParentFile();
+                File initFf = AppContext.getFfmpegPath().isEmpty() ? null : new File(AppContext.getFfmpegPath()).getParentFile();
                 if (initFf == null || !initFf.exists())
 				initFf = isWin2 ? new File("C:\\ffmpeg\\bin") : new File("/usr/local/bin");
                 if (initFf == null || !initFf.exists())
@@ -1203,45 +1042,38 @@ public class KootPanKingThreeApp {
                 ffChooser.setInitialDirectory(initFf.exists() ? initFf : null);
                 File chFf = ffChooser.showOpenDialog(dlg);
                 if (chFf != null && chFf.isFile()) {
-                    ffmpegPath = chFf.getAbsolutePath();
-                    saveConfig();
-                    ffmpegLabel.setText("동영상 도구(ffmpeg.path): " + ffmpegPath);
-                    System.out.println("[FFmpeg] 지정 완료: " + ffmpegPath);
+                    AppContext.setFfmpegPath(chFf.getAbsolutePath());
+                    ffmpegLabel.setText("동영상 도구(ffmpeg.path): " + AppContext.getFfmpegPath());
+                    System.out.println("[FFmpeg] 지정 완료: " + AppContext.getFfmpegPath());
 				}
 			});
-			
             javafx.scene.layout.HBox ffmpegRow = new javafx.scene.layout.HBox(8, btnFfmpeg, ffmpegLabel);
             ffmpegRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-			
             // 확인 / 취소 버튼
             javafx.scene.control.Button btnOk     = new javafx.scene.control.Button("확인");
             javafx.scene.control.Button btnCancel = new javafx.scene.control.Button("취소");
             btnOk.setDefaultButton(true);
             btnCancel.setCancelButton(true);
-			
             javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(10, btnOk, btnCancel);
             btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
-			
             javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(10,
 			header, urlRow, flipRow, ffmpegRow, btnRow);
             root.setPadding(new javafx.geometry.Insets(16));
             root.setStyle("-fx-background-color: white;");
-			
             dlg.setScene(new javafx.scene.Scene(root));
             dlg.sizeToScene();
-			
             btnCancel.setOnAction(ev -> dlg.close());
             btnOk.setOnAction(ev -> {
                 String input = urlField.getText();
                 if (input == null || input.trim().isEmpty()) { dlg.close(); return; }
                 String url = input.trim();
                 if (!url.contains("/mjpeg")) url = url.replaceAll("/+$", "");
-                cameraUrl   = url;
+                AppContext.setCameraUrl(url);
                 cameraFlipH = cbFlipH.isSelected();
                 cameraFlipV = cbFlipV.isSelected();
                 // 반전 플래그를 FxGPUNeon 에 전달
-                FxGPUNeon.cameraFlipH = cameraFlipH;
-                FxGPUNeon.cameraFlipV = cameraFlipV;
+                fxGPUNeon.cameraFlipH = cameraFlipH;
+                fxGPUNeon.cameraFlipV = cameraFlipV;
                 saveConfig();
                 dlg.close();
                 stopCamera();
@@ -1250,10 +1082,8 @@ public class KootPanKingThreeApp {
                 camVideoItem.setDisable(false);
                 camStop     .setDisable(false);
 			});
-			
             dlg.showAndWait();
 		});
-		
         // ── 이미지 저장 (단일 프레임 스냅샷) ──────────────────────────
         camSnapshot.setOnAction(e -> {
             if (!cameraMode) {
@@ -1262,7 +1092,6 @@ public class KootPanKingThreeApp {
 			}
             captureCamera((javafx.stage.Stage) popup.getOwnerWindow());
 		});
-		
         // ── 동영상 녹화 시작 / 중지 토글 ──────────────────────────────
         camVideoItem.setOnAction(e -> {
             if (!cameraMode) {
@@ -1291,7 +1120,6 @@ public class KootPanKingThreeApp {
 				}
 			}
 		});
-		
         camStop.setOnAction(e -> {
             stopVideoRecording();
             stopImageSequenceRecording();
@@ -1301,7 +1129,6 @@ public class KootPanKingThreeApp {
             camStop     .setDisable(true);
             camVideoItem.setText("🎬 동영상 녹화 시작");
 		});
-		
         javafx.scene.control.MenuItem camInstall = new javafx.scene.control.MenuItem("📲 IP WebCam 설치 (Play Store)");
         camInstall.setOnAction(e -> {
             try {
@@ -1311,12 +1138,11 @@ public class KootPanKingThreeApp {
                 System.out.println("[CameraInstall] 브라우저 열기 실패: " + ex.getMessage());
 			}
 		});
-		
         javafx.scene.control.MenuItem camGuide = new javafx.scene.control.MenuItem("📖 사용방법 안내");
         camGuide.setOnAction(e -> {
-            final String GUIDE_URL     = "https://blog.naver.com/garpsu/224213426659";
-            final String GUIDE_MSG     = "PC와 스마트폰 카메라 연결 방법 안내 : " + GUIDE_URL;
-            final String GUIDE_SUBJECT = "[끝판왕] PC와 스마트폰 카메라 연결 방법 안내";
+			String GUIDE_URL     = "https://blog.naver.com/garpsu/224213426659";
+			String GUIDE_MSG     = "PC와 스마트폰 카메라 연결 방법 안내 : " + GUIDE_URL;
+			String GUIDE_SUBJECT = "[끝판왕] PC와 스마트폰 카메라 연결 방법 안내";
             // ① 브라우저 열기
             new Thread(() -> {
                 try {
@@ -1351,7 +1177,6 @@ public class KootPanKingThreeApp {
 				}, "CameraGuide-Email").start();
 			}
 		});
-		
         phoneCam.getItems().addAll(
             camStart, camSnapshot, camVideoItem, camStop,
             new javafx.scene.control.SeparatorMenuItem(),
@@ -1359,26 +1184,21 @@ public class KootPanKingThreeApp {
             new javafx.scene.control.SeparatorMenuItem(),
             camGuide
 		);
-		
 		return phoneCam;
 	}
-	
 	// ── ITS 교통 CCTV 메뉴 ──────────────────────────────────────────────
 	private javafx.scene.control.Menu buildCctvMenu(
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu cctv = new javafx.scene.control.Menu("🚦 ITS 교통 CCTV");
-		
         // ── (A) API 키 설정 ──────────────────────────────────────────────
         javafx.scene.control.MenuItem cctvKeyItem =
 		new javafx.scene.control.MenuItem("🔑 API 키 설정...");
         cctvKeyItem.setOnAction(e -> {
 			ItsCctvManager mgr = getItsCctv();
-            String cur = mgr.getApiKey();
-			
+            String cur = AppContext.getItsCctvApiKey();
             javafx.scene.control.TextField keyField =
 			new javafx.scene.control.TextField(cur);
             keyField.setPrefColumnCount(36);
-			
             javafx.scene.control.Button fetchBtn =
 			new javafx.scene.control.Button("🌐 서버에서 키 값 수신");
             fetchBtn.setOnAction(ev -> {
@@ -1406,7 +1226,6 @@ public class KootPanKingThreeApp {
 					}
 				}, "ItsKeyFetch").start();
 			});
-			
             javafx.scene.control.Label label = new javafx.scene.control.Label(
                 "ITS 국가교통정보센터 API 키\n" +
                 "발급: https://www.its.go.kr\n" +
@@ -1414,30 +1233,25 @@ public class KootPanKingThreeApp {
                 "현재 키: " + (cur.isEmpty() ? "(없음)"
 				: cur.substring(0, Math.min(8, cur.length())) + "..."));
 				label.setWrapText(true);
-				
 				javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(8,
 				label, keyField, fetchBtn);
 				content.setPadding(new javafx.geometry.Insets(10));
-				
 				javafx.scene.control.Dialog<String> dlg = new javafx.scene.control.Dialog<>();
 				dlg.setTitle("ITS API 키 설정");
 				dlg.getDialogPane().setContent(content);
 				dlg.getDialogPane().getButtonTypes().addAll(
 					javafx.scene.control.ButtonType.OK,
 				javafx.scene.control.ButtonType.CANCEL);
-				
 				javafx.stage.Stage owner = (javafx.stage.Stage) popup.getOwnerWindow();
 				if (owner != null) dlg.initOwner(owner);
-				
 				dlg.setResultConverter(bt -> {
 					if (bt == javafx.scene.control.ButtonType.OK)
                     return keyField.getText().trim();
 					return null;
 				});
-				
 				dlg.showAndWait().ifPresent(input -> {
+					AppContext.setItsCctvApiKey(input);
 					mgr.setApiKey(input);
-					saveConfig();
 					javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
 					javafx.scene.control.Alert.AlertType.INFORMATION);
 					alert.setTitle("ITS CCTV");
@@ -1447,18 +1261,14 @@ public class KootPanKingThreeApp {
 					alert.showAndWait();
 				});
 		});
-		
         // ── (B) 목록 조회 및 연결 ────────────────────────────────────────
         javafx.scene.control.MenuItem cctvConnectItem =
 		new javafx.scene.control.MenuItem("▶ CCTV 목록 조회 및 연결");
-        cctvConnectItem.setDisable(itsCctv == null || getItsCctv().getApiKey().isEmpty());
-		
-		
-		
+        cctvConnectItem.setDisable(AppContext.getItsCctvApiKey().isEmpty());
         cctvConnectItem.setOnAction(e ->
 			{
 				ItsCctvManager mgr = getItsCctv();
-				if (mgr.getApiKey().isEmpty()) {
+				if (AppContext.getItsCctvApiKey().isEmpty()) {
 					javafx.scene.control.Alert warn = new javafx.scene.control.Alert(
 					javafx.scene.control.Alert.AlertType.WARNING);
 					warn.setTitle("ITS CCTV");
@@ -1468,7 +1278,6 @@ public class KootPanKingThreeApp {
 				}
 				cctvConnectItem.setDisable(true);
 				cctvConnectItem.setText("⏳ 조회 중...");
-				
 				mgr.fetchList(
 					() -> {
 						cctvConnectItem.setDisable(false);
@@ -1505,7 +1314,6 @@ public class KootPanKingThreeApp {
 				);
 			}
 		);
-		
         // ── (C) 이전 / 다음 카메라 ──────────────────────────────────────
         javafx.scene.control.MenuItem cctvPrev =
 		new javafx.scene.control.MenuItem("◀ 이전 카메라");
@@ -1516,7 +1324,6 @@ public class KootPanKingThreeApp {
                 System.out.println("[ItsCctv] 이전: " + mgr.currentName());
 			}
 		});
-		
         javafx.scene.control.MenuItem cctvNext =
 		new javafx.scene.control.MenuItem("▶ 다음 카메라");
         cctvNext.setOnAction(e -> {
@@ -1526,12 +1333,10 @@ public class KootPanKingThreeApp {
                 System.out.println("[ItsCctv] 다음: " + mgr.currentName());
 			}
 		});
-		
         // ── (D) 중지 ────────────────────────────────────────────────────
         javafx.scene.control.MenuItem cctvStop =
 		new javafx.scene.control.MenuItem("⏹ CCTV 중지");
         cctvStop.setOnAction(e -> stopItsCctv());
-		
         // ── (E) ITS API 신청 안내 ────────────────────────────────────────
         javafx.scene.control.MenuItem cctvGuide =
 		new javafx.scene.control.MenuItem("📖 ITS API 신청 안내");
@@ -1543,17 +1348,15 @@ public class KootPanKingThreeApp {
                 System.out.println("[ItsCctv] 브라우저 열기 실패: " + ex.getMessage());
 			}
 		});
-		
         cctv.setOnShowing(e -> {
             ItsCctvManager mgr = getItsCctv();
             boolean running = mgr.isRunning();
             boolean hasItems = !mgr.getItems().isEmpty();
-            cctvConnectItem.setDisable(mgr.getApiKey().isEmpty());
+            cctvConnectItem.setDisable(AppContext.getItsCctvApiKey().isEmpty());
             cctvPrev.setDisable(!(running && hasItems));
             cctvNext.setDisable(!(running && hasItems));
             cctvStop.setDisable(!running);
 		});
-		
         cctv.getItems().addAll(
             cctvKeyItem,
             new javafx.scene.control.SeparatorMenuItem(),
@@ -1565,20 +1368,20 @@ public class KootPanKingThreeApp {
             new javafx.scene.control.SeparatorMenuItem(),
             cctvGuide
 		);
-		
 		return cctv;
 	}
-	
 	// ── Gmail / Calendar 메뉴 ────────────────────────────────────────────
 	private javafx.scene.control.Menu buildGmailMenu(
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu gmailMenu = new javafx.scene.control.Menu("📧 Gmail / Calendar");
-		
-        // 기존 항목
-        javafx.scene.control.MenuItem gmailSend = menuItem("지금 Gmail 보내기");
-        javafx.scene.control.MenuItem calGuide  = menuItem("Calendar 설정 안내");
-		
-        // 구글 캘린더 서브메뉴 (3)
+        // Gmail 설정 → MainWindow 다이얼로그
+        javafx.scene.control.MenuItem gmailSettings = new javafx.scene.control.MenuItem("Gmail 설정");
+        gmailSettings.setOnAction(e -> {
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) mw.showGmailSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow());
+		});
+        javafx.scene.control.MenuItem calGuide = menuItem("Calendar 설정 안내");
+        // 구글 캘린더 서브메뉴
         javafx.scene.control.Menu googleCal = new javafx.scene.control.Menu("📧 구글 캘린더");
         googleCal.getItems().addAll(
             calMenuAction("향후 3일", () -> showCalendarResult("구글", "google", 3, "next")),
@@ -1587,8 +1390,7 @@ public class KootPanKingThreeApp {
             calMenuAction("이번 달",  () -> showCalendarResult("구글", "google", 0, "month")),
             calMenuAction("다음 달",  () -> showCalendarResult("구글", "google", 0, "nextmonth"))
 		);
-		
-        // 네이버 캘린더 서브메뉴 (4)
+        // 네이버 캘린더 서브메뉴
         javafx.scene.control.Menu naverCal = new javafx.scene.control.Menu("🟢 네이버 캘린더");
         naverCal.getItems().addAll(
             calMenuAction("향후 3일", () -> showCalendarResult("네이버", "naver", 3, "next")),
@@ -1597,23 +1399,24 @@ public class KootPanKingThreeApp {
             calMenuAction("이번 달",  () -> showCalendarResult("네이버", "naver", 0, "month")),
             calMenuAction("다음 달",  () -> showCalendarResult("네이버", "naver", 0, "nextmonth"))
 		);
-		
-        javafx.scene.control.MenuItem naverCfg = menuItem("네이버 캘린더 설정");
-		
+        // 네이버 설정 → MainWindow 다이얼로그
+        javafx.scene.control.MenuItem naverSettings = new javafx.scene.control.MenuItem("네이버 설정");
+        naverSettings.setOnAction(e -> {
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) mw.showNaverSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow());
+		});
         gmailMenu.getItems().addAll(
-            gmailSend,
+            gmailSettings,
             calGuide,
             new javafx.scene.control.SeparatorMenuItem(),
             googleCal,
             new javafx.scene.control.SeparatorMenuItem(),
             naverCal,
             new javafx.scene.control.SeparatorMenuItem(),
-            naverCfg
+            naverSettings
 		);
-		
 		return gmailMenu;
 	}
-	
 	// ── 카카오톡 메뉴 ────────────────────────────────────────────────────
 	private javafx.scene.control.Menu buildKakaoMenu() {
         javafx.scene.control.Menu kakaoMenu = new javafx.scene.control.Menu("카카오톡...");
@@ -1622,23 +1425,23 @@ public class KootPanKingThreeApp {
             menuItem("나에게 메시지 보내기..."),
             menuItem("설정 안내...")
 		);
-		
 		return kakaoMenu;
 	}
-	
 	// ── 텔레그램 메뉴 ────────────────────────────────────────────────────
 	private javafx.scene.control.Menu buildTelegramMenu(
 		javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu telegramMenu = new javafx.scene.control.Menu("텔레그램");
-        javafx.scene.control.MenuItem tgSettings = new javafx.scene.control.MenuItem("텔레그램 설정...");
+        javafx.scene.control.MenuItem tgSettings = new javafx.scene.control.MenuItem("텔레그램 설정");
         javafx.scene.control.MenuItem tgHelp     = new javafx.scene.control.MenuItem("텔레그램 설정 안내");
-        tgSettings.setOnAction(e -> tg.showTelegramDialog((javafx.stage.Stage) popup.getOwnerWindow()));
-        tgHelp.setOnAction(e ->     tg.showTelegramHelp((javafx.stage.Stage) popup.getOwnerWindow()));
+        tgSettings.setOnAction(e -> {
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) mw.showTelegramSettingsDialog((javafx.stage.Stage) popup.getOwnerWindow());
+            else if (tg != null) tg.showTelegramDialog((javafx.stage.Stage) popup.getOwnerWindow());
+		});
+        tgHelp.setOnAction(e -> tg.showTelegramHelp((javafx.stage.Stage) popup.getOwnerWindow()));
         telegramMenu.getItems().addAll(tgSettings, tgHelp);
-		
 		return telegramMenu;
 	}
-	
 	// ── 시스템 메뉴 ─────────────────────────────────────────────────────
 	private javafx.scene.control.Menu buildSystemMenu(
 		javafx.scene.control.ContextMenu popup) {
@@ -1647,7 +1450,6 @@ public class KootPanKingThreeApp {
         logItem.setOnAction(e -> openLogFile());
         javafx.scene.control.MenuItem configItem = new javafx.scene.control.MenuItem("[" + theCityName + "] 설정파일 수정");
 		configItem.setOnAction(e -> AppContext.openCONFIG_FILE(myConfigFile));
-		
 		javafx.scene.control.MenuItem iniCopyItem =
         new javafx.scene.control.MenuItem("[" + theCityName + "] 설정파일 복사");
 		iniCopyItem.setOnAction(e -> copyIniFile());
@@ -1666,10 +1468,8 @@ public class KootPanKingThreeApp {
         // ── EXIT (15초 타이머 확인 다이얼로그) ───────────────────
         javafx.scene.control.MenuItem exitItem = new javafx.scene.control.MenuItem("EXIT");
         exitItem.setOnAction(e -> showExitDialog((javafx.stage.Stage) popup.getOwnerWindow()));
-		
         javafx.scene.control.MenuItem aboutItem = new javafx.scene.control.MenuItem("About");
         aboutItem.setOnAction(e -> showAboutDialog());
-		
         javafx.scene.control.MenuItem mainWindowItem =
 		new javafx.scene.control.MenuItem("MainWindow");
         mainWindowItem.setOnAction(e -> {
@@ -1677,24 +1477,18 @@ public class KootPanKingThreeApp {
 			MainWindow mainWindow = MainWindow.getInstance();
 			if ( mainWindow != null )  mainWindow.toggleTheMainWindow();
 		});
-		
         javafx.scene.control.MenuItem closeItem = new javafx.scene.control.MenuItem("Close");
-		
 		closeItem.setOnAction(e -> {
 			System.out.println("[clockController.close] : " + theCityName);
-			
 			MainWindow mw = MainWindow.getInstance();
-			
 			if (mw != null && theTimeZone != null) {
 				mw.closeTheCity(theTimeZone);
 				return;
 			}
-			
 			if (clockController != null && clockController.getStage() != null) {
 				clockController.getStage().close();
 			}
 		});
-		
 		//   closeItem.setOnAction(e -> {
 		//          System.out.println("[clockController.close] : " + theCityName );
 		//			MainWindow.getInstance().closeTheCity(theTimeZone);
@@ -1705,14 +1499,12 @@ public class KootPanKingThreeApp {
 		//				if (mainWindow != null) mainWindow.getStage().hide();
 		//			*/
 		//   });
-		
         javafx.scene.control.MenuItem restartItem = new javafx.scene.control.MenuItem("Restart");
         restartItem.setOnAction(e -> {
             try { appRestarter.restartApp(() -> saveConfig()); } catch (Exception ex) {
                 System.out.println("[Restart] " + ex.getMessage());
 			}
 		});
-		
         system.getItems().addAll(
             aboutItem,
             logItem,
@@ -1728,7 +1520,6 @@ public class KootPanKingThreeApp {
             restartItem,
             exitItem
 		);
-		
 		return system;
 	}
 	/*
@@ -1742,7 +1533,6 @@ public class KootPanKingThreeApp {
 	private void copyIniFile() {
 		try {
 			String msgName = theCityName + " ini";
-			
 			// 1. 없으면 바로 복사
 			if (!AppContext.cityConfigFileExists(theCityName)) {
 				myConfigFile = AppContext.copyCityConfigFile(
@@ -1750,7 +1540,6 @@ public class KootPanKingThreeApp {
 					theCityName,
 					theTimeZone.getId()
 				);
-				
 				javafx.scene.control.Alert ok = new javafx.scene.control.Alert(
 					javafx.scene.control.Alert.AlertType.INFORMATION
 				);
@@ -1760,7 +1549,6 @@ public class KootPanKingThreeApp {
 				ok.showAndWait();
 				return;
 			}
-			
 			// 2. 이미 있으면 확인
 			javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
 				javafx.scene.control.Alert.AlertType.CONFIRMATION
@@ -1768,9 +1556,7 @@ public class KootPanKingThreeApp {
 			confirm.setTitle("설정파일 복사");
 			confirm.setHeaderText(null);
 			confirm.setContentText("(" + msgName + ")이미 존재합니다.");
-			
 			java.util.Optional<javafx.scene.control.ButtonType> result = confirm.showAndWait();
-			
 			// 3. yes 이면 복사
 			if (result.isPresent() && result.get() == javafx.scene.control.ButtonType.OK) {
 				myConfigFile = AppContext.copyCityConfigFile(
@@ -1778,7 +1564,6 @@ public class KootPanKingThreeApp {
 					theCityName,
 					theTimeZone.getId()
 				);
-				
 				javafx.scene.control.Alert ok = new javafx.scene.control.Alert(
 					javafx.scene.control.Alert.AlertType.INFORMATION
 				);
@@ -1787,11 +1572,9 @@ public class KootPanKingThreeApp {
 				ok.setContentText("(" + msgName + ")복사하였습니다.");
 				ok.showAndWait();
 			}
-			
 			} catch (Exception e) {
 			System.out.println("[INI COPY] 실패: " + e.getMessage());
 			AppLogger.logException(e);
-			
 			javafx.scene.control.Alert err = new javafx.scene.control.Alert(
 				javafx.scene.control.Alert.AlertType.ERROR
 			);
@@ -1801,7 +1584,6 @@ public class KootPanKingThreeApp {
 			err.showAndWait();
 		}
 	}
-	
 	/*
 		private void copyIniFile() {
 		try {
@@ -1810,10 +1592,8 @@ public class KootPanKingThreeApp {
 		theCityName,
 		theTimeZone.getId()
 		);
-		
 		// 현재 인스턴스가 그 파일을 바로 가리키게 갱신
 		myConfigFile = copiedPath;
-		
 		System.out.println("[INI COPY] " + copiedPath);
 		} catch (Exception e) {
 		System.out.println("[INI COPY] 실패: " + e.getMessage());
@@ -1823,27 +1603,27 @@ public class KootPanKingThreeApp {
 	*/
 	private void restoreParentPopupTextVisible(javafx.scene.control.ContextMenu popup) {
 		if (popup == null) return;
-		
 		for (MenuItem item : popup.getItems()) {
 			if (item instanceof javafx.scene.control.SeparatorMenuItem) continue;
 			if (Boolean.TRUE.equals(item.getProperties().get("popupProgramTitle"))) continue;
-			
 			String old = item.getStyle();
 			if (old == null) old = "";
-			
 			item.setStyle(old
 				+ "-fx-text-fill: black;"
 				+ "-fx-font-weight: bold;"
 			+ "-fx-opacity: 1.0;");
 		}
 	}
-	
     // ── mainWindow ClockHostCallback용 메뉴 빌더 ──────────────
     /** Gmail/Calendar 메뉴 — MainWindow ClockHostCallback 에서 호출 */
     private javafx.scene.control.Menu buildGmailMenu() {
         javafx.scene.control.Menu menu =
 		new javafx.scene.control.Menu("📧 Gmail / Calendar");
-        javafx.scene.control.MenuItem send = new javafx.scene.control.MenuItem("지금 Gmail 보내기");
+        javafx.scene.control.MenuItem gmailSettings = new javafx.scene.control.MenuItem("Gmail 설정");
+        gmailSettings.setOnAction(e -> {
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) mw.showGmailSettingsDialog(mw.getStage());
+		});
         javafx.scene.control.MenuItem guide = new javafx.scene.control.MenuItem("Calendar 설정 안내");
         javafx.scene.control.Menu googleCal =
 		new javafx.scene.control.Menu("📧 구글 캘린더");
@@ -1863,15 +1643,17 @@ public class KootPanKingThreeApp {
             calMenuAction("이번 달",  () -> showCalendarResult("네이버","naver",0,"month")),
             calMenuAction("다음 달",  () -> showCalendarResult("네이버","naver",0,"nextmonth"))
 		);
-        javafx.scene.control.MenuItem naverCfg =
-		new javafx.scene.control.MenuItem("네이버 캘린더 설정");
+        javafx.scene.control.MenuItem naverSettings = new javafx.scene.control.MenuItem("네이버 설정");
+        naverSettings.setOnAction(e -> {
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) mw.showNaverSettingsDialog(mw.getStage());
+		});
         menu.getItems().addAll(
-            send, guide, new javafx.scene.control.SeparatorMenuItem(),
+            gmailSettings, guide, new javafx.scene.control.SeparatorMenuItem(),
             googleCal, new javafx.scene.control.SeparatorMenuItem(),
-		naverCal,  new javafx.scene.control.SeparatorMenuItem(), naverCfg);
+		naverCal,  new javafx.scene.control.SeparatorMenuItem(), naverSettings);
         return menu;
 	}
-	
     /** 카카오톡 메뉴 — MainWindow ClockHostCallback 에서 호출 */
     private javafx.scene.control.Menu buildKakaoMenuFx() {
         javafx.scene.control.Menu menu =
@@ -1882,18 +1664,18 @@ public class KootPanKingThreeApp {
 		menuItem("설정 안내..."));
         return menu;
 	}
-	
     /** 텔레그램 메뉴 — MainWindow ClockHostCallback 에서 호출 */
     private javafx.scene.control.Menu buildTelegramMenuFx() {
         javafx.scene.control.Menu menu =
 		new javafx.scene.control.Menu("텔레그램");
         javafx.scene.control.MenuItem settings =
-		new javafx.scene.control.MenuItem("텔레그램 설정...");
+		new javafx.scene.control.MenuItem("텔레그램 설정");
         javafx.scene.control.MenuItem help =
 		new javafx.scene.control.MenuItem("텔레그램 설정 안내");
         settings.setOnAction(e -> {
-            if (mainWindow != null)
-			tg.showTelegramDialog(mainWindow.getStage());
+            MainWindow mw = MainWindow.getInstance();
+            if (mw != null) mw.showTelegramSettingsDialog(mw.getStage());
+            else if (tg != null && mainWindow != null) tg.showTelegramDialog(mainWindow.getStage());
 		});
         help.setOnAction(e -> {
             if (mainWindow != null)
@@ -1902,18 +1684,16 @@ public class KootPanKingThreeApp {
         menu.getItems().addAll(settings, help);
         return menu;
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  스마트폰 카메라 기능
     // ══════════════════════════════════════════════════════════════════
-	
     /** IP Webcam 스트림 연결 시작 — 수신 프레임을 시계 배경 이미지로 직접 주입 */
     void startCamera(String streamUrl) {
 		// ── YouTube WebView 배경과 중복 표시 방지 ─────────────────
         stopYoutube();
         if (camera != null) camera.stop();
         // cameraActive 플래그를 먼저 세팅: 이후 콜백이 유효함을 표시
-        if (clockController != null) FxGPUNeon.cameraActive = true;
+        if (clockController != null) fxGPUNeon.cameraActive = true;
         camera = new CaptureManager.Camera(frame -> {
             // Camera-Reader(백그라운드) 스레드 → FX 스레드로 위임
             // setCameraFrame 내부에서 cameraActive == false 이면 즉시 반환(중지 후 큐 잔류 차단)
@@ -1952,7 +1732,6 @@ public class KootPanKingThreeApp {
         camera.start(streamUrl);
         System.out.println("[Camera] 연결 시작: " + streamUrl);
 	}
-	
     /** 카메라 스트림 중지 및 상태 초기화 */
     void stopCamera() {
         // 녹화 중이면 먼저 마무리
@@ -1961,7 +1740,7 @@ public class KootPanKingThreeApp {
         // ① cameraActive 를 먼저 false 로 설정 —
         //    이후 Platform.runLater 큐에서 꺼내지는 프레임 콜백이
         //    setCameraFrame 내부의 if (!cameraActive) return; 에 걸려 차단된다.
-        if (clockController != null) FxGPUNeon.cameraActive = false;
+        if (clockController != null) fxGPUNeon.cameraActive = false;
         if (camera != null) {
             camera.stop();
             camera = null;
@@ -1974,11 +1753,9 @@ public class KootPanKingThreeApp {
 		}
         System.out.println("[Camera] 중지");
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  ITS 교통 CCTV 기능
     // ══════════════════════════════════════════════════════════════════
-	
     /** lazy-init: 첫 접근 시 HostCallback 을 주입하여 ItsCctvManager 생성 */
     ItsCctvManager getItsCctv() {
         if (itsCctv == null) {
@@ -1990,11 +1767,11 @@ public class KootPanKingThreeApp {
                     if (clockController == null) return;
                     if (image == null) {
                         // 중지: 카메라 중지와 동일한 패턴으로 배경 초기화
-                        FxGPUNeon.cameraActive = false;
+                        fxGPUNeon.cameraActive = false;
                         clockController.setCameraFrame(null);
 						} else {
                         // 활성: WritableImage 를 카메라 프레임 경로로 주입
-                        FxGPUNeon.cameraActive = true;
+                        fxGPUNeon.cameraActive = true;
                         clockController.setCameraFrame(image);
 					}
 				}
@@ -2006,7 +1783,6 @@ public class KootPanKingThreeApp {
 		}
         return itsCctv;
 	}
-	
     /**
 		* ITS CCTV 시작.
 		* 스마트폰 카메라 등 다른 배경 소스를 먼저 해제한 뒤 타이머를 시작한다.
@@ -2018,10 +1794,9 @@ public class KootPanKingThreeApp {
         // CCTV 시작 전 현재 배경 상태를 스냅샷으로 저장 (중지 시 원상복귀용)
         if (clockController != null) clockController.saveBackgroundSnapshot();
         stopCamera();                   // 카메라 스트림 중지 (배경 초기화 포함)
-        FxGPUNeon.cameraActive = true;  // CCTV 이미지 주입 허용
+        fxGPUNeon.cameraActive = true;  // CCTV 이미지 주입 허용
         getItsCctv().start();
 	}
-	
     /**
 		* ITS CCTV 중지.
 		* 타이머를 중지하고 배경을 초기화한다.
@@ -2031,67 +1806,54 @@ public class KootPanKingThreeApp {
         if (itsCctv != null && itsCctv.isRunning()) {
             itsCctv.stop();
 		}
-        FxGPUNeon.cameraActive = false;
+        fxGPUNeon.cameraActive = false;
         if (clockController != null) {
             // CCTV 시작 전 상태로 원상복귀 (슬라이드쇼 [중지] 버튼과 동일한 패턴)
             clockController.restoreBackgroundSnapshot();
 		}
         System.out.println("[ItsCctv] 중지 완료 → 이전 배경 복원");
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  YouTube 실시간 배경 (yt-dlp + ffmpeg 청크 → JavaFX MediaPlayer)
     // ══════════════════════════════════════════════════════════════════
-	
     // ══════════════════════════════════════════════════════════════════
     //  1. 중앙 고정 — 초기 위치/테마 복원
     // ══════════════════════════════════════════════════════════════════
-	
     private void resetToCenter() {
         if (clockController == null) return;
         // GOLD 테마 + 기본 반지름 + 화면 중앙
         clockController.resetToDefault();
         saveConfig();
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  2. EXIT — 15초 타이머 확인 다이얼로그
     // ══════════════════════════════════════════════════════════════════
-	
     private void showExitDialog(javafx.stage.Stage owner) {
-		
 		System.out.println(" EXIT — 15초 타이머 확인 다이얼로그 (1)");
-		
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initOwner(owner);
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("종료  —  15초 후 자동 닫힘");
-		
         javafx.scene.control.Label msg =
 		new javafx.scene.control.Label("KootPanKingThree 를 종료할까요?");
         msg.setStyle("-fx-font-size:14px; -fx-padding: 20 24 10 24;");
-		
         javafx.scene.control.Label countLabel =
 		new javafx.scene.control.Label("15초 후 자동으로 닫힙니다.");
         countLabel.setStyle("-fx-font-size:11px; -fx-text-fill:#888; -fx-padding: 0 24 10 24;");
-		
         javafx.scene.control.Button yesBtn = new javafx.scene.control.Button("종료 (Yes)");
         javafx.scene.control.Button noBtn  = new javafx.scene.control.Button("취소 (No)");
         yesBtn.setStyle("-fx-font-size:13px; -fx-pref-width:100;");
         noBtn .setStyle("-fx-font-size:13px; -fx-pref-width:100;");
-		
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(12, yesBtn, noBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER);
         btnRow.setPadding(new javafx.geometry.Insets(0, 0, 16, 0));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(4, msg, countLabel, btnRow);
         root.setStyle("-fx-background-color: white;");
         dlg.setScene(new javafx.scene.Scene(root));
-		
         // 15초 카운트다운
-        final int[] sec = {15};
+		int[] sec = {15};
         javafx.animation.Timeline countdown = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 sec[0]--;
@@ -2102,7 +1864,6 @@ public class KootPanKingThreeApp {
 		);
         countdown.setCycleCount(15);
         countdown.play();
-		
         yesBtn.setOnAction(e -> {
 			System.out.println(" EXIT — 15초 타이머 확인 다이얼로그 (yesBtn.setOnAction)");
             countdown.stop(); dlg.close();
@@ -2114,15 +1875,12 @@ public class KootPanKingThreeApp {
         dlg.setOnHidden(e -> countdown.stop());
         dlg.showAndWait();
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  3. 부팅 자동 실행 — 레지스트리 등록/해제
     // ══════════════════════════════════════════════════════════════════
-	
-    private static final String RUN_KEY =
+    private static  String RUN_KEY =
 	"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    private static final String RUN_VALUE = "KootPanKingThree";
-	
+    private static  String RUN_VALUE = "KootPanKingThree";
     private boolean isAutoStartRegistered() {
         try {
             ProcessBuilder pb = new ProcessBuilder(
@@ -2131,7 +1889,6 @@ public class KootPanKingThreeApp {
             return pb.start().waitFor() == 0;
 		} catch (Exception e) { return false; }
 	}
-	
     private void toggleAutoStart(javafx.scene.control.CheckMenuItem item,
 		javafx.stage.Stage owner) {
 		boolean enable = item.isSelected();
@@ -2164,14 +1921,12 @@ public class KootPanKingThreeApp {
             showAlert(owner, "오류: " + ex.getMessage(), "자동 실행");
 		}
 	}
-	
     private void showAutoCloseAlert(javafx.stage.Stage owner, String message, String title, int seconds) {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initOwner(owner);
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle(title + "  —  " + seconds + "초 후 닫힘");
-		
         javafx.scene.control.Label lbl = new javafx.scene.control.Label(message);
         lbl.setStyle("-fx-font-size:13px; -fx-padding: 18 24 12 24;");
         javafx.scene.control.Button ok = new javafx.scene.control.Button("OK");
@@ -2182,8 +1937,7 @@ public class KootPanKingThreeApp {
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(4, lbl, row);
         root.setStyle("-fx-background-color:white;");
         dlg.setScene(new javafx.scene.Scene(root));
-		
-        final int[] sec = {seconds};
+		int[] sec = {seconds};
         javafx.animation.Timeline t = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), e -> {
                 sec[0]--;
@@ -2197,7 +1951,6 @@ public class KootPanKingThreeApp {
         dlg.setOnHidden(e -> t.stop());
         dlg.show();
 	}
-	
     private void showAlert(javafx.stage.Stage owner, String msg, String title) {
         javafx.scene.control.Alert a = new javafx.scene.control.Alert(
 		javafx.scene.control.Alert.AlertType.ERROR);
@@ -2207,11 +1960,9 @@ public class KootPanKingThreeApp {
         a.setContentText(msg);
         a.showAndWait();
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  4. 생활도구 메뉴
     // ══════════════════════════════════════════════════════════════════
-	
     private javafx.scene.control.Menu buildLifeMenu(javafx.scene.control.ContextMenu popup) {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("생활도구");
         String[][] links = {
@@ -2227,26 +1978,21 @@ public class KootPanKingThreeApp {
             menu.getItems().add(item);
 		}
         menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-		
         javafx.scene.control.MenuItem calItem =
 		new javafx.scene.control.MenuItem("📅 만년달력");
         calItem.setOnAction(ev -> openCalendarHtml(
 		(javafx.stage.Stage) popup.getOwnerWindow()));
-		
         javafx.scene.control.MenuItem calUpdateItem =
 		new javafx.scene.control.MenuItem("🔄 만년달력 갱신");
         calUpdateItem.setOnAction(ev -> updateCalendarHtml(
 		(javafx.stage.Stage) popup.getOwnerWindow()));
-		
         menu.getItems().addAll(calItem, calUpdateItem);
         return menu;
 	}
-	
     private void openBrowser(String url) {
         try { java.awt.Desktop.getDesktop().browse(new java.net.URI(url)); }
         catch (Exception ex) { System.out.println("[Browser] 실패: " + ex.getMessage()); }
 	}
-	
     private java.io.File getCalendarFile() {
         String appData = System.getenv("APPDATA");
         if (appData == null) appData = System.getProperty("user.home");
@@ -2256,7 +2002,6 @@ public class KootPanKingThreeApp {
         if (!dir.exists()) dir.mkdirs();
         return new java.io.File(dir, "calendar.html");
 	}
-	
     private void openCalendarHtml(javafx.stage.Stage owner) {
         java.io.File f = getCalendarFile();
         if (!f.exists()) {
@@ -2266,7 +2011,6 @@ public class KootPanKingThreeApp {
         try { java.awt.Desktop.getDesktop().browse(f.toURI()); }
         catch (Exception ex) { showAlert(owner, "브라우저 열기 실패: " + ex.getMessage(), "만년달력"); }
 	}
-	
     private void updateCalendarHtml(javafx.stage.Stage owner) {
         javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
 		javafx.scene.control.Alert.AlertType.CONFIRMATION);
@@ -2276,9 +2020,9 @@ public class KootPanKingThreeApp {
         confirm.setContentText("임시 공휴일 추가 등 만년달력을 자동 갱신합니다.");
         confirm.showAndWait().ifPresent(btn -> {
             if (btn != javafx.scene.control.ButtonType.OK) return;
-            final String URL =
+			String URL =
 			"https://raw.githubusercontent.com/GarpsuKim/Calendar_Lunar_-_HTML/main/Calendar.html";
-            final java.io.File dest = getCalendarFile();
+			java.io.File dest = getCalendarFile();
             new Thread(() -> {
                 try {
                     java.net.HttpURLConnection con =
@@ -2310,21 +2054,17 @@ public class KootPanKingThreeApp {
 			}, "CalendarUpdate").start();
 		});
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  5. 디지탈 시계 상태 접근 / 설정 다이얼로그
     // ══════════════════════════════════════════════════════════════════
-	
     private boolean getDigitalState() {
-        return clockController != null && FxGPUNeon.ClockController.getDigitalState(clockController);
+        return clockController != null && clockController.getDigitalState();
 	}
-	
     private void setDigitalState(boolean on) {
-        if (clockController != null) FxGPUNeon.ClockController.setDigitalState(clockController, on);
+        if (clockController != null) clockController.setDigitalState(on);
 	}
-	
     // Bug8: 시스템 다크모드 감지 유틸리티
-    private static boolean isSystemDarkMode() {
+    private  boolean isSystemDarkMode() {
         // Windows: 레지스트리 AppsUseLightTheme 키로 판별 (0=다크, 1=라이트)
         try {
             String os = System.getProperty("os.name", "").toLowerCase();
@@ -2343,23 +2083,21 @@ public class KootPanKingThreeApp {
 		} catch (Exception ignored) {}
         return false;
 	}
-    private static java.util.List<String> _cachedFontFamilies = null;
-    private static java.util.List<String> getCachedFontFamilies() {
+    private  java.util.List<String> _cachedFontFamilies = null;
+    private  java.util.List<String> getCachedFontFamilies() {
         if (_cachedFontFamilies == null) {
             _cachedFontFamilies = javafx.scene.text.Font.getFamilies()
 			.stream().limit(200).toList();
 		}
         return _cachedFontFamilies;
 	}
-	
     /** 날짜 / 시분초 통합 설정 다이얼로그. */
     void showDigitalSettingsDialog(javafx.stage.Stage owner) {
         if (clockController == null) return;
-        FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+        FxGPUNeon.AppState st = clockController.getAppState();
         st.neonFaceDate = pendingFaceDateNeon;
         st.neonFaceTime = pendingDigitalNeon;
         st.digitalNeonBlinkStyle = pendingDigitalNeonBlinkStyle;
-		
         boolean darkMode = isSystemDarkMode();
         String dlgBg      = darkMode ? "#2b2b2b" : "#ffffff";
         String dlgFg      = darkMode ? "#e0e0e0" : "#000000";
@@ -2370,25 +2108,20 @@ public class KootPanKingThreeApp {
         String labelStyle  = String.format("-fx-text-fill:%s;", dlgFg);
         String headerStyle = String.format("-fx-font-weight:bold; -fx-font-size:13; -fx-text-fill:%s;", dlgFg);
         String rootStyle   = String.format("-fx-background-color:%s;", dlgBg);
-		
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("날짜 / 시분초 설정");
-		
         java.util.List<String> allFonts = getCachedFontFamilies();
-		
         // ═══════════════════════ 날짜 행 섹션 ════════════════════════
         javafx.scene.control.Label dateHeader = new javafx.scene.control.Label("● 날짜");
         dateHeader.setStyle(headerStyle);
-		
         javafx.scene.control.CheckBox dateOnOff = new javafx.scene.control.CheckBox("표시");
         dateOnOff.setSelected(st.showFaceDate);
         dateOnOff.setStyle(labelStyle);
         javafx.scene.control.CheckBox dateNeonOn = new javafx.scene.control.CheckBox("네온 효과");
         dateNeonOn.setSelected(st.neonFaceDate);
         dateNeonOn.setStyle(labelStyle);
-		
         javafx.scene.control.Label dateFmtLbl = new javafx.scene.control.Label("형식");
         dateFmtLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> dateFmtBox = new javafx.scene.control.ComboBox<>();
@@ -2396,7 +2129,6 @@ public class KootPanKingThreeApp {
         dateFmtBox.getSelectionModel().select(st.faceDateFormatIndex);
         dateFmtBox.setPrefWidth(170);
         dateFmtBox.setStyle(commonInputStyle);
-		
         javafx.scene.control.Label dateFontLbl = new javafx.scene.control.Label("폰트");
         dateFontLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> dateFontBox = new javafx.scene.control.ComboBox<>();
@@ -2405,7 +2137,6 @@ public class KootPanKingThreeApp {
         dateFontBox.setEditable(false);
         dateFontBox.setPrefWidth(180);
         dateFontBox.setStyle(commonInputStyle);
-		
         javafx.scene.control.Label dateSizeLbl = new javafx.scene.control.Label("크기");
         dateSizeLbl.setStyle(labelStyle);
         javafx.scene.control.Spinner<Integer> dateSizeSpinner =
@@ -2413,14 +2144,12 @@ public class KootPanKingThreeApp {
         dateSizeSpinner.setPrefWidth(72);
         dateSizeSpinner.setEditable(true);
         dateSizeSpinner.setStyle(commonInputStyle);
-		
         int drgb = st.faceDateColorRgb;
         javafx.scene.control.Label dateColorLbl = new javafx.scene.control.Label("색");
         dateColorLbl.setStyle(labelStyle);
         javafx.scene.control.ColorPicker dateColorPicker = new javafx.scene.control.ColorPicker(
 		javafx.scene.paint.Color.rgb((drgb>>16)&0xFF,(drgb>>8)&0xFF,drgb&0xFF,((drgb>>24)&0xFF)/255.0));
         dateColorPicker.setPrefWidth(130);
-		
         // 날짜 스크롤
         javafx.scene.control.Label dateScrollLbl = new javafx.scene.control.Label("스크롤");
         dateScrollLbl.setStyle(labelStyle);
@@ -2453,7 +2182,6 @@ public class KootPanKingThreeApp {
         dateSpeedVal.setStyle(labelStyle);
         dateSpeedSlider.valueProperty().addListener((ob,ov,nv) ->
 		dateSpeedVal.setText(String.format("%.1f", nv.doubleValue())));
-		
         javafx.scene.layout.GridPane dateGrid = new javafx.scene.layout.GridPane();
         dateGrid.setHgap(8); dateGrid.setVgap(6);
         dateGrid.add(dateOnOff,    0, 0, 2, 1);
@@ -2465,18 +2193,15 @@ public class KootPanKingThreeApp {
         dateGrid.add(dateScrollLbl, 0, 4); dateGrid.add(dateDirRow,     1, 4, 3, 1);
         dateGrid.add(dateSpeedLbl,  0, 5);
         dateGrid.add(new javafx.scene.layout.HBox(6, dateSpeedSlider, dateSpeedVal), 1, 5, 3, 1);
-		
         // ═══════════════════════ 시분초 행 섹션 ══════════════════════
         javafx.scene.control.Label timeHeader = new javafx.scene.control.Label("● 시분초");
         timeHeader.setStyle(headerStyle);
-		
         javafx.scene.control.CheckBox timeOnOff = new javafx.scene.control.CheckBox("표시");
         timeOnOff.setSelected(st.showDigital);
         timeOnOff.setStyle(labelStyle);
         javafx.scene.control.CheckBox timeNeonOn = new javafx.scene.control.CheckBox("네온 효과");
         timeNeonOn.setSelected(st.neonFaceTime);
         timeNeonOn.setStyle(labelStyle);
-		
         javafx.scene.control.Label timeFmtLbl = new javafx.scene.control.Label("형식");
         timeFmtLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> timeFmtBox = new javafx.scene.control.ComboBox<>();
@@ -2485,7 +2210,6 @@ public class KootPanKingThreeApp {
         timeFmtBox.getSelectionModel().select(st.digitalFormatIndex);
         timeFmtBox.setPrefWidth(170);
         timeFmtBox.setStyle(commonInputStyle);
-		
         javafx.scene.control.Label timeFontLbl = new javafx.scene.control.Label("폰트");
         timeFontLbl.setStyle(labelStyle);
         javafx.scene.control.ComboBox<String> timeFontBox = new javafx.scene.control.ComboBox<>();
@@ -2494,7 +2218,6 @@ public class KootPanKingThreeApp {
         timeFontBox.setEditable(false);
         timeFontBox.setPrefWidth(180);
         timeFontBox.setStyle(commonInputStyle);
-		
         javafx.scene.control.Label timeSizeLbl = new javafx.scene.control.Label("크기");
         timeSizeLbl.setStyle(labelStyle);
         javafx.scene.control.Spinner<Integer> timeSizeSpinner =
@@ -2502,14 +2225,12 @@ public class KootPanKingThreeApp {
         timeSizeSpinner.setPrefWidth(72);
         timeSizeSpinner.setEditable(true);
         timeSizeSpinner.setStyle(commonInputStyle);
-		
         int trgb = st.digitalColorRgb;
         javafx.scene.control.Label timeColorLbl = new javafx.scene.control.Label("색");
         timeColorLbl.setStyle(labelStyle);
         javafx.scene.control.ColorPicker timeColorPicker = new javafx.scene.control.ColorPicker(
 		javafx.scene.paint.Color.rgb((trgb>>16)&0xFF,(trgb>>8)&0xFF,trgb&0xFF,((trgb>>24)&0xFF)/255.0));
         timeColorPicker.setPrefWidth(130);
-		
         // 시분초 스크롤
         javafx.scene.control.Label scrollLbl = new javafx.scene.control.Label("스크롤");
         scrollLbl.setStyle(labelStyle);
@@ -2542,7 +2263,6 @@ public class KootPanKingThreeApp {
         speedVal.setStyle(labelStyle);
         speedSlider.valueProperty().addListener((ob,ov,nv) ->
 		speedVal.setText(String.format("%.1f", nv.doubleValue())));
-		
         javafx.scene.layout.GridPane timeGrid = new javafx.scene.layout.GridPane();
         timeGrid.setHgap(8); timeGrid.setVgap(6);
         timeGrid.add(timeOnOff,    0, 0, 2, 1);
@@ -2554,7 +2274,6 @@ public class KootPanKingThreeApp {
         timeGrid.add(scrollLbl,    0, 4); timeGrid.add(dirRow,          1, 4, 3, 1);
         timeGrid.add(speedLbl,     0, 5);
         timeGrid.add(new javafx.scene.layout.HBox(6, speedSlider, speedVal), 1, 5, 3, 1);
-		
         // ═══════════════════════ 디지탈 네온 점멸 ══════════════════════
         javafx.scene.control.Label blinkHeader = new javafx.scene.control.Label("● 디지탈 네온 점멸");
         blinkHeader.setStyle(headerStyle);
@@ -2576,7 +2295,6 @@ public class KootPanKingThreeApp {
 		}
         javafx.scene.layout.HBox blinkRow1 = new javafx.scene.layout.HBox(14, blinkNone, blinkPulse);
         javafx.scene.layout.HBox blinkRow2 = new javafx.scene.layout.HBox(14, blinkSharp, blinkRandom);
-		
         // ═══════════════════════ 즉시 적용 로직 ══════════════════════
         // 확인 버튼 누르기 전이라도 값 변경 시 AppState에 즉시 반영 + 화면 갱신
         Runnable applyNow = () -> {
@@ -2621,12 +2339,11 @@ public class KootPanKingThreeApp {
             else st.digitalNeonBlinkStyle = FxGPUNeon.AppState.NeonBlinkStyle.NONE;
             // 화면 즉시 반영 — 개별 showDigital/showFaceDate 값을 그대로 사용
             // (setDigitalState 호출 금지: 둘을 같은 값으로 덮어쓰므로)
-            FxGPUNeon.ClockController.applyDigitalSettings(clockController);
+            if (clockController != null) clockController.applyDigitalSettings();
             // 팝업 메뉴 체크 상태 동기화
             if (digitalMenuItem != null)
 			digitalMenuItem.setSelected(getDigitalState());
 		};
-		
         // 모든 컨트롤에 즉시 적용 리스너
         dateOnOff.setOnAction(e -> applyNow.run());
         dateNeonOn.setOnAction(e -> applyNow.run());
@@ -2638,7 +2355,6 @@ public class KootPanKingThreeApp {
         dateColorPicker.valueProperty().addListener((o,ov,nv) -> applyNow.run());
         dateDirGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
         dateSpeedSlider.valueProperty().addListener((o,ov,nv) -> applyNow.run());
-		
         timeOnOff.setOnAction(e -> applyNow.run());
         timeNeonOn.setOnAction(e -> applyNow.run());
         timeFmtBox.getSelectionModel().selectedIndexProperty()
@@ -2650,24 +2366,20 @@ public class KootPanKingThreeApp {
         dirGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
         speedSlider.valueProperty().addListener((o,ov,nv) -> applyNow.run());
         blinkGroup.selectedToggleProperty().addListener((o,ov,nv) -> applyNow.run());
-		
         // ═══════════════════════ 버튼 행 ══════════════════════════
         javafx.scene.control.Button okBtn     = new javafx.scene.control.Button("확인");
         javafx.scene.control.Button cancelBtn = new javafx.scene.control.Button("취소");
         okBtn.setDefaultButton(true); cancelBtn.setCancelButton(true);
         okBtn.setPrefWidth(80);       cancelBtn.setPrefWidth(80);
-		
         okBtn.setOnAction(e -> {
             applyNow.run();      // 마지막 상태 확정
             saveDigitalConfig();
             dlg.close();
 		});
         cancelBtn.setOnAction(e -> dlg.close());
-		
         javafx.scene.layout.HBox btnRow =
 		new javafx.scene.layout.HBox(10, okBtn, cancelBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(10);
         root.setPadding(new javafx.geometry.Insets(16, 18, 14, 18));
         root.setStyle(rootStyle);
@@ -2680,16 +2392,13 @@ public class KootPanKingThreeApp {
             new javafx.scene.control.Separator(),
             btnRow
 		);
-		
         dlg.setScene(new javafx.scene.Scene(root));
         dlg.sizeToScene();
         dlg.showAndWait();
 	}
-	
-	
     private void saveDigitalConfig() {
         if (clockController == null) return;
-        FxGPUNeon.AppState st = FxGPUNeon.ClockController.getAppState(clockController);
+        FxGPUNeon.AppState st = clockController.getAppState();
         config.setProperty("digital.show",        String.valueOf(st.showDigital));
         config.setProperty("digital.formatIndex", String.valueOf(st.digitalFormatIndex));
         config.setProperty("digital.fontFamily",  st.digitalFontFamily);
@@ -2710,11 +2419,9 @@ public class KootPanKingThreeApp {
         config.setProperty("faceDate.scrollSpeed", String.valueOf(st.faceDateScrollSpeed));
         // saveConfig() 는 호출하지 않음 — 이 메서드가 saveConfig() 안에서 호출되므로 재귀 방지
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  YouTube 스트림 URL & 설정 다이얼로그
     // ══════════════════════════════════════════════════════════════════
-	
     /**
 		* [YouTube 스트림 URL & 설정] 다이얼로그.
 		* - URL 입력 필드
@@ -2730,20 +2437,17 @@ public class KootPanKingThreeApp {
         dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("YouTube 스트림 URL & 설정");
-		
         // ── URL 입력 ──────────────────────────────────────────────────
         javafx.scene.control.Label urlLabel = new javafx.scene.control.Label("YouTube URL:");
-        javafx.scene.control.TextField urlField = new javafx.scene.control.TextField(youtubeUrl);
+        javafx.scene.control.TextField urlField = new javafx.scene.control.TextField(AppContext.getYoutubeUrl());
         urlField.setPrefWidth(380);
         urlField.setPromptText("https://www.youtube.com/live/...");
-		
         // ── yt-dlp.exe 경로 ───────────────────────────────────────────
         javafx.scene.control.Label ytdlpLabel = new javafx.scene.control.Label("yt-dlp.exe:");
-        javafx.scene.control.TextField ytdlpField = new javafx.scene.control.TextField(ytdlpPath);
+        javafx.scene.control.TextField ytdlpField = new javafx.scene.control.TextField(AppContext.getYtdlpPath());
         ytdlpField.setPrefWidth(300);
         ytdlpField.setEditable(false);
         ytdlpField.setPromptText("(미지정)");
-		
         javafx.scene.control.Button ytdlpBtn = new javafx.scene.control.Button("yt-dlp.exe 지정");
         ytdlpBtn.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
@@ -2761,15 +2465,12 @@ public class KootPanKingThreeApp {
             java.io.File chosen = fc.showOpenDialog(dlg);
             if (chosen != null) ytdlpField.setText(chosen.getAbsolutePath());
 		});
-		
         // ── ffmpeg.exe 경로 ───────────────────────────────────────────
-        String ffmpegCur = ffmpegPath;
         javafx.scene.control.Label ffmpegLabel = new javafx.scene.control.Label("ffmpeg.exe:");
-        javafx.scene.control.TextField ffmpegField = new javafx.scene.control.TextField(ffmpegCur);
+        javafx.scene.control.TextField ffmpegField = new javafx.scene.control.TextField(AppContext.getFfmpegPath());
         ffmpegField.setPrefWidth(300);
         ffmpegField.setEditable(false);
         ffmpegField.setPromptText("(미지정)");
-		
         javafx.scene.control.Button ffmpegBtn = new javafx.scene.control.Button("ffmpeg.exe 지정");
         ffmpegBtn.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
@@ -2787,27 +2488,20 @@ public class KootPanKingThreeApp {
             java.io.File chosen = fc.showOpenDialog(dlg);
             if (chosen != null) ffmpegField.setText(chosen.getAbsolutePath());
 		});
-		
         // ── 버튼: 확인 / 취소 ─────────────────────────────────────────
         javafx.scene.control.Button okBtn     = new javafx.scene.control.Button("확인");
         javafx.scene.control.Button cancelBtn = new javafx.scene.control.Button("취소");
         okBtn.setDefaultButton(true);
         cancelBtn.setCancelButton(true);
-		
         okBtn.setOnAction(e -> {
             String newUrl    = urlField.getText().trim();
             String newYtdlp  = ytdlpField.getText().trim();
             String newFfmpeg = ffmpegField.getText().trim();
-			
             // exe 경로 ini 저장 (URL과 무관하게 항상 저장)
-            ytdlpPath = newYtdlp;
-            config.setProperty("youtube.ytdlp.path", newYtdlp);
-            ffmpegPath = newFfmpeg;
-            config.setProperty("ffmpeg.path", newFfmpeg);
-			
+            AppContext.setYtdlpPath(newYtdlp);
+            AppContext.setFfmpegPath(newFfmpeg);
             if (!newUrl.isEmpty()) {
-                youtubeUrl = newUrl;
-                config.setProperty("youtube.url", newUrl);
+                AppContext.setYoutubeUrl(newUrl);
                 // exe 경로가 모두 지정된 경우만 재생 시작
                 if (!newYtdlp.isEmpty() && new java.io.File(newYtdlp).exists()
 					&& !newFfmpeg.isEmpty() && new java.io.File(newFfmpeg).exists()) {
@@ -2818,41 +2512,32 @@ public class KootPanKingThreeApp {
             saveConfig();
             dlg.close();
 		});
-		
         cancelBtn.setOnAction(e -> dlg.close());
-		
         // ── 레이아웃 ──────────────────────────────────────────────────
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8);
         grid.setVgap(10);
         grid.setPadding(new javafx.geometry.Insets(16, 18, 10, 18));
-		
         // URL 행
         grid.add(urlLabel,  0, 0);
         grid.add(urlField,  1, 0, 2, 1);
-		
         // yt-dlp 행
         grid.add(ytdlpLabel, 0, 1);
         grid.add(ytdlpField, 1, 1);
         grid.add(ytdlpBtn,   2, 1);
-		
         // ffmpeg 행
         grid.add(ffmpegLabel, 0, 2);
         grid.add(ffmpegField, 1, 2);
         grid.add(ffmpegBtn,   2, 2);
-		
         // 버튼 행
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, okBtn, cancelBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         btnRow.setPadding(new javafx.geometry.Insets(6, 18, 12, 18));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, btnRow);
         root.setStyle("-fx-background-color: white;");
-		
         dlg.setScene(new javafx.scene.Scene(root));
         dlg.showAndWait();
 	}
-	
     /** YouTube / 라이브 스트림 배경 시작. FX 스레드에서 호출. */
     void startYoutube(String url) {
 		if (url == null || url.isEmpty()) return;
@@ -2866,21 +2551,19 @@ public class KootPanKingThreeApp {
                         if (clockController != null) clockController.detachMediaView();
 					}
                     @Override public void onYoutubeFrame(javafx.scene.image.WritableImage frame) {
-                        FxGPUNeon.cameraActive = true;
+                        fxGPUNeon.cameraActive = true;
                         if (clockController != null) clockController.setCameraFrame(frame);
 					}
                     @Override public void clearYoutubeFrame() {
-                        FxGPUNeon.cameraActive = false;
+                        fxGPUNeon.cameraActive = false;
                         if (clockController != null) clockController.setCameraFrame(null);
 					}
                     @Override public void onStatusMessage(String message) {
                         if (clockController != null) clockController.showStatusMessage(message);
 					}
                     @Override public String getSettingsDir() { return SETTINGS_DIR; }
-                    @Override public String getYtDlpPath()  { return ytdlpPath; }
-                    @Override public String getFfmpegPath()  {
-                        return ffmpegPath;
-					}
+                    @Override public String getYtDlpPath()  { return AppContext.getYtdlpPath(); }
+                    @Override public String getFfmpegPath()  { return AppContext.getFfmpegPath(); }
 				});
 				// 테마 변경 시 YouTube 중지 콜백 주입
 				if (clockController != null)
@@ -2888,16 +2571,13 @@ public class KootPanKingThreeApp {
 		}
         ytPlayer.start(url);
 	}
-	
     /** YouTube 배경 중지. FX 스레드에서 호출. */
     void stopYoutube() {
         if (ytPlayer != null) ytPlayer.stop();
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  로컬 MP4 배경 재생
     // ══════════════════════════════════════════════════════════════════
-	
     /**
 		* 로컬 MP4 파일을 시계 배경으로 재생.
 		*  - ffmpeg(ffmpeg.path) 있으면 모든 코덱 지원 (H.265·AV1·VP9 포함)
@@ -2906,11 +2586,9 @@ public class KootPanKingThreeApp {
 	*/
     void startLocalMp4(File file) {
 		if (file == null || !file.exists()) return;
-		
         stopCamera();
         stopItsCctv();
         stopYoutube();
-		
         // ytPlayer 재사용 (HostCallback 은 YouTube 와 동일)
         if (ytPlayer == null) {
             ytPlayer = new BackgroundPlayer.YoutubePlayer(
@@ -2922,38 +2600,35 @@ public class KootPanKingThreeApp {
                         if (clockController != null) clockController.detachMediaView();
 					}
                     @Override public void onYoutubeFrame(javafx.scene.image.WritableImage frame) {
-                        FxGPUNeon.cameraActive = true;
+                        fxGPUNeon.cameraActive = true;
                         if (clockController != null) clockController.setCameraFrame(frame);
 					}
                     @Override public void clearYoutubeFrame() {
-                        FxGPUNeon.cameraActive = false;
+                        fxGPUNeon.cameraActive = false;
                         if (clockController != null) clockController.setCameraFrame(null);
 					}
                     @Override public void onStatusMessage(String message) {
                         if (clockController != null) clockController.showStatusMessage(message);
 					}
                     @Override public String getSettingsDir() { return SETTINGS_DIR; }
-                    @Override public String getYtDlpPath()   { return ytdlpPath; }
-                    @Override public String getFfmpegPath()  { return ffmpegPath; }
+                    @Override public String getYtDlpPath()   { return AppContext.getYtdlpPath(); }
+                    @Override public String getFfmpegPath()  { return AppContext.getFfmpegPath(); }
 				});
 				if (clockController != null)
                 clockController.setStopYoutubeCallback(this::stopYoutube);
 		}
-		
         localMp4LastFile = file.getAbsolutePath();
         ytPlayer.startLocalMp4(file);
         ytPlayer.setVolume(localMp4Volume); // ini에서 복원한 볼륨 즉시 적용
         saveConfig();
         System.out.println("[KPK] 로컬 MP4 재생 시작: " + file.getName());
 	}
-	
     /** 로컬 MP4 재생 중지 (stopYoutube 와 공유). */
     void stopLocalMp4() {
         stopYoutube();
         localMp4LastFile = "";
         saveConfig();
 	}
-	
     /**
 		* ITS 교통 CCTV 선택 다이얼로그 (JavaFX).
 		* 도시명 필터 필드 + ListView 로 구성.
@@ -2965,24 +2640,19 @@ public class KootPanKingThreeApp {
 		javafx.stage.Stage owner,
 		java.util.List<ItsCctvManager.CctvItem> allItems,
 		ItsCctvManager mgr) {
-		
         // ── 필터 바 ───────────────────────────────────────────────────
         javafx.scene.control.TextField filterField =
 		new javafx.scene.control.TextField();
         filterField.setPromptText("도시·지역 이름 입력 (예: 서울, 부산, 고양)");
-		
         javafx.scene.control.Button filterBtn =
 		new javafx.scene.control.Button("필터");
-		
         javafx.scene.control.Label countLabel =
 		new javafx.scene.control.Label("총 " + allItems.size() + "개");
-		
         javafx.scene.layout.HBox filterBar = new javafx.scene.layout.HBox(6,
 		filterField, filterBtn, countLabel);
         filterBar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         javafx.scene.layout.HBox.setHgrow(filterField,
 		javafx.scene.layout.Priority.ALWAYS);
-		
         // ── ListView ──────────────────────────────────────────────────
         javafx.collections.ObservableList<ItsCctvManager.CctvItem> listData =
 		javafx.collections.FXCollections.observableArrayList(allItems);
@@ -2990,7 +2660,6 @@ public class KootPanKingThreeApp {
 		new javafx.scene.control.ListView<>(listData);
         listView.setPrefSize(480, 560);
         if (!listData.isEmpty()) listView.getSelectionModel().selectFirst();
-		
         // ── 필터 로직 ─────────────────────────────────────────────────
         Runnable applyFilter = () -> {
             String kw = filterField.getText().trim();
@@ -3008,15 +2677,12 @@ public class KootPanKingThreeApp {
             countLabel.setText((kw.isEmpty() ? "총 " : "필터 결과 ") + filtered.size() + "개");
             if (!listData.isEmpty()) listView.getSelectionModel().selectFirst();
 		};
-		
         filterBtn.setOnAction(ev -> applyFilter.run());
         filterField.setOnAction(ev -> applyFilter.run());   // Enter 키
-		
         // ── 다이얼로그 구성 ───────────────────────────────────────────
         javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(8,
 		filterBar, listView);
         content.setPadding(new javafx.geometry.Insets(10));
-		
         javafx.scene.control.Dialog<ItsCctvManager.CctvItem> dlg =
 		new javafx.scene.control.Dialog<>();
         dlg.setTitle("ITS 교통 CCTV 선택");
@@ -3025,7 +2691,6 @@ public class KootPanKingThreeApp {
             javafx.scene.control.ButtonType.OK,
 		javafx.scene.control.ButtonType.CANCEL);
         if (owner != null) dlg.initOwner(owner);
-		
         // 더블클릭 → OK 버튼 fire
         listView.setOnMouseClicked(ev -> {
             if (ev.getClickCount() == 2
@@ -3035,7 +2700,6 @@ public class KootPanKingThreeApp {
                 okBtn.fireEvent(new javafx.event.ActionEvent());
 			}
 		});
-		
         dlg.setResultConverter(bt -> {
             if (bt == javafx.scene.control.ButtonType.OK) {
                 ItsCctvManager.CctvItem sel =
@@ -3047,10 +2711,8 @@ public class KootPanKingThreeApp {
 			}
             return null;
 		});
-		
         return dlg.showAndWait().orElse(null);
 	}
-	
     /** 현재 프레임을 APP_DIR 에 저장하고 결과 다이얼로그 표시 */
     void captureCamera(javafx.stage.Stage owner) {
         if (camera == null) return;
@@ -3075,7 +2737,6 @@ public class KootPanKingThreeApp {
 			});
 		}
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  동영상 녹화 기능 (JPEG 프레임 → FFmpeg → MP4)
     //
@@ -3088,18 +2749,15 @@ public class KootPanKingThreeApp {
     //    4) FFmpeg 없으면 프레임 JPEG 들을 ZIP 으로 묶어 폴백 저장
     //    5) 인코딩 완료 후 임시 폴더 삭제
     // ══════════════════════════════════════════════════════════════════
-	
     /**
 		* 동영상 녹화 시작.
 		* @param outputFile 저장할 .mp4 파일 (사용자가 FileChooser로 선택)
 	*/
     void startVideoRecording(File outputFile) {
         if (videoRecording || imageSeqRecording) return; // 이미 녹화 중
-		
         // ── FFmpeg 탐색 + 동작 검증 ──────────────────────────────
         String ffExe = findFfmpeg();
         boolean ffOk = verifyFfmpeg(ffExe);
-		
         if (!ffOk) {
             // FFmpeg 미설정 또는 비정상 → 자동으로 5초 간격 이미지 저장
             System.out.println("[VideoRec] FFmpeg 불가 → 5초 이미지 저장으로 자동 전환");
@@ -3127,7 +2785,6 @@ public class KootPanKingThreeApp {
 			});
             return;
 		}
-		
         // ── FFmpeg 정상 → MP4 녹화 ───────────────────────────────
         String baseName = outputFile.getName().replaceFirst("\\.[^.]+$", "");
         videoTempDir = new File(outputFile.getParentFile(),
@@ -3145,7 +2802,6 @@ public class KootPanKingThreeApp {
 		});
         System.out.println("[VideoRec] 녹화 시작 → " + outputFile.getAbsolutePath());
 	}
-	
     /**
 		* 동영상 녹화 중지 및 MP4 인코딩.
 		* 녹화 중이 아니면 아무것도 하지 않는다.
@@ -3159,21 +2815,17 @@ public class KootPanKingThreeApp {
             if (camVideoItem != null)
 			camVideoItem.setText("🎬 동영상 녹화 시작");
 		});
-		
-        final File tempDir    = videoTempDir;
-        final File outputFile = videoOutputFile;
+		File tempDir    = videoTempDir;
+		File outputFile = videoOutputFile;
         videoTempDir    = null;
         videoOutputFile = null;
         int frameCount = videoFrameIndex.get();
-		
         System.out.println("[VideoRec] 녹화 중지 — 프레임 수: " + frameCount
 		+ " → " + (outputFile != null ? outputFile.getAbsolutePath() : "(null)"));
-		
         if (frameCount == 0 || tempDir == null || outputFile == null) {
             deleteDir(tempDir);
             return;
 		}
-		
         // 백그라운드에서 FFmpeg 인코딩
         new Thread(() -> {
             boolean ffmpegOk = false;
@@ -3183,10 +2835,8 @@ public class KootPanKingThreeApp {
                 System.out.println("[VideoRec] FFmpeg 오류: " + ex.getMessage());
 				AppLogger.logException(ex);
 			}
-			
-            final boolean success = ffmpegOk;
-            final File fallbackZip;
-			
+			boolean success = ffmpegOk;
+			File fallbackZip;
             if (!success) {
                 // 폴백: JPEG 프레임들을 ZIP 으로 저장
                 fallbackZip = new File(outputFile.getParentFile(),
@@ -3195,13 +2845,10 @@ public class KootPanKingThreeApp {
 				} else {
                 fallbackZip = null;
 			}
-			
             deleteDir(tempDir); // 임시 폴더 정리
-			
             Platform.runLater(() -> showVideoResult(success, outputFile, fallbackZip, frameCount));
 		}, "VideoEncoder").start();
 	}
-	
     /**
 		* FFmpeg 으로 JPEG 시퀀스 → MP4 인코딩.
 		* 프레임 레이트는 실제 캡처 FPS 를 추정하여 사용 (기본 15fps).
@@ -3241,7 +2888,6 @@ public class KootPanKingThreeApp {
         System.out.println("[VideoRec] FFmpeg 종료 코드: " + exitCode);
         return exitCode == 0 && outputFile.exists() && outputFile.length() > 0;
 	}
-	
     /**
 		* FFmpeg 실행파일 경로 반환.
 		* ini 의 ffmpeg.path 키 값만 사용한다. 자동 탐색 없음.
@@ -3249,6 +2895,7 @@ public class KootPanKingThreeApp {
 		* @return 실행 가능한 ffmpeg 절대경로, 미설정/파일없음이면 null
 	*/
     private String findFfmpeg() {
+        String ffmpegPath = AppContext.getFfmpegPath();
         if (ffmpegPath == null || ffmpegPath.trim().isEmpty()) {
             System.out.println("[FFmpeg] ffmpeg.path 미설정");
             return null;
@@ -3261,7 +2908,6 @@ public class KootPanKingThreeApp {
         System.out.println("[FFmpeg] 파일 없음: " + ffmpegPath);
         return null;
 	}
-	
     /**
 		* FFmpeg 정상 동작 여부 확인.
 		* ffmpeg -version 실행 후 종료 코드 0 이면 정상.
@@ -3285,7 +2931,6 @@ public class KootPanKingThreeApp {
             return false;
 		}
 	}
-	
     /** JPEG 프레임들을 ZIP 으로 묶기 (FFmpeg 폴백) */
     private void packFramesToZip(File frameDir, File zipFile, int frameCount) {
         try (java.util.zip.ZipOutputStream zos =
@@ -3308,7 +2953,6 @@ public class KootPanKingThreeApp {
 			AppLogger.logException(ex);
 		}
 	}
-	
     /** 임시 디렉토리 재귀 삭제 */
     private void deleteDir(File dir) {
         if (dir == null || !dir.exists()) return;
@@ -3316,11 +2960,9 @@ public class KootPanKingThreeApp {
         if (files != null) for (File f : files) f.delete();
         dir.delete();
 	}
-	
     // ══════════════════════════════════════════════════════════════════
     //  이미지 시퀀스 저장 (FFmpeg 없을 때 대체 모드)
     // ══════════════════════════════════════════════════════════════════
-	
     /**
 		* 5초 간격 이미지 시퀀스 저장 시작.
 		* @param outputDir 이미지를 저장할 폴더
@@ -3340,7 +2982,6 @@ public class KootPanKingThreeApp {
 		});
         System.out.println("[ImgSeq] 시작 → " + outputDir.getAbsolutePath());
 	}
-	
     /**
 		* 이미지 시퀀스 저장 중지. 저장 중이 아니면 아무것도 하지 않는다.
 	*/
@@ -3353,25 +2994,22 @@ public class KootPanKingThreeApp {
 		});
         File dir = imageSeqOutputDir;
         imageSeqOutputDir = null;
-		
         int count = 0;
         if (dir != null && dir.exists()) {
             File[] files = dir.listFiles(f -> f.getName().endsWith(".jpg"));
             count = (files != null) ? files.length : 0;
 		}
-        final int saved = count;
-        final File finalDir = dir;
-        Platform.runLater(() -> showImageSeqResult(finalDir, saved));
+		int saved = count;
+		File Dir = dir;
+        Platform.runLater(() -> showImageSeqResult(Dir, saved));
         System.out.println("[ImgSeq] 중지 — 저장 파일 수: " + saved);
 	}
-	
     /** 이미지 시퀀스 저장 완료 다이얼로그 */
     private void showImageSeqResult(File dir, int count) {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("이미지 저장 완료");
-		
         String msg = (dir != null && dir.exists())
 		? "✅ 이미지 저장 완료\n\n"
 		+ "저장 위치: " + dir.getAbsolutePath() + "\n"
@@ -3380,39 +3018,32 @@ public class KootPanKingThreeApp {
 		+ "FFmpeg 설치 후 MP4 저장 가능:\n"
 		+ "https://ffmpeg.org/download.html"
 		: "❌ 이미지 저장 실패 또는 폴더 없음";
-		
         javafx.scene.control.TextArea ta = new javafx.scene.control.TextArea(msg);
         ta.setEditable(false);
         ta.setWrapText(true);
         ta.setPrefSize(420, 200);
-		
         javafx.scene.control.Button btnOk = new javafx.scene.control.Button("확인");
         btnOk.setDefaultButton(true);
         btnOk.setOnAction(ev -> dlg.close());
-		
         javafx.scene.control.Button btnOpen = new javafx.scene.control.Button("폴더 열기");
         btnOpen.setDisable(dir == null || !dir.exists());
         btnOpen.setOnAction(ev -> {
             try { if (dir != null) java.awt.Desktop.getDesktop().open(dir); }
             catch (Exception ex) { System.out.println("[ImgSeq] 폴더 열기 실패: " + ex.getMessage()); }
 		});
-		
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(10, btnOpen, btnOk);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         btnRow.setPadding(new javafx.geometry.Insets(6, 10, 6, 10));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(8, ta, btnRow);
         root.setPadding(new javafx.geometry.Insets(12));
         dlg.setScene(new javafx.scene.Scene(root));
         dlg.sizeToScene();
         dlg.show();
-		
         javafx.animation.PauseTransition pause =
 		new javafx.animation.PauseTransition(javafx.util.Duration.seconds(30));
         pause.setOnFinished(ev -> dlg.close());
         pause.play();
 	}
-	
     /** 인코딩 완료 결과 다이얼로그 */
     private void showVideoResult(boolean mp4Ok, File outputFile,
 		File fallbackZip, int frameCount) {
@@ -3420,7 +3051,6 @@ public class KootPanKingThreeApp {
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("동영상 저장 완료");
-		
         String msg;
         if (mp4Ok) {
             long mb = outputFile.length() / (1024 * 1024);
@@ -3442,16 +3072,13 @@ public class KootPanKingThreeApp {
 			} else {
             msg = "❌ 저장 실패. 프레임 수: " + frameCount;
 		}
-		
         javafx.scene.control.TextArea ta = new javafx.scene.control.TextArea(msg);
         ta.setEditable(false);
         ta.setWrapText(true);
         ta.setPrefSize(420, 220);
-		
         javafx.scene.control.Button btnOk = new javafx.scene.control.Button("확인");
         btnOk.setDefaultButton(true);
         btnOk.setOnAction(ev -> dlg.close());
-		
         // 파일 탐색기에서 열기 버튼
         File showFile = mp4Ok ? outputFile : fallbackZip;
         javafx.scene.control.Button btnOpen = new javafx.scene.control.Button("폴더 열기");
@@ -3464,24 +3091,20 @@ public class KootPanKingThreeApp {
                 System.out.println("[VideoRec] 폴더 열기 실패: " + ex.getMessage());
 			}
 		});
-		
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(10, btnOpen, btnOk);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         btnRow.setPadding(new javafx.geometry.Insets(6, 10, 6, 10));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(8, ta, btnRow);
         root.setPadding(new javafx.geometry.Insets(12));
         dlg.setScene(new javafx.scene.Scene(root));
         dlg.sizeToScene();
         dlg.show();
-		
         // 30초 자동 닫힘
         javafx.animation.PauseTransition pause =
 		new javafx.animation.PauseTransition(javafx.util.Duration.seconds(30));
         pause.setOnFinished(ev -> dlg.close());
         pause.play();
 	}
-	
     /** 간단한 정보 알림 다이얼로그 */
     private void showAlert(String title, String msg) {
         javafx.application.Platform.runLater(() -> {
@@ -3493,14 +3116,12 @@ public class KootPanKingThreeApp {
             alert.show();
 		});
 	}
-	
     /** 미구현 메뉴 placeholder */
     private javafx.scene.control.MenuItem menuItem(String name) {
         javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(name);
         item.setOnAction(e -> System.out.println("[Menu] " + name + " (미구현)"));
         return item;
 	}
-	
     // ──────────────────────────────────────────────────────────────────
     // 캘린더 메뉴 항목 팩토리 — 라벨 + 동작 연결 (5)
     // ──────────────────────────────────────────────────────────────────
@@ -3509,7 +3130,6 @@ public class KootPanKingThreeApp {
         item.setOnAction(e -> new Thread(action::run, "CalMenuFetch").start());
         return item;
 	}
-	
     // ──────────────────────────────────────────────────────────────────
     // 캘린더 검색 실행 → showScheduleDialog 공유 (5)(6)
     //
@@ -3524,7 +3144,6 @@ public class KootPanKingThreeApp {
         try {
             String title;
             String content;
-			
             if ("google".equals(provider)) {
                 if (!googleCalendarService.isInitialized()) {
                     javafx.application.Platform.runLater(() ->
@@ -3556,7 +3175,6 @@ public class KootPanKingThreeApp {
 					title  = "📧 구글 캘린더";
 				}
                 content = GoogleCalendarService.formatEvents(title, events);
-				
 				} else { // naver
                 if (!naverCalendarService.isInitialized()) {
                     javafx.application.Platform.runLater(() ->
@@ -3589,21 +3207,17 @@ public class KootPanKingThreeApp {
 				}
                 content = NaverCalendarService.formatEvents(title, events);
 			}
-			
-            final String dlgTitle   = title;
-            final String dlgContent = content;
-			
+			String dlgTitle   = title;
+			String dlgContent = content;
             // 6) showScheduleDialog 공유 — FX 스레드에서 표시
             javafx.application.Platform.runLater(() ->
 			showScheduleDialog(dlgTitle, dlgContent));
-			
 			} catch (Exception e) {
-            final String err = e.getMessage();
+			String err = e.getMessage();
             javafx.application.Platform.runLater(() ->
 			showScheduleDialog("캘린더 오류", "일정 조회 실패:\n" + err));
 		}
 	}
-	
     // ── 시스템 메뉴 동작 ────────────────────────────────────────
     private void openLogFile() {
         try {
@@ -3617,7 +3231,6 @@ public class KootPanKingThreeApp {
             System.err.println("로그 파일 열기 실패: " + e.getMessage());
 		}
 	}
-	
     private void openConfigFile() {
 		/*
 			try {
@@ -3629,7 +3242,6 @@ public class KootPanKingThreeApp {
 			}
 		*/
 	}
-	
     private void downloadIniFile() {
 		/*
 			try {
@@ -3642,23 +3254,19 @@ public class KootPanKingThreeApp {
 			}
 		*/
 	}
-	
     /** About 다이얼로그 — 48초 카운트다운 후 자동 닫힘, 컬러 항목 + 블로그 링크 */
     private void showAboutDialog() {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.setAlwaysOnTop(true);
         dlg.setResizable(false);
-		
         // ── 48초 카운트다운 타이틀 ──────────────────────────────
-        final int[] sec = {48};
+		int[] sec = {48};
         dlg.setTitle(thisProgramName + "  —  " + sec[0] + "초 후 닫힘");
-		
         // ── 컬러 텍스트 항목 ────────────────────────────────────
         javafx.scene.text.TextFlow tf = new javafx.scene.text.TextFlow();
         tf.setPadding(new javafx.geometry.Insets(12, 16, 8, 16));
         tf.setPrefWidth(460);
-		
         String[][] items = {
             {"• 대리석 질감 아나로그 시계",                                         "#2aa198"},
             {"• 자유 자재 시계 디자인",                                             "#268bd2"},
@@ -3672,12 +3280,10 @@ public class KootPanKingThreeApp {
             t.setStyle("-fx-font-family: 'Malgun Gothic'; -fx-font-size: 14px;");
             tf.getChildren().add(t);
 		}
-		
         // ── 구분선 ────────────────────────────────────────────
         javafx.scene.control.Separator sep = new javafx.scene.control.Separator();
-		
         // ── 블로그 링크 ──────────────────────────────────────
-        final String blogUrl = "https://blog.naver.com/garpsu/224213400580";
+		String blogUrl = "https://blog.naver.com/garpsu/224213400580";
         javafx.scene.control.Hyperlink link = new javafx.scene.control.Hyperlink(
 		"→ 자세한 안내 : " + blogUrl);
         link.setStyle("-fx-font-family: 'Malgun Gothic'; -fx-font-size: 12px;");
@@ -3688,27 +3294,21 @@ public class KootPanKingThreeApp {
                 System.out.println("[About] 링크 열기 실패: " + ex.getMessage());
 			}
 		});
-		
         // ── OK 버튼 ───────────────────────────────────────────
         javafx.scene.control.Button okBtn = new javafx.scene.control.Button("OK");
         okBtn.setDefaultButton(true);
-		
         javafx.scene.layout.HBox linkBox = new javafx.scene.layout.HBox(link);
         linkBox.setPadding(new javafx.geometry.Insets(4, 10, 2, 10));
-		
         javafx.scene.layout.HBox btnBox = new javafx.scene.layout.HBox(okBtn);
         btnBox.setAlignment(javafx.geometry.Pos.CENTER);
         btnBox.setPadding(new javafx.geometry.Insets(4, 10, 8, 10));
-		
         // ── 레이아웃 ─────────────────────────────────────────
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(tf, sep, linkBox, btnBox);
         dlg.setScene(new javafx.scene.Scene(root));
-		
         // ── 카운트다운 타이머 ─────────────────────────────────
-        final javafx.animation.Timeline[] holder = {null};
+		javafx.animation.Timeline[] holder = {null};
         Runnable doClose = () -> { if (holder[0] != null) holder[0].stop(); dlg.close(); };
         okBtn.setOnAction(ev -> doClose.run());
-		
         javafx.animation.Timeline tl = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 sec[0]--;
@@ -3718,11 +3318,9 @@ public class KootPanKingThreeApp {
 			tl.setCycleCount(48);
 			holder[0] = tl;
 			dlg.setOnHidden(ev -> { if (holder[0] != null) holder[0].stop(); });
-			
 			dlg.show();
 			tl.play();
 	}
-	
     /** 일정 다이얼로그 — 300초 카운트다운 후 자동 닫힘 (초기화 3일 표시 및 팝업 메뉴 공유) */
     public void showScheduleDialog(String title, String content) {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
@@ -3730,7 +3328,6 @@ public class KootPanKingThreeApp {
         dlg.setTitle(title);
         dlg.setAlwaysOnTop(true);
         dlg.setResizable(true);
-		
         // ── 내용 ─────────────────────────────────────────────
         javafx.scene.control.TextArea ta = new javafx.scene.control.TextArea(content);
         ta.setEditable(false);
@@ -3739,36 +3336,27 @@ public class KootPanKingThreeApp {
         javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(ta);
         sp.setFitToWidth(true);
         sp.setFitToHeight(true);
-		
         // ── 하단 ─────────────────────────────────────────────
         javafx.scene.control.Label countdown = new javafx.scene.control.Label("자동 닫힘: 300초");
         countdown.setStyle("-fx-text-fill: #888888; -fx-font-size: 11px;");
-		
         javafx.scene.control.Button closeBtn = new javafx.scene.control.Button("닫기");
         closeBtn.setDefaultButton(true);
-		
         javafx.scene.layout.HBox bottom = new javafx.scene.layout.HBox(12, countdown, closeBtn);
         bottom.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         bottom.setPadding(new javafx.geometry.Insets(6, 10, 6, 10));
-		
         // ── 레이아웃 ─────────────────────────────────────────
         javafx.scene.layout.BorderPane root = new javafx.scene.layout.BorderPane();
         root.setCenter(sp);
         root.setBottom(bottom);
-		
         dlg.setScene(new javafx.scene.Scene(root, 480, 400));
-		
         // ── 300초 카운트다운 타이머 ───────────────────────────
-        final int[] remain = {300};
-        final javafx.animation.Timeline[] holder = {null};
-		
+		int[] remain = {300};
+		javafx.animation.Timeline[] holder = {null};
         Runnable doClose = () -> {
             if (holder[0] != null) holder[0].stop();
             dlg.close();
 		};
-		
         closeBtn.setOnAction(e -> doClose.run());
-		
         javafx.animation.Timeline tl = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 remain[0]--;

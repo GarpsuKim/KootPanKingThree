@@ -66,23 +66,23 @@ import javafx.scene.layout.Region;
 public class FxGPUNeon {
     private static final Logger LOG = Logger.getLogger(FxGPUNeon.class.getName());
     private static final String thisProgramName = "[KootPanKingThree 끝판왕 (v2.0)]";
-    public static boolean cameraActive = false;  //  카메라 스트림 활성 여부.
+    public boolean cameraActive = false;  //  카메라 스트림 활성 여부.
 	// KootPanKingThree.startCamera/stopCamera 에서 직접 읽고 씀.
 	// stopCamera() 에서 false 로 먼저 세팅 → runLater 큐 잔류 프레임 차단.
-    public static boolean cameraFlipH = false;   // 좌우 반전 (KootPanKingThree에서 설정)
-    public static boolean cameraFlipV = false;   // 상하 반전 (KootPanKingThree에서 설정)
-	
+    public boolean cameraFlipH = false;   // 좌우 반전 (KootPanKingThree에서 설정)
+    public boolean cameraFlipV = false;   // 상하 반전 (KootPanKingThree에서 설정)
+
 	// ───────────────────────── Controller ─────────────────────────
-    static final class ClockController {
+    final class ClockController {
         private final Stage mainStage;
         private String  arg1;
         private String  arg2;
         private String  arg3;
-		
+
         private final AppState state = new AppState();
         private final SceneAssembler assembler = new SceneAssembler(state);
         private final OverlayRenderer overlayRenderer = new OverlayRenderer(state);
-		
+
         private PerspectiveCamera camera;
         private Canvas            overlay;
         private StackPane         root;
@@ -90,7 +90,7 @@ public class FxGPUNeon {
         private AnimationTimer               timer;
         private javafx.scene.Group ytHiddenGroup = null; // YouTube MediaView 렌더링용 (opacity=0)
         private javafx.scene.control.Label statusLabel = null; // YouTube 로딩 메시지
-		
+
         // ── 그래픽 팝업 메뉴 (구 MenuController 그래픽 담당 부분) ─────
         private final ContextMenu      popup      = new ContextMenu();
         private final CheckMenuItem    menuSwing  = new CheckMenuItem("흔들림");
@@ -101,26 +101,69 @@ public class FxGPUNeon {
         private boolean rightDragMoved;
         private Stage   setupStage;
         private boolean setupStageOpening;
+        // ── FX INI 저장/복원 ──────────────────────────────────────────
+        private FxIniManager fxIni = null;
+        private javafx.animation.Timeline saveDebounceTimer = null;
+        /** loadFxState() 에서 읽은 저장된 창 위치 (start() 후 적용) */
+        private double pendingStageX = Double.NaN;
+        private double pendingStageY = Double.NaN;
         /** 카메라 스트림 활성 여부.
 			*  KootPanKingThree.startCamera/stopCamera 에서 직접 읽고 씀.
 		*  stopCamera() 에서 false 로 먼저 세팅 → runLater 큐 잔류 프레임 차단. */
         // boolean cameraActive = false;
-		
+
         ClockController(Stage mainStage, String arg1, String arg2, String arg3,
 			java.util.function.Consumer<ContextMenu> appMenuBuilder) {
             this.arg1 = arg1;
             this.arg2 = arg2;
             this.arg3 = arg3;
             this.mainStage = Objects.requireNonNull(mainStage);
+            System.out.println("[ClockController] , arg1, arg2, arg3 = [" + arg1 + "],[" + arg2  + "],[" + arg3  + "]");
             buildGraphicsMenu(appMenuBuilder);
-			
-            System.out.println("[ClockController] , arg1 = " + arg1);
-            System.out.println("[ClockController] , arg2 = " + arg2);
-            System.out.println("[ClockController] , arg3 = " + arg3);
 		}
-		
+
+        // ── FX INI 저장/복원 메서드 ──────────────────────────────────
+        /** start() 이전에 호출. 이후 start() 내부에서 자동으로 상태를 복원한다. */
+        public void setIniFile(String path) {
+            System.out.println("[setIniFile] 파일 지정: [" + path + "]");
+            if (path == null || path.isEmpty()) return;
+            fxIni = new FxIniManager(path);
+		}
+
+        /** 300ms 디바운스 저장 — 드래그·스크롤 등 연속 이벤트에서 호출 */
+        public void scheduleSave() {
+            if (fxIni == null) return;
+            if (saveDebounceTimer != null) saveDebounceTimer.stop();
+            saveDebounceTimer = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(
+                    javafx.util.Duration.millis(300),
+				e -> saveFxNow()));
+				saveDebounceTimer.setCycleCount(1);
+				saveDebounceTimer.play();
+		}
+
+        /** 즉시 저장 (FX 스레드에서 호출) */
+        private void saveFxNow() {
+            if (fxIni == null) return;
+            fxIni.save(state, mainStage.getX(), mainStage.getY());
+		}
+
+        /**
+			* INI 에서 AppState 를 복원한다.
+			* start() 내부에서 buildMaterials() 직후, buildAll() 직전에 호출된다.
+			* 창 위치는 pendingStageX/Y 에 보관 → mainStage.show() 후에 적용.
+		*/
+        private void loadFxState() {
+            if (fxIni == null) return;
+            double[] pos = fxIni.load(state);
+            if (pos != null && !Double.isNaN(pos[0]) && !Double.isNaN(pos[1])) {
+                pendingStageX = pos[0];
+                pendingStageY = pos[1];
+			}
+		}
+
         void start() {
-			
+
             // 다중 모니터 전체를 덮는 가상 데스크탑 영역 계산
             double vdMinX = Double.MAX_VALUE, vdMinY = Double.MAX_VALUE;
             double vdMaxX = -Double.MAX_VALUE, vdMaxY = -Double.MAX_VALUE;
@@ -134,32 +177,34 @@ public class FxGPUNeon {
             Rectangle2D vb = new Rectangle2D(vdMinX, vdMinY, vdMaxX - vdMinX, vdMaxY - vdMinY);
             state.viewportWidth  = (int) Math.ceil(vb.getWidth());
             state.viewportHeight = (int) Math.ceil(vb.getHeight());
-			
+
+            // ── INI 복원: buildMaterials() 이전에 AppState 를 먼저 채운다 ──────
+            loadFxState();
             assembler.buildMaterials();
             assembler.buildAll();
-			
+
             camera = new PerspectiveCamera(true);
             updateCamera();
-			
+
             subScene = new SubScene(assembler.root3D, state.viewportWidth, state.viewportHeight, true, SceneAntialiasing.BALANCED);
             subScene.setFill(Color.TRANSPARENT);
             subScene.setCamera(camera);
             subScene.setPickOnBounds(true);
-			
+
             overlay = new Canvas(state.viewportWidth, state.viewportHeight);
             overlay.setMouseTransparent(true);
             overlay.setOpacity(state.clockOpacity);
             assembler.root3D.setOpacity(state.clockOpacity);
-			
+
             root = new StackPane(subScene, overlay);
             root.setStyle("-fx-background-color: transparent;");
-			
+
             // YouTube 프레임 캡처용 숨겨진 그룹 (opacity=0, 씬 그래프 렌더링 필요)
             ytHiddenGroup = new javafx.scene.Group();
             ytHiddenGroup.setOpacity(0);
             ytHiddenGroup.setMouseTransparent(true);
             root.getChildren().add(ytHiddenGroup);
-			
+
             // YouTube 로딩 메시지 라벨 (화면 하단 중앙)
             statusLabel = new javafx.scene.control.Label();
             statusLabel.setVisible(false);
@@ -173,11 +218,11 @@ public class FxGPUNeon {
             javafx.scene.layout.StackPane.setAlignment(statusLabel, javafx.geometry.Pos.BOTTOM_CENTER);
             javafx.scene.layout.StackPane.setMargin(statusLabel, new javafx.geometry.Insets(0, 0, 30, 0));
             root.getChildren().add(statusLabel);
-			
+
             Scene scene = new Scene(root, state.viewportWidth, state.viewportHeight, Color.TRANSPARENT);
             installHandlers(scene);
             startAnimation();
-			
+
             mainStage.initStyle(StageStyle.TRANSPARENT);
             mainStage.setAlwaysOnTop(true);
             mainStage.setTitle("KootPanKingThree Refactored");
@@ -187,16 +232,42 @@ public class FxGPUNeon {
             mainStage.setWidth(vb.getWidth());
             mainStage.setHeight(vb.getHeight());
             mainStage.setOnHidden(e -> { if (timer != null) timer.stop(); });
-			
+
 			Rectangle2D vb0 = Screen.getPrimary().getVisualBounds();
-			// mainStage.setWidth(800);
-			// mainStage.setHeight(600);
 			mainStage.setX(vb0.getMinX() + (vb0.getWidth() - mainStage.getWidth()) / 2);
 			mainStage.setY(vb0.getMinY() + (vb0.getHeight() - mainStage.getHeight()) / 2);
             mainStage.show();
             mainStage.requestFocus();
+
+            // ── show() 이후: 저장된 위치/배경/레인보우 복원 ────────────
+            javafx.application.Platform.runLater(() -> {
+                // 창 위치 복원
+                if (!Double.isNaN(pendingStageX) && !Double.isNaN(pendingStageY)) {
+                    mainStage.setX(pendingStageX);
+                    mainStage.setY(pendingStageY);
+                    System.out.println("[FxIni] 창 위치 복원: (" + pendingStageX + ", " + pendingStageY + ")");
+				}
+                // 배경 이미지 복원
+                if (state.slideshowEnabled && !state.slideshowFiles.isEmpty()) {
+                    state.slideshowIndex = 0;
+                    loadBackgroundImageFromFile(state.slideshowFiles.get(0));
+                    System.out.println("[FxIni] 슬라이드쇼 복원: " + state.slideshowFiles.size() + "장");
+					} else if (state.backgroundImageFile != null && state.backgroundImageFile.exists()) {
+                    loadBackgroundImageFromFile(state.backgroundImageFile);
+                    System.out.println("[FxIni] 배경 이미지 복원: " + state.backgroundImageFile.getName());
+				}
+                // 레인보우 복원
+                if (state.rainbowMode) {
+                    assembler.startRainbow(0);
+                    System.out.println("[FxIni] 레인보우 모드 복원");
+				}
+                // 디지탈 시계 재빌드 (복원된 showDigital/showFaceDate 반영)
+                if (state.showDigital || state.showFaceDate) {
+                    assembler.buildFaceDateTimeGroup();
+				}
+			});
 		}
-		
+
         /** 현재 Stage 반환 — 앱 메뉴/다이얼로그 owner 연결용 */
         Stage getStage() { return mainStage; }
         /**
@@ -205,28 +276,28 @@ public class FxGPUNeon {
         void startYoutube(String streamUrl) {
             // YouTube/WebView 기능 제거됨
 		}
-		
+
         /** 제거된 YouTube/WebView 기능 호환용 no-op 메서드. */
         void showYoutubeLoading(boolean show) {
             // YouTube/WebView 기능 제거됨
 		}
-		
+
         /** 제거된 YouTube/WebView 기능 호환용 no-op 메서드. */
         void stopYoutube() {
             if (stopYoutubeCallback != null) stopYoutubeCallback.run();
 		}
-		
+
         private Runnable stopYoutubeCallback = null;
         /** KootPanKingThree에서 주입. 테마 변경 시 YouTube 중지에 사용. */
         public void setStopYoutubeCallback(Runnable cb) { this.stopYoutubeCallback = cb; }
-		
+
         private Runnable onDigitalSettingsRequest = null;
         /** 디지탈 영역 더블클릭 시 설정 다이얼로그 콜백. KootPanKingThree에서 주입. */
         public void setOnDigitalSettingsRequest(Runnable cb) {
             this.onDigitalSettingsRequest = cb;
             assembler.setFaceTimeClickHandler(cb);
 		}
-		
+
         private void installHandlers(Scene scene) {
             // ── 마우스 이벤트 (구 MenuController.install) ───────────────
             subScene.setOnMousePressed(e -> {
@@ -263,6 +334,7 @@ public class FxGPUNeon {
                     state.autoSpeed = state.paused ? 0.0 : state.savedSpeed;
                     assembler.applyRootRotation();
 				}
+                scheduleSave(); // 드래그/회전 종료 시 저장
 			});
             subScene.setOnScroll(e -> {
                 state.coinRadius = AppState.clamp(
@@ -270,9 +342,10 @@ public class FxGPUNeon {
 				AppState.COIN_RADIUS_MIN, AppState.COIN_RADIUS_MAX);
                 assembler.applyGeometryScale();
                 updateCamera();
+                scheduleSave(); // 크기 변경 시 저장
                 e.consume();
 			});
-			
+
             subScene.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                     popup.show(subScene, e.getScreenX(), e.getScreenY());
@@ -296,13 +369,15 @@ public class FxGPUNeon {
 				}
 			});
 		}
-		
+
         // ── 그래픽 팝업 메뉴 구성 ────────────────────────────────────
         private void buildGraphicsMenu(java.util.function.Consumer<ContextMenu> appMenuBuilder) {
+            System.out.println("[buildGraphicsMenu]");
+
             MenuItem header = new MenuItem("KootPanKingThree");
             header.setDisable(true);
             header.setStyle("-fx-opacity:1; -fx-text-fill:#555555; -fx-font-weight:bold;");
-			
+
             menuSwing.setSelected(!state.paused);
             menuSwing.setOnAction(e -> {
                 state.paused = !menuSwing.isSelected();
@@ -312,7 +387,7 @@ public class FxGPUNeon {
                 menuSwing.setSelected(!state.paused);
                 if (onPopupShowing != null) onPopupShowing.run();
 			});
-			
+
             // header + 흔들림만 추가.
             // 중앙고정·디지탈on/off·디지탈시계설정·메인시계설정·separator 는
             // appMenuBuilder(KootPanKingThree.addAppMenuItems) 가 순서대로 추가한다.
@@ -324,7 +399,7 @@ public class FxGPUNeon {
             // 앱 제어 항목은 KootPanKingThree 가 추가
             if (appMenuBuilder != null) appMenuBuilder.accept(popup);
 		}
-		
+
         // ── 시계 설정 패널 토글 ──────────────────────────────────────
         private void toggleSetup() {
             if (setupStage != null && setupStage.isShowing()) {
@@ -333,33 +408,37 @@ public class FxGPUNeon {
             if (setupStageOpening) return;
             setupStageOpening = true;
             try {
+                // onBloomUpdate 래핑: 색상/네온 변경 시 자동 저장
+                Runnable bloomAndSave = () -> { updateSubSceneBloom(); scheduleSave(); };
                 SetupPanelController panel = new SetupPanelController(
                     state, assembler, overlay,
                     this::updateCamera,
                     this::loadBackgroundImageFromFile,
                     this::configureSlideshowFromSelectedFile,
                     this::toggleSetup,
-                    this::updateSubSceneBloom,
-				this::stopYoutube);  // 테마 변경 시 YouTube 중지
+                    bloomAndSave,
+                    this::stopYoutube,
+				this::scheduleSave);  // onSave: 비색상 변경도 즉시 저장
                 setupStage = panel.build(mainStage);
                 setupStage.setOnHidden(e -> setupStage = null);
 				} finally {
                 setupStageOpening = false;
 			}
 		}
-		
+
         /** 메인 시계 설정 패널 열기 — KootPanKingThree 등 외부에서 호출 가능. */
         public void openSetup() { toggleSetup(); }
-		
+
         // ── 종료 확인 다이얼로그 ─────────────────────────────────────
         void confirmExit() {
+	        System.out.println("[confirmExit()]");
             Stage dialog = new Stage();
             dialog.initOwner(mainStage);
             dialog.initStyle(StageStyle.UTILITY);
             dialog.initModality(Modality.APPLICATION_MODAL);
             dialog.setAlwaysOnTop(true);
             dialog.setTitle("종료 확인");
-			
+
             Label label     = new Label("프로그램을 종료하시겠습니까?");
             Label timerLbl  = new Label("자동 취소까지: 30초");
             timerLbl.setStyle("-fx-text-fill:#888888; -fx-font-size:11px;");
@@ -367,15 +446,17 @@ public class FxGPUNeon {
             Button no  = new Button("아니오 (30)");
             yes.setDefaultButton(true);
             no.setCancelButton(true);
-			
+
             final javafx.animation.Timeline[] holder = {null};
             final boolean[] decided = {false};
-			
+
             Runnable doExit = () -> {
                 decided[0] = true;
                 if (holder[0] != null) holder[0].stop();
-                dialog.close();
+		        System.out.println("[dialog.close()]");
+				dialog.close();
                 try { if (setupStage != null) setupStage.close(); mainStage.close(); } catch (Exception e) { AppLogger.logException(e);}
+		        System.out.println("[Platform.exit()]");
 				Platform.exit();
 			};
             Runnable doCancel = () -> {
@@ -385,13 +466,13 @@ public class FxGPUNeon {
 			};
             yes.setOnAction(e -> doExit.run());
             no.setOnAction(e -> doCancel.run());
-			
+
             HBox btns = new HBox(10, yes, no); btns.setAlignment(javafx.geometry.Pos.CENTER);
             VBox root = new VBox(10, label, timerLbl, btns);
             root.setAlignment(javafx.geometry.Pos.CENTER);
             root.setStyle("-fx-padding:16; -fx-background-color:white;");
             dialog.setScene(new Scene(root, 300, 130));
-			
+
             final int[] remain = {30};
             javafx.animation.Timeline tl = new javafx.animation.Timeline(
                 new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
@@ -407,7 +488,7 @@ public class FxGPUNeon {
 				dialog.show();
 				tl.play();
 		}
-		
+
         // ── FX 알림 헬퍼 ────────────────────────────────────────────
         void showInfo(String title, String text) {
             Stage d = new Stage();
@@ -420,48 +501,48 @@ public class FxGPUNeon {
             root.setStyle("-fx-padding:16; -fx-background-color:white;");
             d.setScene(new Scene(root, 420, 140)); d.showAndWait();
 		}
-		
+
         void showError(String title, String text) { showInfo(title, text); }
-		
-        private static double computeNeonOpacity(AppState s) {
-            switch (s.neonBlinkStyle) {
+
+        private double computeNeonOpacity() {
+            switch (state.neonBlinkStyle) {
                 case NONE -> { return 1.0; }
                 case PULSE -> {
-                    s.neonFlickerPhase += s.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
-                    if (s.neonFlickerPhase >= 2.0 * Math.PI) {
-                        s.neonFlickerPhase -= 2.0 * Math.PI;
+                    state.neonFlickerPhase += state.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
+                    if (state.neonFlickerPhase >= 2.0 * Math.PI) {
+                        state.neonFlickerPhase -= 2.0 * Math.PI;
 					}
-                    double wave = 0.5 + 0.5 * Math.sin(s.neonFlickerPhase);
-                    return AppState.clamp(1.0 - s.neonFlickerDepth * (1.0 - wave), 0.0, 1.0);
+                    double wave = 0.5 + 0.5 * Math.sin(state.neonFlickerPhase);
+                    return AppState.clamp(1.0 - state.neonFlickerDepth * (1.0 - wave), 0.0, 1.0);
 				}
                 case SHARP -> {
-                    s.neonFlickerPhase += s.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
-                    if (s.neonFlickerPhase >= 2.0 * Math.PI) {
-                        s.neonFlickerPhase -= 2.0 * Math.PI;
+                    state.neonFlickerPhase += state.neonFlickerSpeed * (2.0 * Math.PI / 60.0);
+                    if (state.neonFlickerPhase >= 2.0 * Math.PI) {
+                        state.neonFlickerPhase -= 2.0 * Math.PI;
 					}
-                    double norm = s.neonFlickerPhase / (2.0 * Math.PI);
-                    return (norm < 0.70) ? 1.0 : AppState.clamp(1.0 - s.neonFlickerDepth, 0.0, 1.0);
+                    double norm = state.neonFlickerPhase / (2.0 * Math.PI);
+                    return (norm < 0.70) ? 1.0 : AppState.clamp(1.0 - state.neonFlickerDepth, 0.0, 1.0);
 				}
                 case RANDOM -> {
-                    if (s.neonRandomCounter <= 0) {
-                        s.neonRandomOn = !s.neonRandomOn;
-                        int base = (int) (60.0 / Math.max(0.2, s.neonFlickerSpeed));
-                        if (s.neonRandomOn) {
-                            s.neonRandomCounter = base + (int) (Math.random() * base);
+                    if (state.neonRandomCounter <= 0) {
+                        state.neonRandomOn = !state.neonRandomOn;
+                        int base = (int) (60.0 / Math.max(0.2, state.neonFlickerSpeed));
+                        if (state.neonRandomOn) {
+                            state.neonRandomCounter = base + (int) (Math.random() * base);
 							} else {
-                            s.neonRandomCounter = Math.max(1, base / 4 + (int) (Math.random() * base / 4));
+                            state.neonRandomCounter = Math.max(1, base / 4 + (int) (Math.random() * base / 4));
 						}
 					}
-                    s.neonRandomCounter--;
-                    return s.neonRandomOn ? 1.0 : AppState.clamp(1.0 - s.neonFlickerDepth, 0.0, 1.0);
+                    state.neonRandomCounter--;
+                    return state.neonRandomOn ? 1.0 : AppState.clamp(1.0 - state.neonFlickerDepth, 0.0, 1.0);
 				}
                 default -> { return 1.0; }
 			}
 		}
-		
+
         private void startAnimation() {
             timer = new AnimationTimer() {
-				
+
                 @Override
                 public void handle(long nowNanos) {
                     if (state.autoSpeed != 0.0) {
@@ -470,24 +551,24 @@ public class FxGPUNeon {
                         state.autoRotAngleX = Math.sin(state.autoPhase * AppState.AUTO_X_SWING_RATE) * (state.swingRangeX * 0.5);
 					}
                     assembler.applyRootRotation();
-					
+
                     LocalTime t = LocalTime.now(state.theTimeZone);
                     double ns = t.getNano() / 1_000_000_000.0;
                     double sec = t.getSecond() + ns;
                     double min = t.getMinute() + sec / 60.0;
                     double hr = (t.getHour() % 12) + min / 60.0;
-					
+
                     assembler.setHandAngles(hr * 30.0, min * 6.0, sec * 6.0);
-					
+
                     // ── 네온 점멸: 스타일별 opacity 계산 ──────────────────
                     // [BugFix3] NONE 스타일이면 opacity는 항상 1.0 고정 → 매 프레임 갱신 불필요.
                     // 네온이 하나라도 켜져 있고 점멸 스타일이 NONE이 아닐 때만 갱신.
                     if (assembler.isAnyNeonOn()
 						&& state.neonBlinkStyle != AppState.NeonBlinkStyle.NONE) {
-                        double opacity = computeNeonOpacity(state);
+                        double opacity = computeNeonOpacity();
                         assembler.setNeonFlickerOpacity(opacity);
 					}
-					
+
                     if (state.slideshowEnabled && state.slideshowFiles.size() > 1) {
                         if (state.slideshowLastSwitchNanos == 0L) {
                             state.slideshowLastSwitchNanos = nowNanos;
@@ -522,7 +603,7 @@ public class FxGPUNeon {
 						return;
 					}
 				});
-				
+
                 img.progressProperty().addListener((obs, ov, nv) -> {
                     if (nv.doubleValue() >= 1.0 && !img.isError()) {
                         // progressProperty 변경 이벤트는 JavaFX Application Thread에서 전달되므로
@@ -546,7 +627,7 @@ public class FxGPUNeon {
 				AppLogger.logException(e);
 			}
 		}
-		
+
         void configureSlideshowFromSelectedFile(File selectedFile) {
             state.slideshowEnabled = false;
             state.slideshowFiles.clear();
@@ -555,9 +636,9 @@ public class FxGPUNeon {
             if (selectedFile == null) return;
             File folder = selectedFile.getParentFile();
             if (folder == null || !folder.isDirectory()) return;
-			
+
 			System.out.println("[슬라이드 쇼] 선택된 폴더 : " + selectedFile.getAbsolutePath() );
-			
+
             File[] files = folder.listFiles(f -> {
                 String name = f.getName().toLowerCase();
                 return f.isFile() && (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")
@@ -576,7 +657,7 @@ public class FxGPUNeon {
 				if (state.slideshowIndex < 0) state.slideshowIndex = 0;
 				state.slideshowEnabled = state.slideshowFiles.size() > 1;
 		}
-		
+
         private void updateCamera() {
             if (camera == null) return;
             // 카메라 거리는 설정창 슬라이더 값만 반영.
@@ -586,7 +667,7 @@ public class FxGPUNeon {
             camera.setFarClip(AppState.CAMERA_FAR_CLIP);
             camera.setFieldOfView(AppState.CAMERA_FOV_DEGREES);
 		}
-		
+
         /**
 			* [NEON Fix] SubScene 전체 Bloom 방식 폐기.
 			*
@@ -606,7 +687,7 @@ public class FxGPUNeon {
             // SubScene 전체 Bloom 제거 — 개별 Node Effect 로 대체됨
             subScene.setEffect(null);
 		}
-		
+
         // ── 레인보우 베젤 효과 (외부 호출용) ─────────────────────────────
         /**
 			* 레인보우 베젤 효과 시작.
@@ -615,27 +696,27 @@ public class FxGPUNeon {
         public void startRainbow(int durationSec) {
             assembler.startRainbow(durationSec);
 		}
-		
+
         /** 레인보우 베젤 효과 즉시 중지 및 원래 색 복원 */
         public void stopRainbow() {
             assembler.stopRainbow();
 		}
-		
+
         /** 레인보우 interval 설정 (AppState 갱신) */
         public void setRainbowInterval(double intervalSec) {
             state.rainbowIntervalSec = intervalSec;
 		}
-		
+
         /** rainbowIntervalSec 반환 */
         public double getRainbowInterval() {
             return state.rainbowIntervalSec;
 		}
-		
+
         /** rainbowMode 반환 */
         public boolean isRainbowMode() {
             return state.rainbowMode;
 		}
-		
+
         // ── 스마트폰 카메라 프레임 → 시계 배경 이미지 영역 주입 ──────────
         /* *
 			* Camera.FrameListener 콜백에서 수신된 WritableImage 를
@@ -678,7 +759,7 @@ public class FxGPUNeon {
             System.out.println("[ItsCctv] 배경 스냅샷 저장: file=" + _snapFile
 			+ " slide=" + _snapSlideEnabled + " files=" + _snapSlideFiles.size());
 		}
-		
+
         /** CCTV 중지 후 saveBackgroundSnapshot() 으로 저장한 배경 상태로 복원한다. */
         public void restoreBackgroundSnapshot() {
             // 슬라이드쇼가 켜져 있었으면 파일 목록 + 인덱스 복원
@@ -722,7 +803,7 @@ public class FxGPUNeon {
             _snapImage = null; _snapFile = null;
             _snapSlideEnabled = false; _snapSlideFiles = null;
 		}
-		
+
         // 스냅샷 저장용 임시 필드
         private javafx.scene.image.Image _snapImage         = null;
         private java.io.File             _snapFile          = null;
@@ -730,7 +811,7 @@ public class FxGPUNeon {
         private java.util.List<java.io.File> _snapSlideFiles = null;
         private int                      _snapSlideIndex    = -1;
         private long                     _snapSlideInterval = 2_000_000_000L;
-		
+
         public void setCameraFrame(javafx.scene.image.WritableImage fxImage) {
             // 이 메서드는 반드시 FX Application Thread 에서 호출해야 한다.
             // · 중지(null): stopCamera() 가 FX 스레드(메뉴 액션)에서 직접 호출
@@ -758,7 +839,7 @@ public class FxGPUNeon {
                 assembler.applyVisibilityState();
 			}
 		}
-		
+
         /** 중앙 고정: GOLD 테마 + 기본 반지름 + 주 모니터 중앙으로 이동. */
         public void resetToDefault() {
             state.applyTheme(AppState.Theme.GOLD);
@@ -767,68 +848,69 @@ public class FxGPUNeon {
             javafx.geometry.Rectangle2D vb0 = javafx.stage.Screen.getPrimary().getVisualBounds();
             mainStage.setX(vb0.getMinX() + (vb0.getWidth()  - mainStage.getWidth())  / 2);
             mainStage.setY(vb0.getMinY() + (vb0.getHeight() - mainStage.getHeight()) / 2);
+            scheduleSave();
 		}
-		
+
         /** 디지탈 표시 여부 반환 — 날짜 OR 시분초 중 하나라도 켜져 있으면 true. */
-        public static boolean getDigitalState(ClockController cc) {
-            return cc.state.showDigital || cc.state.showFaceDate;
+        public boolean getDigitalState() {
+            return state.showDigital || state.showFaceDate;
 		}
-		
+
         /**
 			* 팝업 메뉴 마스터 스위치 전용.
 			* ON: 날짜+시분초 둘 다 켜고 재빌드.
 			* OFF: 날짜+시분초 둘 다 끄고 씬에서 완전 제거.
 			* ※ 설정 다이얼로그에서는 이 메서드를 호출하지 말 것.
 		*/
-        public static void setDigitalState(ClockController cc, boolean on) {
-            cc.state.showDigital  = on;
-            cc.state.showFaceDate = on;
+        public void setDigitalState(boolean on) {
+            state.showDigital  = on;
+            state.showFaceDate = on;
             if (on) {
-                cc.assembler.buildFaceDateTimeGroup();
+                assembler.buildFaceDateTimeGroup();
 				} else {
-                cc.assembler.removeDigitalGroup();
+                assembler.removeDigitalGroup();
 			}
             // 메뉴 체크 상태 동기화
-            if (cc.onPopupShowing != null) cc.onPopupShowing.run();
+            if (onPopupShowing != null) onPopupShowing.run();
+            scheduleSave();
 		}
-		
+
         /**
 			* 설정 다이얼로그 전용 재빌드.
 			* showDigital/showFaceDate 는 이미 AppState 에 설정된 값을 그대로 사용.
 			* 둘 다 false 이면 씬에서 제거, 하나라도 true 이면 재빌드.
 		*/
-        public static void applyDigitalSettings(ClockController cc) {
-            if (cc == null) return;
-            boolean anyOn = cc.state.showDigital || cc.state.showFaceDate;
+        public void applyDigitalSettings() {
+            boolean anyOn = state.showDigital || state.showFaceDate;
             if (anyOn) {
-                cc.assembler.buildFaceDateTimeGroup();
+                assembler.buildFaceDateTimeGroup();
 				} else {
-                cc.assembler.removeDigitalGroup();
+                assembler.removeDigitalGroup();
 			}
+            scheduleSave();
 		}
-		
+
         /** removeDigitalGroup 외부 접근용 */
-        public static void removeDigitalObjects(ClockController cc) {
-            if (cc != null) cc.assembler.removeDigitalGroup();
+        public void removeDigitalObjects() {
+            assembler.removeDigitalGroup();
 		}
-		
+
         /** AppState 직접 접근 (KootPanKingThree 설정 다이얼로그용). */
-        public static AppState getAppState(ClockController cc) { return cc.state; }
-		
+        public AppState getAppState() { return state; }
+
         /** KootPanKingThree 에서 페이스 날짜/시간 그룹 재빌드 요청 */
-        public static void rebuildFaceDateTimeGroup(ClockController cc) {
-            if (cc != null) cc.assembler.buildFaceDateTimeGroup();
+        public void rebuildFaceDateTimeGroup() {
+            assembler.buildFaceDateTimeGroup();
 		}
         /** 페이스 날짜/시간 ON/OFF — showFaceDate 와 showDigital 을 함께 고려 */
-        public static void setFaceDateTimeVisible(ClockController cc, boolean on) {
-            if (cc == null) return;
-            cc.state.showFaceDate = on;
-            // faceDateTimeGroup 가시성: 날짜 OR 시간이 켜져 있어야 하고 transparentMode 가 아니어야 함
-            boolean groupVisible = (on || cc.state.showDigital) && !cc.state.transparentMode;
-            cc.assembler.faceDateTimeGroup.setVisible(groupVisible);
-            if (cc.assembler.faceDateBox != null) cc.assembler.faceDateBox.setVisible(on);
+        public void setFaceDateTimeVisible(boolean on) {
+            state.showFaceDate = on;
+            boolean groupVisible = (on || state.showDigital) && !state.transparentMode;
+            assembler.faceDateTimeGroup.setVisible(groupVisible);
+            if (assembler.faceDateBox != null) assembler.faceDateBox.setVisible(on);
+            scheduleSave();
 		}
-		
+
         public void showStatusMessage(String message) {
             if (statusLabel == null) return;
             if (message == null || message.isEmpty()) {
@@ -838,7 +920,7 @@ public class FxGPUNeon {
                 statusLabel.setVisible(true);
 			}
 		}
-		
+
         // ── YouTube 프레임 캡처용 MediaView 관리 ──────────────────
         /** MediaView를 숨겨진 그룹에 추가 (스냅샷용, 화면에는 안 보임). FX 스레드 전용. */
         public void attachMediaView(javafx.scene.Node view) {
@@ -846,30 +928,30 @@ public class FxGPUNeon {
                 ytHiddenGroup.getChildren().setAll(view);
 			}
 		}
-		
+
         /** MediaView를 숨겨진 그룹에서 제거. FX 스레드 전용. */
         public void detachMediaView() {
             if (ytHiddenGroup != null) ytHiddenGroup.getChildren().clear();
 		}
 	}
-	
+
     // ───────────────────────── State ─────────────────────────
-    static final class AppState {
+    final class AppState {
         static final int UI_MAX_VIEWPORT = 920;
         static final int SEGS = 128;
-		
+
         static final double BASE_COIN_RADIUS = 140.0;
         static final double BASE_COIN_HEIGHT = 18.0;
         static final double BASE_RIM_EXTRA = 11.0;
-		
+
         static final double SPEED_MIN = 0.001;
         static final double SPEED_MAX = 0.060;
         static final double SPEED_STEP = 0.003;
-		
+
         static final double CAMERA_NEAR_CLIP = 0.1;
         static final double CAMERA_FAR_CLIP = 5000.0;
         static final double CAMERA_FOV_DEGREES = 40.0;
-		
+
         static final double AUTO_X_SWING_RATE = 0.37;
         static final double ROOT_ROTATE_X_MIN = -75.0;
         static final double ROOT_ROTATE_X_MAX = 75.0;
@@ -879,17 +961,17 @@ public class FxGPUNeon {
         static final double GLASS_OUTER_RATIO = 0.944;
         static final double TICK_HOUR_INNER_RATIO = 0.79;
         static final double TICK_MINUTE_INNER_RATIO = 0.84;
-		
+
         // 마우스 휠 리사이징 범위: 현재 슬라이더 min(70) * 50% ~ max(220) * 3배
         static final double COIN_RADIUS_MIN = 35.0;
         static final double COIN_RADIUS_MAX = 660.0;
-		
+
         int viewportWidth = 820;
         int viewportHeight = 820;
-		
+
         double coinRadius = BASE_COIN_RADIUS;
         double cameraDistance = 360.0;
-		
+
         double autoPhase = 0.0;
         double autoSpeed = 0.010;
         double savedSpeed = 0.010;
@@ -897,12 +979,12 @@ public class FxGPUNeon {
         double swingRangeY = 84.0;
         double swingRangeX = 32.0;
         double baseAngleX = 22.0;
-		
+
         double autoRotAngleY = 0.0;
         double autoRotAngleX = 0.0;
         double manualRotAngleY = 0.0;
         double manualRotAngleX = 0.0;
-		
+
         boolean showNumbers = true;
         boolean showGlass = false;
         /** 글래스 레이어 불투명도 (0.0~1.0). 설정창 슬라이더로 조정. */
@@ -913,7 +995,7 @@ public class FxGPUNeon {
         double clockOpacity = 1.0;
         boolean interactiveResizing = false;
         double resizeSavedAutoSpeed = 0.0;
-		
+
         Color faceColor = Color.color(0.90, 0.68, 0.10);
         Color backColor = Color.color(0.55, 0.36, 0.04);
         Color rimColor = Color.color(1.00, 0.88, 0.32);
@@ -923,7 +1005,7 @@ public class FxGPUNeon {
         Color fiveMinuteTickColor = Color.color(1.00, 0.95, 0.62);
         Color oneMinuteTickColor = Color.color(0.78, 0.58, 0.10);
         Color numberColor = Color.color(0.92, 0.82, 0.40);
-		
+
         // ── NEON 효과 플래그 (색깔 설정 항목별) ────────────────────────
         boolean neonFace          = false;
         boolean neonBack          = false;
@@ -934,7 +1016,7 @@ public class FxGPUNeon {
         boolean neonFiveMinuteTick = false;
         boolean neonOneMinuteTick  = false;
         boolean neonNumber        = false;
-		
+
         // ── NEON 점멸 설정 ───────────────────────────────────────────
         /**
 			* 점멸 스타일.
@@ -962,23 +1044,23 @@ public class FxGPUNeon {
         int    neonRandomCounter  = 0;
         /** RANDOM 스타일 전용: 현재 ON(true)/OFF(false) 상태 */
         boolean neonRandomOn      = true;
-		
+
         double oneMinuteTickHeight = 1.6;
         double fiveMinuteTickHeight = 3.5;
         double numberHeightScale = 1.0;
-		
+
         String numberFont = "Georgia";
-		
+
         // ── 레인보우 베젤 효과 ───────────────────────────────────────────
         /** 레인보우 모드 ON/OFF */
         boolean rainbowMode = false;
         /** 색 변경 간격 (초): 0.5,1,2,3,4,5,10,15,20,30,60 중 선택 */
         double rainbowIntervalSec = 0.5;
-		
+
         // ── 투명 모드 ────────────────────────────────────────────────────
         /** 앞면·본체·뒷면·유리 모두 숨겨 시계 내부를 투명하게 만드는 모드 */
         boolean transparentMode = false;
-		
+
         // ── 시분초 행 (하단) ─────────────────────────────────────────
         /** 시분초 행 표시 ON/OFF */
         boolean showDigital = true;
@@ -1004,7 +1086,7 @@ public class FxGPUNeon {
         double faceScrollOffset = Double.NaN;
         /** 페이스 시간 행 핑퐁 방향 */
         int    facePingPongDir  = 1;
-		
+
         // ── 날짜 행 스크롤 (Bug7 추가) ──────────────────────────────
         /** 날짜 행 스크롤 방향: 0=고정, 1=우→좌, 2=좌→우, 3=핑퐁 */
         int    faceDateScrollDir   = 3;    // 핑퐁
@@ -1014,7 +1096,7 @@ public class FxGPUNeon {
         double faceDateScrollOffset = Double.NaN;
         /** 날짜 행 핑퐁 방향 */
         int    faceDatePingPongDir  = 1;
-		
+
         // ── 날짜 행 (상단) ───────────────────────────────────────────
         /** 날짜 행 표시 ON/OFF */
         boolean showFaceDate = true;
@@ -1029,7 +1111,7 @@ public class FxGPUNeon {
         /** 날짜 네온 효과 ON/OFF */
         boolean neonFaceDate = false;
         NeonBlinkStyle digitalNeonBlinkStyle = NeonBlinkStyle.NONE;
-		
+
         // ── 배경 이미지 ──────────────────────────────────────────────────
         /** 시계 앞면(faceView) 동그라미에 매핑할 사용자 지정 이미지. null이면 기본 금속 색상 사용 */
         Image backgroundImage = null;
@@ -1040,24 +1122,24 @@ public class FxGPUNeon {
         long slideshowLastSwitchNanos = 0L;
         /** 슬라이드쇼 전환 간격 (나노초). 설정창 리스트박스로 변경 가능. 기본값 2초. */
         long slideshowIntervalNanos = 2_000_000_000L;
-		
+
         // ── 설정창 위치 기준점 ────────────────────────────────────────
-		
+
         // ── 설정창 외관 ───────────────────────────────────────────────
         /** 설정창 배경색 (hex, 기본 흰색). [...] 버튼으로 변경 가능. */
         String dialogBgColor    = "#ffffff";
         /** 설정창 메뉴 폰트. "System"이면 JavaFX 기본 폰트 사용. */
         String dialogFontFamily = "System";
-		
+
         // ── 세계시계 타임존 / 도시명 ──────────────────────────────────
         /** 세계시계용 타임존. 기본값은 시스템(Local). */
         java.time.ZoneId theTimeZone  = java.time.ZoneId.systemDefault();
         /** 날짜 앞에 표시할 도시명. 빈 문자열이면 표시 안 함. */
         String cityPrefix = "";
-		
+
         // ── 테마 프리셋 ──────────────────────────────────────────────
         enum Theme { GOLD, SILVER, COPPER, MIDNIGHT, ROSE_GOLD }
-		
+
         void applyTheme(Theme theme) {
             switch (theme) {
                 case GOLD -> {
@@ -1117,42 +1199,42 @@ public class FxGPUNeon {
 				}
 			}
 		}
-		
+
         static double clamp(double v, double lo, double hi) {
             return Math.max(lo, Math.min(hi, v));
 		}
-		
+
         double getComposedRotAngleX() {
             return clamp(baseAngleX + autoRotAngleX + manualRotAngleX, ROOT_ROTATE_X_MIN, ROOT_ROTATE_X_MAX);
 		}
-		
+
         double getComposedRotAngleY() {
             return autoRotAngleY + manualRotAngleY;
 		}
-		
+
         double computeOverlayProjectionScale() {
             double fovRadians = Math.toRadians(CAMERA_FOV_DEGREES);
             return (viewportHeight * 0.5) / Math.tan(fovRadians * 0.5);
 		}
 	}
-	
+
     // ───────────────────────── Scene Assembler ─────────────────────────
-    static final class SceneAssembler {
+    final class SceneAssembler {
         private final AppState state;
-		
+
         final Group root3D = new Group();
         private final Rotate rootRotY = new Rotate(0, Rotate.Y_AXIS);
         private final Rotate rootRotX = new Rotate(0, Rotate.X_AXIS);
         private final Scale coinScale = new Scale(1, 1, 1);
-		
+
         private final Group coinGroup = new Group();
         private final Group numbersGroup = new Group();
         private final Group handsGroup = new Group();
         private final Group lightsGroup = new Group();
 		private Group backTextGroup;
-		
+
         private final Materials materials = new Materials();
-		
+
         private Rotate hourRotation;
         private Rotate minuteRotation;
         private Rotate secondRotation;
@@ -1166,7 +1248,7 @@ public class FxGPUNeon {
         private final Group crystalGroup = new Group();
         private final List<Node> crystalNodes = new ArrayList<>();
         private Cylinder coinBodyView;
-		
+
         // ── 페이스 날짜/시간 3D 노드 (coinGroup 자식 — 코인과 함께 회전) ──
         private final Group  faceDateTimeGroup = new Group();
         private Box          faceDateBox     = null;
@@ -1175,7 +1257,7 @@ public class FxGPUNeon {
         private WritableImage faceTimeTexImg = null;
         private PhongMaterial faceDateMat    = null;
         private PhongMaterial faceTimeMat    = null;
-		
+
         // [추가] 배경 이미지 텍스처 스냅샷 캐시:
         //   applyBackgroundImage()가 호출될 때마다 512×512 Canvas를 새로 그리고 snapshot()하는 것은
         //   슬라이드쇼 전환(2초마다) 및 interactiveResize 종료 시마다 발생해 불필요한 비용.
@@ -1185,7 +1267,7 @@ public class FxGPUNeon {
         private PhongMaterial cachedImgMaterial    = null;  // Fix4: 동일 스냅샷이면 재사용
         private MeshView      texturedFaceView     = null;  // 배경 이미지용 앞면 텍스처 디스크 (backView를 교체하지 않음)
         private boolean       frontFaceVisible     = true;
-		
+
         // ── 레인보우 베젤 효과 ───────────────────────────────────────────
         private Timeline rainbowCycleTimeline = null;  // 색 순환 타이머
         private Timeline rainbowStopTimeline  = null;  // 자동 종료 타이머
@@ -1200,7 +1282,7 @@ public class FxGPUNeon {
             Color.color(0.29, 0.0,  0.51),  // 남색
             Color.color(0.72, 0.0,  1.0),   // 보라
 		};
-		
+
         /**
 			* 레인보우 베젤 효과 시작.
 			* @param durationSec 0=무한(토글 ON), >0=해당 초 후 자동 종료 (단, rainbowMode=true 이면 무시)
@@ -1211,7 +1293,7 @@ public class FxGPUNeon {
             // 기존 타이머 정리
             if (rainbowCycleTimeline != null) rainbowCycleTimeline.stop();
             if (rainbowStopTimeline  != null) rainbowStopTimeline.stop();
-			
+
             // 색 순환 타이머: state.rainbowIntervalSec 간격
             double intervalSec = Math.max(0.1, state.rainbowIntervalSec);
             rainbowCycleTimeline = new Timeline(
@@ -1220,7 +1302,7 @@ public class FxGPUNeon {
             rainbowCycleTimeline.setCycleCount(Timeline.INDEFINITE);
             rainbowCycleTimeline.play();
             applyNextRainbowColor(); // 즉시 첫 색 적용
-			
+
             // 자동 종료 타이머 (durationSec>0 이고 영구 모드 아닐 때)
             if (durationSec > 0 && !state.rainbowMode) {
                 rainbowStopTimeline = new Timeline(
@@ -1230,7 +1312,7 @@ public class FxGPUNeon {
                 rainbowStopTimeline.play();
 			}
 		}
-		
+
         /** 레인보우 베젤 효과 중지 및 원래 색 복원 */
         void stopRainbow() {
             if (rainbowCycleTimeline != null) { rainbowCycleTimeline.stop(); rainbowCycleTimeline = null; }
@@ -1238,12 +1320,12 @@ public class FxGPUNeon {
             rainbowActive = false;
             restoreRimFromRainbow();
 		}
-		
+
         private void applyNextRainbowColor() {
             int idx = rainbowColorIdx[0] % RAINBOW_COLORS.length;
             rainbowColorIdx[0]++;
             Color c = RAINBOW_COLORS[idx];
-			
+
             // ── 베젤 재질: diffuse + selfIllumination ────────────────────
             // selfIlluminationMap 으로 표면 자체발광 → 재질만 바꾸고
             // 노드 레벨 Effect 는 coinBodyView 에 InnerShadow 가 걸리면
@@ -1257,11 +1339,11 @@ public class FxGPUNeon {
             //   (InnerShadow 는 Cylinder 바운딩박스 안을 덮어 숫자 가림,
             //    DropShadow 도 3D SubScene 합성 순서에서 오버드로우 유발)
             if (coinBodyView != null) coinBodyView.setEffect(null);
-			
+
             // capRingView / frontBevelView: 순수 베젤 테두리 → DropShadow만 (InnerShadow 없음)
             applyBezelRimGlow(capRingView,    c);
             applyBezelRimGlow(frontBevelView, c);
-			
+
             // ── 숫자 1~12: 순차 오프셋 무지개 색 ────────────────────────
             // 숫자 i 번째에 (idx+i)%7 색 배정 → 시계판 전체가 스펙트럼으로 펼쳐짐
             // 노드 Effect 없음 — selfIlluminationMap 으로만 발광
@@ -1273,7 +1355,7 @@ public class FxGPUNeon {
 				}
 			}
 		}
-		
+
         /**
 			* 베젤 테두리 노드(capRingView, frontBevelView)에만 적용하는 발광 효과.
 			* InnerShadow 를 사용하지 않음 — 시계 면을 덮지 않는 순수 외부 후광.
@@ -1287,7 +1369,7 @@ public class FxGPUNeon {
             bloom.setInput(glow);
             node.setEffect(bloom);
 		}
-		
+
         /**
 			* 숫자 노드 재귀 순회 → PhongMaterial diffuse + selfIlluminationMap 변경.
 			* Effect 는 건드리지 않음 (3D SubScene 합성 오버드로우 방지).
@@ -1305,7 +1387,7 @@ public class FxGPUNeon {
 				applyRainbowColorRecursive(child, c);
 			}
 		}
-		
+
         /**
 			* 숫자 재질 diffuse 를 원래 numberColor 로 복원.
 			* selfIlluminationMap 복원은 applyNeonToGroup() 가 담당.
@@ -1320,7 +1402,7 @@ public class FxGPUNeon {
 				restoreNumberDiffuseRecursive(child, c);
 			}
 		}
-		
+
         /** 레인보우 종료 후 원래 베젤/숫자 색·효과 복원 */
         private void restoreRimFromRainbow() {
             // ── 베젤 재질 복원 ────────────────────────────────────────────
@@ -1333,7 +1415,7 @@ public class FxGPUNeon {
             applyNeonEffectToNode(coinBodyView,   state.neonRim, state.rimColor);
             applyNeonEffectToNode(capRingView,    state.neonRim, state.rimColor);
             applyNeonEffectToNode(frontBevelView, state.neonRim, state.rimColor);
-			
+
             // ── 숫자 색·효과 복원 ─────────────────────────────────────────
             if (numbersGroup != null) {
                 for (javafx.scene.Node n : numbersGroup.getChildren())
@@ -1342,11 +1424,11 @@ public class FxGPUNeon {
                 applyNeonEffectToGroup(numbersGroup, state.neonNumber, state.numberColor);
 			}
 		}
-		
+
         SceneAssembler(AppState state) {
             this.state = state;
 		}
-		
+
         void buildMaterials() {
             materials.face = metal(state.faceColor, 0.55, 16);
             materials.back = metal(state.backColor, 0.45, 10);
@@ -1357,17 +1439,17 @@ public class FxGPUNeon {
             materials.tickHour = tickFaceMaterial(state.fiveMinuteTickColor);
             materials.tickMinute = tickFaceMaterial(state.oneMinuteTickColor);
             materials.gem = metal(Color.color(1.00, 0.94, 0.52), 1.00, 95);
-			
+
             PhongMaterial glass = new PhongMaterial();
             glass.setDiffuseColor(Color.color(0.78, 0.92, 1.00, 0.18));
             glass.setSpecularColor(Color.color(1, 1, 1, 0.90));
             glass.setSpecularPower(120);
             materials.glass = glass;
-			
+
             materials.faceFlat = matte(darken(state.faceColor, 0.03));
             materials.backFlat = matte(darken(state.backColor, 0.02));
 		}
-		
+
         void buildAll() {
             root3D.getChildren().clear();
             coinGroup.getChildren().clear();
@@ -1376,7 +1458,7 @@ public class FxGPUNeon {
             lightsGroup.getChildren().clear();
             // coinGroup이 클리어되므로 texturedFaceView 참조도 초기화
             texturedFaceView = null;
-			
+
             buildCoinShell();
             buildRim();
             buildTicks();
@@ -1387,13 +1469,13 @@ public class FxGPUNeon {
             rebuildGlass();
             rebuildCrystalEffect();
             buildLights();
-			
+
             coinGroup.getTransforms().setAll(coinScale, rootRotY, rootRotX);
             root3D.getChildren().addAll(coinGroup, lightsGroup, imageLayerGroup);
-			
+
             // ── 페이스 날짜/시간: coinGroup 자식으로 추가 ─────────────
             buildFaceDateTimeGroup();
-			
+
             applyGeometryScale();
             applyVisibilityState();
             applyInteractiveResizeState(); // 내부에서 applyBackgroundImage() 호출
@@ -1401,12 +1483,12 @@ public class FxGPUNeon {
             // ↑ applyInteractiveResizeState()가 이미 applyBackgroundImage()를 호출하므로
             // 여기서 중복 호출 제거
 		}
-		
+
         void applyRootRotation() {
             rootRotY.setAngle(state.autoRotAngleY + state.manualRotAngleY);
             rootRotX.setAngle(AppState.clamp(state.baseAngleX + state.autoRotAngleX + state.manualRotAngleX, AppState.ROOT_ROTATE_X_MIN, AppState.ROOT_ROTATE_X_MAX));
 		}
-		
+
         /**
 			* 사용자가 선택한 이미지를 시계 앞면(동그라미)의 배경으로 설정한다.
 			* state.backgroundImage == null 이면 기본 금속 재질로 복원한다.
@@ -1435,10 +1517,10 @@ public class FxGPUNeon {
                 texturedFaceView.setVisible(visible && state.backgroundImage != null && !state.interactiveResizing);
 			}
 		}
-		
+
         void applyBackgroundImage() {
             if (faceView == null || backView == null) return;
-			
+
             // ── 이미지 없음: texturedFaceView 숨기고 원래 faceView 복원 ─────────
             // [NPE Fix] coinGroup 에서 제거하지 않고 setVisible(false) 로만 숨긴다.
             if (state.backgroundImage == null) {
@@ -1458,12 +1540,12 @@ public class FxGPUNeon {
                 cachedTexSnapshot    = null;
                 return;
 			}
-			
+
             // ── 이미지 있음: 앞면에 텍스처 디스크를 겹쳐 표시 ───────────────
             backView.setVisible(true);
             backView.setOpacity(1.0);
             backView.setMaterial(materials.back);
-			
+
             int texSize = 512;
             WritableImage texImg;
             if (state.backgroundImage == cachedSnapshotSource && cachedTexSnapshot != null) {
@@ -1471,13 +1553,13 @@ public class FxGPUNeon {
 				} else {
                 javafx.scene.canvas.Canvas texCanvas = new javafx.scene.canvas.Canvas(texSize, texSize);
                 javafx.scene.canvas.GraphicsContext gc = texCanvas.getGraphicsContext2D();
-				
+
                 gc.save();
                 gc.beginPath();
                 gc.arc(texSize * 0.5, texSize * 0.5, texSize * 0.5, texSize * 0.5, 0, 360);
                 gc.closePath();
                 gc.clip();
-				
+
                 double imgW  = state.backgroundImage.getWidth();
                 double imgH  = state.backgroundImage.getHeight();
                 double scaleMin = Math.min(texSize / imgW, texSize / imgH); // 전체 보기
@@ -1490,7 +1572,7 @@ public class FxGPUNeon {
                 double drawH = imgH * scale;
                 double drawX = (texSize - drawW) * 0.5;
                 double drawY = (texSize - drawH) * 0.5;
-				
+
                 // 카메라 프레임 반전 보정: cameraFlipH(좌우), cameraFlipV(상하) 플래그에 따라 처리.
                 // 파일 이미지(슬라이드쇼 등)는 그대로 그린다.
                 if (cameraActive && (cameraFlipH || cameraFlipV)) {
@@ -1503,14 +1585,14 @@ public class FxGPUNeon {
 				}
                 gc.drawImage(state.backgroundImage, drawX, drawY, drawW, drawH);
                 gc.restore();
-				
+
                 javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
                 sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
                 texImg = texCanvas.snapshot(sp, null);
-				
+
                 cachedSnapshotSource = state.backgroundImage;
                 cachedTexSnapshot    = texImg;
-				
+
                 // [NPE Fix] Material 객체 재생성 금지 — setDiffuseMap() 으로 텍스처만 교체.
                 // cachedImgMaterial = null 로 날리면 QuantumRenderer 가 들고 있던
                 // 참조가 무효화되어 UploadingPainter NPE 가 발생한다.
@@ -1522,7 +1604,7 @@ public class FxGPUNeon {
 				}
                 cachedImgMaterial.setDiffuseMap(texImg);
 			}
-			
+
             // [NPE Fix] texturedFaceView 는 최초 1회만 생성·coinGroup 추가.
             // 이후 슬라이드쇼 전환 시에는 절대 coinGroup 에서 제거하거나 교체하지 않는다.
             // QuantumRenderer 가 업로드 중인 노드를 Application Thread 가 교체하면 NPE.
@@ -1532,7 +1614,7 @@ public class FxGPUNeon {
                 texturedFaceView = MeshFactory.makeTexturedDisk(r, AppState.SEGS, zOff);
                 texturedFaceView.setCullFace(CullFace.NONE);
                 texturedFaceView.setMaterial(cachedImgMaterial);
-				
+
                 // faceView 바로 뒤에 삽입 (없으면 마지막에 추가)
                 int idx = coinGroup.getChildren().indexOf(faceView);
                 if (idx >= 0) {
@@ -1541,13 +1623,13 @@ public class FxGPUNeon {
                     coinGroup.getChildren().add(texturedFaceView);
 				}
 			}
-			
+
             faceView.setVisible(false);
             faceView.setOpacity(0.0);
             texturedFaceView.setVisible(frontFaceVisible);
             texturedFaceView.setOpacity(frontFaceVisible ? 1.0 : 0.0);
 		}
-		
+
         /**
 			* 네온 점멸: 네온이 켜진 모든 Node 의 opacity 를 매 프레임 갱신.
 			* DropShadow/Bloom Effect 가 걸린 Node 의 opacity 를 조정하면
@@ -1590,24 +1672,24 @@ public class FxGPUNeon {
 				}
 			}
 		}
-		
+
         void setHandAngles(double hrAngle, double minAngle, double secAngle) {
             if (hourRotation != null) hourRotation.setAngle(hrAngle);
             if (minuteRotation != null) minuteRotation.setAngle(minAngle);
             if (secondRotation != null) secondRotation.setAngle(secAngle);
 		}
-		
+
         void rebuildMaterialsAndScene() {
             buildMaterials();
             buildAll();
             applyNeonEffects();   // 재빌드 후 네온 상태 복원
 		}
-		
+
         void rebuildAllGeometry() {
             applyGeometryScale();
             applyVisibilityState();
 		}
-		
+
         void applyGeometryScale() {
             double scale = state.coinRadius / AppState.BASE_COIN_RADIUS;
             coinScale.setX(scale);
@@ -1620,11 +1702,11 @@ public class FxGPUNeon {
             // numberFrontZ() 를 다시 호출해 최신 numberHeightScale 기반 Z 를 재적용한다.
             updateFaceDateTimeZ();
 		}
-		
+
         // ════════════════════════════════════════════════════════════
         //  페이스 날짜/시간 — 코인 앞면에 직접 새겨진 3D 텍스트 패널
         // ════════════════════════════════════════════════════════════
-		
+
         /**
 			* 숫자(1~12) 돌출 높이(numberHeightScale)에 맞춰
 			* faceDateTimeGroup 의 Z 위치를 계산.
@@ -1639,12 +1721,12 @@ public class FxGPUNeon {
             double thickness = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
             return -(AppState.BASE_COIN_HEIGHT * 0.5 + 7.2 + thickness * 0.5 + 1.0);
 		}
-		
+
         /** 날짜/시분초 디지탈 패널은 손 네온보다 앞, 베젤보다 뒤에 둔다. */
         private double digitalFrontZ() {
             return -20.15;
 		}
-		
+
         /**
 			* 코인 앞면에 날짜(상단)·시간(하단)을 표시하는 두 개의 Box를 생성.
 			* buildAll() / numberHeightScale 변경 시 호출. coinGroup 에 추가.
@@ -1652,19 +1734,19 @@ public class FxGPUNeon {
         void buildFaceDateTimeGroup() {
             coinGroup.getChildren().remove(faceDateTimeGroup);
             faceDateTimeGroup.getChildren().clear();
-			
+
             if (!state.showDigital && !state.showFaceDate) return;
-			
+
             double r = AppState.BASE_COIN_RADIUS;
             // 텍스트 패널 Z: 시계 앞면(-9.45)보다 앞에 배치해 가려지지 않게 함
             final double textPanelZ = digitalFrontZ();
-			
+
             double bW    = r * 0.90;
             double dateH = r * 0.18;
             double timeH = r * 0.22;
             double dateY = -r * 0.22;
             double timeY =  r * 0.22;
-			
+
             // ── 날짜 텍스처 패널 ──────────────────────────────────────────
             int dtW = 512, dtH = 80;
             faceDateTexImg = new WritableImage(dtW, dtH);
@@ -1673,14 +1755,14 @@ public class FxGPUNeon {
             faceDateMat.setDiffuseColor(javafx.scene.paint.Color.WHITE);
             faceDateMat.setSpecularColor(javafx.scene.paint.Color.color(0.04, 0.04, 0.04));
             faceDateMat.setSpecularPower(2);
-			
+
             faceDateBox = new Box(bW, dateH, 0.1);
             faceDateBox.setMaterial(faceDateMat);
             faceDateBox.setTranslateX(0);
             faceDateBox.setTranslateY(dateY);
             faceDateBox.setTranslateZ(textPanelZ);
             faceDateBox.setMouseTransparent(true);
-			
+
             // ── 시분초 텍스처 패널 ────────────────────────────────────────
             int tmW = 512, tmH = 96;
             faceTimeTexImg = new WritableImage(tmW, tmH);
@@ -1689,28 +1771,28 @@ public class FxGPUNeon {
             faceTimeMat.setDiffuseColor(javafx.scene.paint.Color.WHITE);
             faceTimeMat.setSpecularColor(javafx.scene.paint.Color.color(0.04, 0.04, 0.04));
             faceTimeMat.setSpecularPower(2);
-			
+
             faceTimeBox = new Box(bW, timeH, 0.1);
             faceTimeBox.setMaterial(faceTimeMat);
             faceTimeBox.setTranslateX(0);
             faceTimeBox.setTranslateY(timeY);
             faceTimeBox.setTranslateZ(textPanelZ);
             faceTimeBox.setMouseTransparent(false);
-			
+
             faceDateTimeGroup.getChildren().addAll(faceDateBox, faceTimeBox);
             faceDateTimeGroup.setVisible(state.showDigital || state.showFaceDate);
             coinGroup.getChildren().add(faceDateTimeGroup);
-			
+
             if (faceTimeClickCallback != null) setFaceTimeClickHandler(faceTimeClickCallback);
-			
+
             state.faceScrollOffset     = Double.NaN;
             state.facePingPongDir      = 1;
             state.faceDateScrollOffset = Double.NaN;
             state.faceDatePingPongDir  = 1;
-			
+
             updateFaceDateTimeTextures();
 		}
-		
+
         /**
 			* 디지탈 OFF 시 faceDateTimeGroup 의 모든 자식을 제거하고
 			* coinGroup 에서도 분리한다. 렌더링 비용 완전 제거.
@@ -1725,7 +1807,7 @@ public class FxGPUNeon {
             _dateCachedCanvas = null;
             _timeCachedCanvas = null;
 		}
-		
+
         /**
 			* 숫자 높이 변경 시 Z만 갱신 (buildFaceDateTimeGroup 전체 재빌드 없이).
 			* rebuildNumbers() 끝에서 호출.
@@ -1736,7 +1818,7 @@ public class FxGPUNeon {
             faceDateBox.setTranslateZ(textPanelZ);
             faceTimeBox.setTranslateZ(textPanelZ);
 		}
-		
+
         /** 매 프레임 날짜·시간 텍스처 갱신. AnimationTimer 에서 호출. */
         void updateFaceDateTimeTextures() {
             // 날짜 또는 시간 중 하나라도 켜져 있어야 진입
@@ -1820,7 +1902,7 @@ public class FxGPUNeon {
                 default -> { return 1.0; }
 			}
 		}
-		
+
         private javafx.scene.paint.Color neonCoreColor(javafx.scene.paint.Color base) {
             double maxc = Math.max(base.getRed(), Math.max(base.getGreen(), base.getBlue()));
             if (maxc < 0.35) {
@@ -1839,7 +1921,7 @@ public class FxGPUNeon {
                 1.0
 			);
 		}
-		
+
         private javafx.scene.paint.Color mixColor(
 			javafx.scene.paint.Color a,
 			javafx.scene.paint.Color b,
@@ -1853,7 +1935,7 @@ public class FxGPUNeon {
                 alpha
 			);
 		}
-		
+
         private void drawFaceTextWithOptionalNeon(
 			javafx.scene.canvas.GraphicsContext gc,
 			String text,
@@ -1863,21 +1945,21 @@ public class FxGPUNeon {
 			javafx.scene.paint.Color color,
 			boolean neonOn) {
             gc.setTextAlign(align);
-			
+
             if (!neonOn) {
                 gc.setFill(color);
                 gc.fillText(text, x, y);
                 return;
 			}
-			
+
             double blink = computeBlinkOpacity(state.digitalNeonBlinkStyle);
             javafx.scene.paint.Color core = neonCoreColor(color);
-			
+
             // 네온이 켜지면 중심 텍스트 자체도 밝아져야 점멸이 눈에 들어온다.
             double fillMix = 0.58 + 0.42 * blink;
             javafx.scene.paint.Color fillColor = mixColor(color, core, fillMix, 1.0);
             javafx.scene.paint.Color lineColor = mixColor(color, core, 0.82 + 0.18 * blink, 1.0);
-			
+
             javafx.scene.effect.DropShadow outerGlow = new javafx.scene.effect.DropShadow(
                 javafx.scene.effect.BlurType.GAUSSIAN,
                 javafx.scene.paint.Color.color(core.getRed(), core.getGreen(), core.getBlue(), 0.42 * blink),
@@ -1893,7 +1975,7 @@ public class FxGPUNeon {
                 0, 0
 			);
             innerGlow.setInput(outerGlow);
-			
+
             gc.setEffect(innerGlow);
             gc.setStroke(lineColor);
             gc.setLineWidth(0.95);
@@ -1901,7 +1983,7 @@ public class FxGPUNeon {
             gc.setFill(fillColor);
             gc.fillText(text, x, y);
             gc.setEffect(null);
-			
+
             // 코어 라인을 한 번 더 얇게 덮어 네온 튜브 중심선을 또렷하게 만든다.
             gc.setStroke(mixColor(core, javafx.scene.paint.Color.WHITE, 0.35, 0.95));
             gc.setLineWidth(0.36);
@@ -1909,12 +1991,12 @@ public class FxGPUNeon {
             gc.setFill(fillColor);
             gc.fillText(text, x, y);
 		}
-		
+
         // Bug4: renderFaceText / renderFaceTimeScrolled 에서 매 프레임 Canvas 를 생성하면
         // GC 부담이 크다. 크기가 동일하면 같은 Canvas 인스턴스를 재사용한다.
         private javafx.scene.canvas.Canvas _dateCachedCanvas  = null;
         private javafx.scene.canvas.Canvas _timeCachedCanvas  = null;
-		
+
         /**
 			* 날짜 행 — Bug7: 스크롤 지원 (state.faceDateScrollDir 사용).
 			*   0=고정(중앙), 1=우→좌, 2=좌→우, 3=핑퐁
@@ -1934,10 +2016,10 @@ public class FxGPUNeon {
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, W, H);
             // 음각 효과는 3D 벽이 담당 → 텍스처는 투명 배경에 글자만
-			
+
             gc.setFont(javafx.scene.text.Font.font(fontFamily, FontWeight.BOLD, fontSize));
             gc.setTextBaseline(VPos.CENTER);
-			
+
             // ── X 위치 계산 (스크롤 처리) ────────────────────────────
             double drawX;
             if (state.faceDateScrollDir == 0) {
@@ -1979,7 +2061,7 @@ public class FxGPUNeon {
 				}
                 gc.setTextAlign(TextAlignment.LEFT);
 			}
-			
+
             // 얇은 네온 + 본문 렌더링
             drawFaceTextWithOptionalNeon(
                 gc, text, drawX, H / 2.0,
@@ -1987,12 +2069,12 @@ public class FxGPUNeon {
                 col,
                 state.neonFaceDate
 			);
-			
+
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
             c.snapshot(sp, target);
 		}
-		
+
         /**
 			* 시간 행 — 스크롤 렌더링, 그림자 없음.
 			* state.digitalScrollDir / digitalScrollSpeed / faceScrollOffset / facePingPongDir 사용.
@@ -2005,7 +2087,7 @@ public class FxGPUNeon {
 			javafx.scene.paint.Color col) {
             int texW = (int) target.getWidth();
             int texH = (int) target.getHeight();
-			
+
             if (_timeCachedCanvas == null
 				|| (int) _timeCachedCanvas.getWidth()  != texW
 				|| (int) _timeCachedCanvas.getHeight() != texH) {
@@ -2015,18 +2097,18 @@ public class FxGPUNeon {
             javafx.scene.canvas.GraphicsContext gc = c.getGraphicsContext2D();
             gc.clearRect(0, 0, texW, texH);
             // 음각 효과는 3D 벽이 담당 → 텍스처는 투명 배경에 글자만
-			
+
             double fs = Math.max(10, state.digitalFontSize > 0
 			? state.digitalFontSize : texH * 0.7);
             gc.setFont(Font.font(state.digitalFontFamily, FontWeight.BOLD, fs));
             gc.setTextBaseline(VPos.CENTER);
-			
+
             // ── X 위치 계산 (스크롤 처리) ────────────────────────────
             javafx.scene.text.Text m = new javafx.scene.text.Text(text);
             m.setFont(gc.getFont());
             double tw = m.getLayoutBounds().getWidth();
             double drawX;
-			
+
             if (state.digitalScrollDir == 0) {
                 drawX = texW / 2.0;
                 gc.setTextAlign(TextAlignment.CENTER);
@@ -2034,7 +2116,7 @@ public class FxGPUNeon {
                 if (Double.isNaN(state.faceScrollOffset)) state.faceScrollOffset = 0;
                 drawX = state.faceScrollOffset;
                 state.faceScrollOffset += state.facePingPongDir * state.digitalScrollSpeed * 0.5;
-				
+
 				// 👉 오른쪽 완전 이탈 후 반사
 				if (state.facePingPongDir > 0 && state.faceScrollOffset > texW) {
 					state.faceScrollOffset = texW;
@@ -2044,7 +2126,7 @@ public class FxGPUNeon {
 				if (state.facePingPongDir < 0 && state.faceScrollOffset + tw < 0) {
 					state.faceScrollOffset = -tw;
 					state.facePingPongDir = 1;
-				}				
+				}
 				/*
 					if (state.faceScrollOffset + tw > texW) { state.faceScrollOffset = texW - tw; state.facePingPongDir = -1; }
 					if (state.faceScrollOffset < 0)          { state.faceScrollOffset = 0;         state.facePingPongDir =  1; }
@@ -2063,7 +2145,7 @@ public class FxGPUNeon {
 				}
                 gc.setTextAlign(TextAlignment.LEFT);
 			}
-			
+
             // 얇은 네온 + 본문 렌더링
             drawFaceTextWithOptionalNeon(
                 gc, text, drawX, texH / 2.0,
@@ -2071,12 +2153,12 @@ public class FxGPUNeon {
                 col,
                 state.neonFaceTime
 			);
-			
+
             javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
             sp.setFill(javafx.scene.paint.Color.TRANSPARENT);
             c.snapshot(sp, target);
 		}
-		
+
         /** faceTimeBox 더블클릭 핸들러 등록 (설정 다이얼로그 열기). ClockController 에서 주입. */
         private Runnable faceTimeClickCallback = null;
         void setFaceTimeClickHandler(Runnable onDoubleClick) {
@@ -2090,7 +2172,7 @@ public class FxGPUNeon {
 				}
 			});
 		}
-		
+
         void applyVisibilityState() {
             // ── 투명 모드: 앞면·본체·뒷면·유리 숨김, 베젤·바늘·눈금·숫자는 유지 ──
 			if (state.transparentMode) {
@@ -2116,7 +2198,7 @@ public class FxGPUNeon {
                 if (crystalGroup != null) crystalGroup.setVisible(false);
                 // Bug1: 투명 모드에서 faceDateTimeGroup 도 숨긴다.
                 faceDateTimeGroup.setVisible(false);
-				
+
                 if (handsGroup    != null) handsGroup.setVisible(!state.interactiveResizing);
                 if (numbersGroup  != null) numbersGroup.setVisible(state.showNumbers && !state.interactiveResizing);
                 if (tickGroup     != null) tickGroup.setVisible(!state.interactiveResizing);
@@ -2142,7 +2224,7 @@ public class FxGPUNeon {
             if (capRingView != null) capRingView.setVisible(!state.interactiveResizing);
             if (frontBevelView != null) frontBevelView.setVisible(!state.interactiveResizing);
 		}
-		
+
         /**
 			* [NEON Fix3 & Fix4] 네온 효과 적용 — 개별 Node Effect 방식.
 			*
@@ -2176,7 +2258,7 @@ public class FxGPUNeon {
             applyNeonToMaterial(materials.tickMinute, state.neonOneMinuteTick,  state.oneMinuteTickColor);
             // 숫자는 재질을 공유하지 않으므로 재귀 적용
             applyNeonToGroup(numbersGroup, state.neonNumber, state.numberColor);
-			
+
             // ── 개별 Node Effect (Bloom + DropShadow 후광) ───────────────
             // [Fix4] frontBevelView 는 materials.rim 공유 → selfIlluminationMap 자동 반영.
             //        Node Effect 는 별도로 필요하므로 coinBodyView/faceView/backView 등
@@ -2210,20 +2292,20 @@ public class FxGPUNeon {
 			}
             applyNeonEffectToGroup(numbersGroup, state.neonNumber, state.numberColor);
 		}
-		
+
         /** PhongMaterial 에 직접 selfIlluminationMap 적용/해제 */
         private static void applyNeonToMaterial(PhongMaterial mat, boolean on, Color baseColor) {
             if (mat == null) return;
             mat.setSelfIlluminationMap(on ? makeGlowTexture(deriveNeonColor(baseColor)) : null);
 		}
-		
+
         /** [NEON Fix] SubScene Bloom 제거로 이 메서드는 더 이상 사용되지 않음. 하위 호환용으로 유지. */
         boolean isAnyNeonOn() {
             return state.neonFace || state.neonBack || state.neonRim
 			|| state.neonHourHand || state.neonMinuteHand || state.neonSecondHand
 			|| state.neonFiveMinuteTick || state.neonOneMinuteTick || state.neonNumber;
 		}
-		
+
         /** @deprecated frontBevelView 가 materials.rim 을 공유하므로 별도 호출 불필요. 미사용. */
         @Deprecated
         @SuppressWarnings("unused")
@@ -2234,7 +2316,7 @@ public class FxGPUNeon {
             PhongMaterial pm = (PhongMaterial) mat;
             pm.setSelfIlluminationMap(on ? makeGlowTexture(deriveNeonColor(baseColor)) : null);
 		}
-		
+
         /**
 			* [NEON Fix] 단일 Node 에 Bloom + DropShadow 후광 Effect 를 직접 적용/해제.
 			* SubScene 전체 Bloom 대신 이 방식을 사용하면 해당 파트만 번진다.
@@ -2261,7 +2343,7 @@ public class FxGPUNeon {
                 node.setOpacity(1.0);
 			}
 		}
-		
+
         /** Group 전체에 동일 네온 Effect 적용 (Group 레벨에 한 번만 걸면 하위 전체 적용됨) */
         private static void applyNeonEffectToGroup(Group group, boolean on, Color baseColor) {
             if (group == null) return;
@@ -2275,14 +2357,14 @@ public class FxGPUNeon {
 				}
 			}
 		}
-		
+
         /** Group 전체 하위 Shape3D 재귀 적용 */
         private static void applyNeonToGroup(Group group, boolean on, Color baseColor) {
             if (group == null) return;
             javafx.scene.image.WritableImage tex = on ? makeGlowTexture(deriveNeonColor(baseColor)) : null;
             applyIllumRecursive(group, on, tex);
 		}
-		
+
         private static void applyIllumRecursive(javafx.scene.Node node, boolean on,
 			javafx.scene.image.WritableImage tex) {
             if (node instanceof Shape3D) {
@@ -2296,7 +2378,7 @@ public class FxGPUNeon {
 				}
 			}
 		}
-		
+
         /**
 			* 단색 자체발광 텍스처 생성 (4×4 px 최소 크기).
 			* selfIlluminationMap 은 흰색(1,1,1)이 완전 발광이므로
@@ -2311,12 +2393,12 @@ public class FxGPUNeon {
 			pw.setColor(x, y, c);
             return img;
 		}
-		
+
         private static Color deriveNeonColor(Color base) {
             // HSB 채도 MAX, 밝기 1.0 → 형광 네온 색
             return Color.hsb(base.getHue(), 1.0, 1.0, 1.0);
 		}
-		
+
         void setInteractiveResizing(boolean resizing) {
             if (state.interactiveResizing == resizing) return;
             state.interactiveResizing = resizing;
@@ -2328,7 +2410,7 @@ public class FxGPUNeon {
 			}
             applyInteractiveResizeState();
 		}
-		
+
         void applyInteractiveResizeState() {
             boolean stable = state.interactiveResizing;
             if (coinBodyView != null) coinBodyView.setVisible(!stable);
@@ -2357,7 +2439,7 @@ public class FxGPUNeon {
             // 인터랙티브 리사이징 종료 후 이미지 재질 복원
             if (!stable) applyBackgroundImage();
 		}
-		
+
         void rebuildNumbers() {
             coinGroup.getChildren().remove(numbersGroup);
             numbersGroup.getChildren().clear();
@@ -2407,7 +2489,7 @@ public class FxGPUNeon {
             glassView.setVisible(state.showGlass && !state.interactiveResizing && state.backgroundImage == null);
             coinGroup.getChildren().add(glassView);
 		}
-		
+
         /** 글래스 레이어 불투명도를 state.glassOpacity 값으로 즉시 반영 */
         void applyGlassOpacity() {
             if (glassView != null && state.showGlass
@@ -2415,16 +2497,16 @@ public class FxGPUNeon {
                 glassView.setOpacity(state.glassOpacity);
 			}
 		}
-		
+
         void rebuildCrystalEffect() {
             coinGroup.getChildren().remove(crystalGroup);
             crystalGroup.getChildren().clear();
             crystalNodes.clear();
-			
+
             if (state.crystalMode <= 0) {
                 return;
 			}
-			
+
             switch (state.crystalMode) {
                 case 1 -> buildCrystalConvexGlass();
                 case 2 -> buildCrystalReflectiveArc();
@@ -2432,11 +2514,11 @@ public class FxGPUNeon {
                 case 4 -> buildCrystalDeepBlue();
                 default -> { }
 			}
-			
+
             coinGroup.getChildren().add(crystalGroup);
             applyCrystalVisibility();
 		}
-		
+
         private void applyCrystalVisibility() {
             boolean modeActive = state.crystalMode > 0
 			&& !(state.crystalMode == 1 && !state.showConvexGlass);
@@ -2444,11 +2526,11 @@ public class FxGPUNeon {
             crystalGroup.setVisible(visible);
             crystalGroup.setManaged(false);
 		}
-		
+
         void applyCrystalVisibilityPublic() {
             applyCrystalVisibility();
 		}
-		
+
         private void buildCrystalConvexGlass() {
             // 기존 4개 디스크(opacity 0.05~0.11) → 단일 디스크로 통합
             // Z-fighting 완전 제거, glassView(z=−12.0)보다 1.0 앞에 배치
@@ -2459,7 +2541,7 @@ public class FxGPUNeon {
             crystalGroup.getChildren().add(disk);
             crystalNodes.add(disk);
 		}
-		
+
         private void buildCrystalReflectiveArc() {
             // Fix2: arc/edge Z를 -(half+0.10)=-9.10에서 -(half+2.0)=-11.0으로 이동.
             //   faceView(Z=-9.45)와 간격이 0.35에 불과해 CullFace.NONE 상태에서
@@ -2475,7 +2557,7 @@ public class FxGPUNeon {
             arc.setCullFace(CullFace.NONE);
             arc.setMaterial(alphaMaterial(Color.WHITE, 0.18, 95));
             crystalGroup.getChildren().add(arc);
-			
+
             MeshView edge = MeshFactory.makeArcPolylineRibbon(
 				AppState.BASE_COIN_RADIUS * 0.92,
 				180,
@@ -2487,11 +2569,11 @@ public class FxGPUNeon {
             edge.setCullFace(CullFace.NONE);
             edge.setMaterial(alphaMaterial(Color.WHITE, 0.42, 120));
             crystalGroup.getChildren().add(edge);
-			
+
             crystalNodes.add(arc);
             crystalNodes.add(edge);
 		}
-		
+
         private void buildCrystalRainbowSegments() {
             Color[] rainbow = {
 				Color.color(1.0, 0.2, 0.2),
@@ -2518,7 +2600,7 @@ public class FxGPUNeon {
                 crystalNodes.add(seg);
 			}
 		}
-		
+
         private void buildCrystalDeepBlue() {
             MeshView disk = MeshFactory.makeDisk(AppState.BASE_COIN_RADIUS * 0.98, AppState.SEGS,
 			-(AppState.BASE_COIN_HEIGHT * 0.5 + 2.0));  // Fix2: +0.10 → +2.0
@@ -2527,7 +2609,7 @@ public class FxGPUNeon {
             crystalGroup.getChildren().add(disk);
             crystalNodes.add(disk);
 		}
-		
+
         private PhongMaterial alphaMaterial(Color base, double opacity, double specPower) {
             PhongMaterial m = new PhongMaterial();
             m.setDiffuseColor(Color.color(base.getRed(), base.getGreen(), base.getBlue(), opacity));
@@ -2540,44 +2622,44 @@ public class FxGPUNeon {
             m.setSpecularPower(specPower);
             return m;
 		}
-		
-		
-		
+
+
+
         private void buildCoinShell() {
             coinBodyView = new Cylinder(AppState.BASE_COIN_RADIUS, AppState.BASE_COIN_HEIGHT, AppState.SEGS);
             coinBodyView.getTransforms().add(new Rotate(90, Rotate.X_AXIS));
             coinBodyView.setMaterial(materials.rim);
-			
+
             faceView = MeshFactory.makeDisk(AppState.BASE_COIN_RADIUS * 0.990, AppState.SEGS, -(AppState.BASE_COIN_HEIGHT * 0.5 + 0.45));
             faceView.setMaterial(materials.face);
             faceView.setCullFace(CullFace.NONE); // 앞뒤 모두 렌더 — 법선 방향 의존 제거
-			
+
             // backView: 동전 뒷면. +Z 방향에 직접 배치하고 CullFace.NONE으로 양면 렌더.
             // 이전 구현(local Z=+10.45 후 Rotate(180,X)) 은 변환 후 Z=-10.45가 되어
             // faceView(Z=-9.45) 보다 1.0 앞에 오는 치명적 Z 오류가 있었음.
             backView = MeshFactory.makeDisk(AppState.BASE_COIN_RADIUS * 0.990, AppState.SEGS, (AppState.BASE_COIN_HEIGHT * 0.5 + 0.45));
             backView.setMaterial(materials.back);
             backView.setCullFace(CullFace.NONE);
-			
+
             // frontBowlView 삭제: faceView와 Z-fighting + CullFace.NONE 역법선이 앞면 무늬 원인
             // backBowlView  삭제: backView와 Z-fighting으로 후면 노이즈 발생
             // innerRingView 삭제: faceView와 색상 차이 0.04로 식별 불가, Z-fighting 기여
-			
+
             coinGroup.getChildren().addAll(coinBodyView, faceView, backView);
 		}
-		
+
         private void buildRim() {
             double rimR = AppState.BASE_COIN_RADIUS + 6.0;
             double rimT = AppState.BASE_COIN_HEIGHT + AppState.BASE_RIM_EXTRA * 2.2;
-			
+
             MeshView side = MeshFactory.makeOpenCylinderSide(rimR, rimT, AppState.SEGS);
             side.setCullFace(CullFace.NONE);
             side.setMaterial(materials.rim);
-			
+
             capRingView = MeshFactory.makeRingDisk(AppState.BASE_COIN_RADIUS * 0.986, rimR, AppState.SEGS, -(rimT * 0.5 + 0.30));
             capRingView.setCullFace(CullFace.NONE);
             capRingView.setMaterial(materials.rim);
-			
+
             frontBevelView = MeshFactory.makeBevelRing(AppState.BASE_COIN_RADIUS * 0.945, rimR, -(AppState.BASE_COIN_HEIGHT * 0.5 + 0.55), -(rimT * 0.5 + 0.05), AppState.SEGS);
             frontBevelView.setCullFace(CullFace.NONE);
             // [NEON Fix2] 별도 임시 재질 대신 materials.rim 을 공유.
@@ -2588,13 +2670,13 @@ public class FxGPUNeon {
             // 수정: materials.rim 을 직접 사용 → applyNeonToMaterial(materials.rim) 한 번으로
             //     side/capRingView/frontBevelView 세 군데 동시에 정확히 반영됨.
             frontBevelView.setMaterial(materials.rim);
-			
+
             coinGroup.getChildren().addAll(side, capRingView, frontBevelView);
 		}
-		
+
         private void buildTicks() {
             tickGroup = new Group();
-			
+
             // 눈금을 글래스 레이어 앞(카메라 쪽)에 배치한다.
             // glassZ = -(BASE_COIN_HEIGHT/2 + maxTickD + 2.5)  ← rebuildGlass()와 동일 공식
             // 눈금 중심 Z = glassZ - d/2 - 0.5
@@ -2602,7 +2684,7 @@ public class FxGPUNeon {
             // 이 공식은 눈금 높이(d) 슬라이더가 변해도 항상 글래스 앞을 유지한다.
             double maxTickD = Math.max(state.fiveMinuteTickHeight, state.oneMinuteTickHeight);
             double glassZ   = -(AppState.BASE_COIN_HEIGHT * 0.5 + maxTickD + 2.5);
-			
+
             for (int i = 0; i < 60; i++) {
                 double angle = Math.toRadians(i * 6.0);
                 boolean isHour = i % 5 == 0;
@@ -2615,7 +2697,7 @@ public class FxGPUNeon {
                 double ty = -Math.cos(angle) * (r + len * 0.5 - AppState.BASE_COIN_RADIUS * 0.01);
                 // 눈금 중심을 glassZ 기준으로 앞쪽에 고정
                 double bodyZ = glassZ - d * 0.5 - 0.5;
-				
+
                 tickBody.setTranslateX(tx);
                 tickBody.setTranslateY(ty);
                 tickBody.setTranslateZ(bodyZ);
@@ -2628,78 +2710,78 @@ public class FxGPUNeon {
 			}
             coinGroup.getChildren().add(tickGroup);
 		}
-		
+
         private void buildHands() {
             double globalLift = 3.2;
             // numberLift 연동 제거: 숫자 높이 슬라이더와 무관하게 침 Z는 항상 초기값 고정
             double numberLift = 0.0;
-			
+
             // Fix3: capRingView Z = -(rimHalf + 0.30) = -21.40. 침이 베젤 캡을 관통하지 않도록
             //   각 침의 앞면이 bezelSafeZ 보다 안쪽에 머무르게 클램핑한다.
             //   bezelSafeZ = capRingView + 1.0 margin = -20.40
             //   각 침의 앞면 = centerZ - halfDepth 이므로 centerZ >= bezelSafeZ + halfDepth
             double rimT = AppState.BASE_COIN_HEIGHT + AppState.BASE_RIM_EXTRA * 2.2;
             double bezelSafeZ = -(rimT * 0.5 + 0.30 - 1.0);   // = -20.40
-			
+
             double rawHourZ   = -(AppState.BASE_COIN_HEIGHT * 0.5 + 2.8 + globalLift + numberLift * 0.45);
             double rawMinuteZ = -(AppState.BASE_COIN_HEIGHT * 0.5 + 4.9 + globalLift + numberLift * 0.70);
             double rawSecondZ = -(AppState.BASE_COIN_HEIGHT * 0.5 + 6.8 + globalLift + numberLift);
-			
+
             // halfDepth: Box 두께의 절반 (Z축 방향)
             double hourHalf   = 3.6 * 0.5;
             double minuteHalf = 2.7 * 0.5;
             double secondHalf = 2.0 * 0.5;
-			
+
             // clamp: 침 중심 Z가 bezelSafeZ + halfDepth 보다 음수가 되지 않게
             double hourGroupZ   = Math.max(rawHourZ,   bezelSafeZ + hourHalf);
             double minuteGroupZ = Math.max(rawMinuteZ, bezelSafeZ + minuteHalf);
             double secondGroupZ = Math.max(rawSecondZ, bezelSafeZ + secondHalf);
-			
+
             Box hour = makeHand(AppState.BASE_COIN_RADIUS * 0.40, AppState.BASE_COIN_RADIUS * 0.030, 3.6, materials.hour);
             hourRotation = new Rotate(0, new Point3D(0, 0, 1));
             Group hourGroup = new Group(hour);
             hourGroup.getTransforms().add(hourRotation);
             hourGroup.setTranslateZ(hourGroupZ);
-			
+
             Box minute = makeHand(AppState.BASE_COIN_RADIUS * 0.60, AppState.BASE_COIN_RADIUS * 0.020, 2.7, materials.minute);
             minuteRotation = new Rotate(0, new Point3D(0, 0, 1));
             Group minuteGroup = new Group(minute);
             minuteGroup.getTransforms().add(minuteRotation);
             minuteGroup.setTranslateZ(minuteGroupZ);
-			
+
             Box second = makeHand(AppState.BASE_COIN_RADIUS * 0.72, AppState.BASE_COIN_RADIUS * 0.010, 2.0, materials.second);
             secondRotation = new Rotate(0, new Point3D(0, 0, 1));
             Group secondGroup = new Group(second);
             secondGroup.getTransforms().add(secondRotation);
             secondGroup.setTranslateZ(secondGroupZ);
-			
+
             handsGroup.getChildren().setAll(hourGroup, minuteGroup, secondGroup);
             coinGroup.getChildren().add(handsGroup);
 		}
-		
+
         private void buildGem() {
             double globalLift = 3.2;
             // numberLift 연동 제거: 침과 동일하게 보석 중심축도 초기값 고정
             double numberLift = 0.0;
             double axisLift = globalLift + numberLift;
-			
+
             Cylinder base = new Cylinder(AppState.BASE_COIN_RADIUS * 0.060, AppState.BASE_COIN_RADIUS * 0.040, AppState.SEGS / 2);
             base.getTransforms().add(new Rotate(90, Rotate.X_AXIS));
             base.setTranslateZ(-(AppState.BASE_COIN_HEIGHT * 0.5 + 4.8 + axisLift));
             base.setMaterial(metal(Color.color(0.20, 0.12, 0.00), 0.45, 10));
-			
+
             Cylinder cap = new Cylinder(AppState.BASE_COIN_RADIUS * 0.040, AppState.BASE_COIN_RADIUS * 0.075, AppState.SEGS / 2);
             cap.getTransforms().add(new Rotate(90, Rotate.X_AXIS));
             cap.setTranslateZ(-(AppState.BASE_COIN_HEIGHT * 0.5 + 7.8 + axisLift));
             cap.setMaterial(materials.gem);
-			
+
             coinGroup.getChildren().addAll(base, cap);
 		}
-		
+
         private void buildBackEngraving() {
             Group engraving = new Group();
 			backTextGroup = new Group();
-			
+
             Group line1 = createBackEngravingLine("기 증 : 김 갑 수",
 				AppState.BASE_COIN_RADIUS * 0.080,
 				darken(state.backColor, 0.30),
@@ -2710,24 +2792,24 @@ public class FxGPUNeon {
 				darken(state.backColor, 0.26),
 				Color.color(0.72, 0.62, 0.38),
 			0.048);
-			
+
             double yCenter = AppState.BASE_COIN_RADIUS * 0.30;
             double lineGap = AppState.BASE_COIN_RADIUS * 0.078;
             line1.setTranslateY(yCenter - lineGap * 0.55);
             line2.setTranslateY(yCenter + lineGap * 0.55);
-			
+
             // backView(+9.45)보다 아주 조금 앞에 배치해서 뒷면에서만 보이게 한다.
             double z = AppState.BASE_COIN_HEIGHT * 0.5 + 0.64;
             engraving.setTranslateZ(z);
-			
+
             // 뒷면에서 읽히도록 반전
             engraving.getTransforms().add(new Rotate(180, Rotate.Y_AXIS));
-			
+
 			engraving.getChildren().addAll(line1, line2);
 			backTextGroup = engraving;
 			coinGroup.getChildren().add(engraving);
 		}
-		
+
         private Group createBackEngravingLine(String text, double fontSize, Color core, Color highlight, double trackingRatio) {
             Group base = createBackEngravingGlyphRun(
 				text, fontSize, trackingRatio,
@@ -2735,7 +2817,7 @@ public class FxGPUNeon {
 				0.0, 0.0, 0.0,
 				laserEngravingMaterial(core, highlight, 9)
 			);
-			
+
             Group glint = createBackEngravingGlyphRun(
 				text, fontSize, trackingRatio,
 				new Scale(0.76, 0.76, 0.06),
@@ -2749,10 +2831,10 @@ public class FxGPUNeon {
 					Color.color(0.92, 0.86, 0.70),
 				32)
 			);
-			
+
             return new Group(base, glint);
 		}
-		
+
         private Group createBackEngravingGlyphRun(String text, double fontSize, double trackingRatio,
 			Scale glyphScale, double dx, double dy, double dz,
 			PhongMaterial material) {
@@ -2761,7 +2843,7 @@ public class FxGPUNeon {
             List<Double> widths = new ArrayList<>();
             double tracking = fontSize * trackingRatio;
             double totalWidth = 0.0;
-			
+
             for (int i = 0; i < text.length(); i++) {
                 String ch = text.substring(i, i + 1);
                 if (" ".equals(ch)) {
@@ -2780,7 +2862,7 @@ public class FxGPUNeon {
 				}
                 if (i < text.length() - 1) totalWidth += tracking;
 			}
-			
+
             Group run = new Group();
             double cursor = -totalWidth * 0.5;
             for (int i = 0; i < glyphs.size(); i++) {
@@ -2797,7 +2879,7 @@ public class FxGPUNeon {
 			}
             return run;
 		}
-		
+
         private PhongMaterial laserEngravingMaterial(Color diffuse, Color specular, double power) {
             PhongMaterial m = new PhongMaterial();
             m.setDiffuseColor(diffuse);
@@ -2805,7 +2887,7 @@ public class FxGPUNeon {
             m.setSpecularPower(power);
             return m;
 		}
-		
+
         private void applyMaterialRecursive(Node node, PhongMaterial material) {
             if (node instanceof MeshView mv) {
                 mv.setMaterial(material);
@@ -2815,30 +2897,30 @@ public class FxGPUNeon {
 				}
 			}
 		}
-		
-		
+
+
         private void buildLights() {
             PointLight warm = new PointLight(Color.color(1.00, 0.98, 0.92));
             warm.setTranslateX(-220);
             warm.setTranslateY(-330);
             warm.setTranslateZ(-300);
-			
+
             PointLight gold = new PointLight(Color.color(0.40, 0.36, 0.28));
             gold.setTranslateX(260);
             gold.setTranslateY(180);
             gold.setTranslateZ(-120);
-			
+
             AmbientLight ambient = new AmbientLight(Color.color(0.34, 0.34, 0.34));
             lightsGroup.getChildren().addAll(warm, gold, ambient);
 		}
-		
+
         private Box makeHand(double len, double w, double d, PhongMaterial mat) {
             Box box = new Box(w, len, d);
             box.setTranslateY(-len * 0.5);
             box.setMaterial(mat);
             return box;
 		}
-		
+
         private PhongMaterial tickFaceMaterial(Color base) {
             PhongMaterial m = new PhongMaterial();
             m.setDiffuseColor(base);
@@ -2850,7 +2932,7 @@ public class FxGPUNeon {
             m.setSpecularPower(4);
             return m;
 		}
-		
+
         private PhongMaterial metal(Color base, double specBoost, double specPower) {
             PhongMaterial m = new PhongMaterial();
             m.setDiffuseColor(base);
@@ -2861,7 +2943,7 @@ public class FxGPUNeon {
             m.setSpecularPower(specPower);
             return m;
 		}
-		
+
         // #6: static으로 승격 — NumberFactory에서도 중복 정의 없이 재사용
         static PhongMaterial matte(Color base) {
             PhongMaterial m = new PhongMaterial();
@@ -2874,20 +2956,20 @@ public class FxGPUNeon {
             m.setSpecularPower(3);
             return m;
 		}
-		
+
         static Color lighten(Color c, double delta) {
             return Color.color(AppState.clamp(c.getRed() + delta, 0, 1),
 				AppState.clamp(c.getGreen() + delta, 0, 1),
 			AppState.clamp(c.getBlue() + delta, 0, 1));
 		}
-		
+
         static Color darken(Color c, double delta) {
             return Color.color(AppState.clamp(c.getRed() - delta, 0, 1),
 				AppState.clamp(c.getGreen() - delta, 0, 1),
 			AppState.clamp(c.getBlue() - delta, 0, 1));
 		}
-		
-        static final class Materials {
+
+        final class Materials {
             PhongMaterial face;
             PhongMaterial back;
             PhongMaterial rim;
@@ -2902,26 +2984,26 @@ public class FxGPUNeon {
             PhongMaterial backFlat;
 		}
 	}
-	
+
     // ───────────────────────── Number Factory ─────────────────────────
-    static final class NumberFactory {
+    final class NumberFactory {
         private static final int MASK_SUPERSAMPLE = 6;
         private static final double ALPHA_THRESHOLD = 0.06;
         private static final double DESIRED_HEIGHT_RATIO = 1.12;
         private static final double EXTRUDE_THICKNESS_RATIO = 0.18;
         private static final double FRONT_BEVEL_THICKNESS_RATIO = 0.040;
         // FRONT_BEVEL_SCALE, SHADOW_OFFSET_RATIO — 미사용으로 제거 (#5)
-		
+
         private final AppState state;
-		
+
         NumberFactory(AppState state) {
             this.state = state;
 		}
-		
+
         Group createNumber(String text, double fontSize) {
             try {
                 MaskData mask = renderTextMask(text, fontSize, state.numberFont);
-				
+
                 Group g = new Group();
                 MeshView body = buildExtrudedText(
 					mask,
@@ -2930,7 +3012,7 @@ public class FxGPUNeon {
 					1.0,
 					extrudedMetalMaterial(state.numberColor, 0.06, 128)
 				);
-				
+
                 g.getChildren().add(body);
                 return g;
 				} catch (Exception ex) {
@@ -2939,12 +3021,12 @@ public class FxGPUNeon {
 				return fallbackTextNumber(text, fontSize);
 			}
 		}
-		
+
         private MeshView buildExtrudedText(MaskData mask, double fontSize, double zOffset, double faceScale, PhongMaterial material) {
             boolean[][] filled = mask.filled;
             int h = filled.length;
             int w = filled[0].length;
-			
+
             float pixel = 1.0f;
             float xCenter = (w * pixel) * 0.5f;
             float yCenter = (h * pixel) * 0.5f;
@@ -2955,7 +3037,7 @@ public class FxGPUNeon {
             float frontEnd = zOffset == 0.0 ? halfT : (float) zOffset + bevelThickness * 0.5f;
             float backZ0 = (float) zOffset - halfT;
             float backZ1 = zOffset == 0.0 ? halfT : (float) zOffset - bevelThickness * 0.5f;
-			
+
             MeshBuilder mb = new MeshBuilder();
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
@@ -2964,7 +3046,7 @@ public class FxGPUNeon {
                     float x1 = (float) ((((x + 1) * pixel) - xCenter) * faceScale);
                     float y0 = (float) ((y * pixel - yCenter) * faceScale);
                     float y1 = (float) ((((y + 1) * pixel) - yCenter) * faceScale);
-					
+
                     if (zOffset == 0.0) {
                         mb.addQuad(x0, y0, halfT, x1, y0, halfT, x1, y1, halfT, x0, y1, halfT, false, 1);
                         mb.addQuad(x1, y0, -halfT, x0, y0, -halfT, x0, y1, -halfT, x1, y1, -halfT, false, 1);
@@ -2972,12 +3054,12 @@ public class FxGPUNeon {
                         mb.addQuad(x0, y0, frontEnd, x1, y0, frontEnd, x1, y1, frontEnd, x0, y1, frontEnd, false, 1);
                         mb.addQuad(x1, y0, frontStart, x0, y0, frontStart, x0, y1, frontStart, x1, y1, frontStart, false, 1);
 					}
-					
+
                     boolean leftOpen = x == 0 || !filled[y][x - 1];
                     boolean rightOpen = x == w - 1 || !filled[y][x + 1];
                     boolean topOpen = y == 0 || !filled[y - 1][x];
                     boolean bottomOpen = y == h - 1 || !filled[y + 1][x];
-					
+
                     float zA = zOffset == 0.0 ? -halfT : frontStart;
                     float zB = zOffset == 0.0 ? halfT : frontEnd;
                     if (leftOpen)  mb.addQuad(x0, y0, zA, x0, y0, zB, x0, y1, zB, x0, y1, zA, false, 2);
@@ -2986,20 +3068,20 @@ public class FxGPUNeon {
                     if (bottomOpen)mb.addQuad(x0, y1, zB, x1, y1, zB, x1, y1, zA, x0, y1, zA, false, 2);
 				}
 			}
-			
+
             TriangleMesh mesh = mb.build();
             MeshView mv = new MeshView(mesh);
             mv.setCullFace(CullFace.BACK);
             mv.setDrawMode(DrawMode.FILL);
             mv.setMaterial(material);
-			
+
             double rawHeight = Math.max(1.0, h * faceScale);
             double desiredHeight = fontSize * DESIRED_HEIGHT_RATIO;
             double uniformScale = desiredHeight / rawHeight;
             mv.getTransforms().add(new Scale(uniformScale, uniformScale, uniformScale));
             return mv;
 		}
-		
+
         private PhongMaterial extrudedMetalMaterial(Color base, double specLift, double specPower) {
             PhongMaterial m = new PhongMaterial();
             m.setDiffuseColor(base);
@@ -3011,14 +3093,14 @@ public class FxGPUNeon {
             m.setSpecularPower(specPower);
             return m;
 		}
-		
+
         private Group fallbackTextNumber(String text, double fontSize) {
             // [B6/B7-Fix] 2D Text 노드 대신 PhongMaterial Box로 렌더링
             // → restoreNumberDiffuseRecursive / applyRainbowColorRecursive 모두 적용됨
             double boxW = fontSize * 1.1;
             double boxH = fontSize * 1.2;
             double boxD = Math.max(1.0, fontSize * 0.18 * state.numberHeightScale);
-			
+
             // 텍스처 생성
             int tw = (int) Math.max(32, boxW * 4);
             int th = (int) Math.max(32, boxH * 4);
@@ -3035,17 +3117,17 @@ public class FxGPUNeon {
             SnapshotParameters sp = new SnapshotParameters();
             sp.setFill(Color.TRANSPARENT);
             canvas.snapshot(sp, texImg);
-			
+
             PhongMaterial mat = extrudedMetalMaterial(state.numberColor, 0.06, 128);
             mat.setDiffuseMap(texImg);
-			
+
             Box box = new Box(boxW, boxH, boxD);
             box.setMaterial(mat);
             box.setCullFace(CullFace.BACK);
             Group g = new Group(box);
             return g;
 		}
-		
+
         private MaskData renderTextMask(String text, double fontSize, String fontFamily) {
             double renderSize = fontSize * MASK_SUPERSAMPLE;
             Text measure = new Text(text);
@@ -3053,7 +3135,7 @@ public class FxGPUNeon {
             double pad = Math.max(20, renderSize * 0.22);
             int w = (int) Math.ceil(measure.getLayoutBounds().getWidth() + pad * 2);
             int h = (int) Math.ceil(measure.getLayoutBounds().getHeight() + pad * 2);
-			
+
             Canvas c = new Canvas(w, h);
             GraphicsContext gc = c.getGraphicsContext2D();
             gc.setFill(Color.TRANSPARENT);
@@ -3063,7 +3145,7 @@ public class FxGPUNeon {
             gc.setFont(Font.font(fontFamily, FontWeight.BOLD, renderSize));
             gc.setFill(Color.WHITE);
             gc.fillText(text, w * 0.5, h * 0.52);
-			
+
             SnapshotParameters sp = new SnapshotParameters();
             sp.setFill(Color.TRANSPARENT);
             WritableImage img = c.snapshot(sp, null);
@@ -3092,17 +3174,17 @@ public class FxGPUNeon {
 			}
             return new MaskData(filled);
 		}
-		
+
         // #6: matte(), lighten() 중복 제거 — SceneAssembler의 static 메서드로 위임
         // (호출 예: SceneAssembler.matte(color), SceneAssembler.lighten(color, delta))
-		
+
         // #8: BoundsLike inner class 제거 — fallbackTextNumber에서 지역 변수로 대체됨
-		
-        static final class MaskData {
+
+        final class MaskData {
             final boolean[][] filled;
             MaskData(boolean[][] filled) { this.filled = filled; }
 		}
-		
+
         // ③ 버텍스 중복 제거 MeshBuilder
         // 이전: addQuad() 마다 항상 4개 포인트를 무조건 추가 → 인접 쿼드의 공유 에지 좌표가 2번씩 저장
         // 개선: HashMap으로 (x,y,z)→index를 관리해 이미 추가된 포인트는 재사용
@@ -3110,26 +3192,26 @@ public class FxGPUNeon {
         //
         // [수정] 이전 단일 long 키 방식은 z 비트가 x/y 비트 구간과 겹쳐 충돌 가능성이 있었음.
         //        외부 맵(xy long) + 내부 맵(z int) 2단계 구조로 완전한 충돌 없는 키를 보장.
-        static final class MeshBuilder {
+        final class MeshBuilder {
             // 외부 키: x(하위 32비트) | y(상위 32비트)  →  내부 키: z 비트 패턴 → 인덱스
             private final java.util.HashMap<Long, java.util.HashMap<Integer, Integer>>
 			vertexIndex = new java.util.HashMap<>();
             private final List<Float>   points    = new ArrayList<>();
             private final List<Integer> faces      = new ArrayList<>();
             private final List<Integer> smoothing  = new ArrayList<>();
-			
+
             // 포인트를 deduplicate하여 추가하고, 해당 인덱스를 반환
             private int addOrGetPoint(float x, float y, float z) {
                 // x는 하위 32비트, y는 상위 32비트 — 겹치지 않으므로 충돌 없음
                 long xyKey = ((long) Float.floatToRawIntBits(x) & 0xFFFFFFFFL)
 				| (((long) Float.floatToRawIntBits(y) & 0xFFFFFFFFL) << 32);
                 int zBits = Float.floatToRawIntBits(z);
-				
+
                 java.util.HashMap<Integer, Integer> zMap =
 				vertexIndex.computeIfAbsent(xyKey, k -> new java.util.HashMap<>());
                 Integer existing = zMap.get(zBits);
                 if (existing != null) return existing;
-				
+
                 int idx = points.size() / 3;
                 points.add(x);
                 points.add(y);
@@ -3137,7 +3219,7 @@ public class FxGPUNeon {
                 zMap.put(zBits, idx);
                 return idx;
 			}
-			
+
             void addQuad(float x0, float y0, float z0,
 				float x1, float y1, float z1,
 				float x2, float y2, float z2,
@@ -3155,14 +3237,14 @@ public class FxGPUNeon {
                     addFace(i0, i3, i2, smoothingGroup);
 				}
 			}
-			
+
             private void addFace(int a, int b, int c, int smoothingGroup) {
                 faces.add(a); faces.add(0);
                 faces.add(b); faces.add(0);
                 faces.add(c); faces.add(0);
                 smoothing.add(smoothingGroup);
 			}
-			
+
             TriangleMesh build() {
                 TriangleMesh mesh = new TriangleMesh();
                 float[] pts = new float[points.size()];
@@ -3179,9 +3261,9 @@ public class FxGPUNeon {
 			}
 		}
 	}
-	
+
     // ───────────────────────── Mesh Factory ─────────────────────────
-    static final class MeshFactory {
+    final class MeshFactory {
         /**
 			* UV 좌표를 포함한 원형 디스크 메시.
 			* 텍스처 이미지를 원형 앞면에 매핑할 때 사용한다.
@@ -3189,7 +3271,7 @@ public class FxGPUNeon {
 		*/
         static MeshView makeTexturedDisk(double r, int segs, double zOffset) {
             TriangleMesh mesh = new TriangleMesh();
-			
+
             // Points: 0=center, 1..segs=rim
             mesh.getPoints().addAll(0f, 0f, (float) zOffset); // center
             for (int i = 0; i < segs; i++) {
@@ -3199,7 +3281,7 @@ public class FxGPUNeon {
 					(float) (Math.sin(a) * r),
 				(float) zOffset);
 			}
-			
+
             // TexCoords: 0=center(0.5,0.5), 1..segs=rim UV
             mesh.getTexCoords().addAll(0.5f, 0.5f); // index 0 = center
             for (int i = 0; i < segs; i++) {
@@ -3210,7 +3292,7 @@ public class FxGPUNeon {
                 float v = (float) (0.5 + 0.5 * Math.sin(a));
                 mesh.getTexCoords().addAll(u, v);
 			}
-			
+
             // Faces: center(pt0,tc0) + two rim pts
             for (int i = 0; i < segs; i++) {
                 int pA = 0,       tA = 0;
@@ -3220,7 +3302,7 @@ public class FxGPUNeon {
 			}
             return new MeshView(mesh);
 		}
-		
+
         static MeshView makeDisk(double r, int segs, double zOffset) {
             TriangleMesh mesh = new TriangleMesh();
             mesh.getTexCoords().addAll(0, 0);
@@ -3238,7 +3320,7 @@ public class FxGPUNeon {
 			}
             return new MeshView(mesh);
 		}
-		
+
         static MeshView makeRingDisk(double rIn, double rOut, int segs, double zOffset) {
             TriangleMesh mesh = new TriangleMesh();
             mesh.getTexCoords().addAll(0, 0);
@@ -3256,7 +3338,7 @@ public class FxGPUNeon {
 			}
             return new MeshView(mesh);
 		}
-		
+
         static MeshView makeOpenCylinderSide(double r, double h, int segs) {
             TriangleMesh mesh = new TriangleMesh();
             mesh.getTexCoords().addAll(0, 0);
@@ -3277,7 +3359,7 @@ public class FxGPUNeon {
 			}
             return new MeshView(mesh);
 		}
-		
+
         static MeshView makeBevelRing(double innerR, double outerR, double zInner, double zOuter, int segs) {
             TriangleMesh mesh = new TriangleMesh();
             mesh.getTexCoords().addAll(0, 0);
@@ -3296,7 +3378,7 @@ public class FxGPUNeon {
 			}
             return new MeshView(mesh);
 		}
-		
+
         static MeshView makeAnnularSector(double rIn, double rOut, double startDeg, double endDeg, int segs, double zOffset) {
             TriangleMesh mesh = new TriangleMesh();
             mesh.getTexCoords().addAll(0, 0);
@@ -3319,11 +3401,11 @@ public class FxGPUNeon {
 			}
             return new MeshView(mesh);
 		}
-		
+
         static MeshView makeArcPolylineRibbon(double radius, double startDeg, double endDeg, int segs, double thickness, double zOffset) {
             return makeAnnularSector(Math.max(0.0, radius - thickness * 0.5), radius + thickness * 0.5, startDeg, endDeg, segs, zOffset);
 		}
-		
+
         // 입체 눈금 전용 5면체 메시 (앞면 + 4 측면, 뒷면 없음)
         // Box는 뒷면 폴리곤이 faceView를 관통해 Z-fighting 노이즈를 일으킴
         // 뒷면만 제거해 입체감(측면 음영)을 살리면서 노이즈를 완전 차단
@@ -3332,14 +3414,14 @@ public class FxGPUNeon {
             mesh.getTexCoords().addAll(0, 0);
             float hw = w * 0.5f, hh = h * 0.5f, hd = d * 0.5f;
             float x0 = -hw, x1 = hw, y0 = -hh, y1 = hh;
-			
+
             // 카메라가 -Z 쪽에서 +Z 방향을 보기 때문에
             // 실제로 사용자에게 보이는 눈금 윗면은 local -Z 쪽이어야 한다.
             // 이전 구현은 윗면/뒷면 축이 반대로 잡혀 있어 색 변경 시 측면만 두드러지고
             // 정면 윗면은 거의 반영되지 않는 것처럼 보였다.
             float zFront = -hd;
             float zBack  =  hd;
-			
+
             // points: front 4 + back 4 = 8
             mesh.getPoints().addAll(
                 x0, y0, zFront, // 0 front left-top
@@ -3351,7 +3433,7 @@ public class FxGPUNeon {
                 x1, y1, zBack,  // 6 back right-bottom
                 x0, y1, zBack   // 7 back left-bottom
 			);
-			
+
             // front face only (toward camera, normal -Z)
             // camera is on -Z side looking toward +Z, so the visible front face
             // must wind clockwise from the viewer side.
@@ -3364,22 +3446,22 @@ public class FxGPUNeon {
             mesh.getFaces().addAll(4,0, 5,0, 1,0,  4,0, 1,0, 0,0);
             // bottom side
             mesh.getFaces().addAll(3,0, 2,0, 6,0,  3,0, 6,0, 7,0);
-			
+
             MeshView mv = new MeshView(mesh);
             mv.setCullFace(CullFace.NONE);
             return mv;
 		}
 	}
-	
+
     // ───────────────────────── Overlay ─────────────────────────
-    static final class OverlayRenderer {
+    final class OverlayRenderer {
         private final AppState state;
         OverlayRenderer(AppState state) { this.state = state; }
-		
+
         void draw(Canvas overlay) {
             GraphicsContext gc = overlay.getGraphicsContext2D();
             gc.clearRect(0, 0, state.viewportWidth, state.viewportHeight);
-			
+
             if (state.paused) {
                 gc.setFill(Color.color(1.0, 0.85, 0.20, 0.90));
                 gc.setFont(Font.font("Consolas", FontWeight.BOLD, 14));
@@ -3390,9 +3472,9 @@ public class FxGPUNeon {
             // 디지탈 시계는 faceDateTimeGroup(코인 페이스)에서 렌더링
 		}
 	}
-	
+
     // ───────────────────────── Setup Panel ─────────────────────────
-    static final class SetupPanelController {
+    final class SetupPanelController {
         private final AppState state;
         private final SceneAssembler assembler;
         private final Canvas overlay;
@@ -3401,15 +3483,17 @@ public class FxGPUNeon {
         private final java.util.function.Consumer<File> onStartSlideshow;
         private final Runnable onRebuild;
         private final Runnable onBloomUpdate;
-        private final Runnable onStopYoutube; // 테마 변경 시 YouTube 중지
-		
+        private final Runnable onStopYoutube;
+        private final Runnable onSave;   // 상태 변경 시 즉시 INI 저장
+
         SetupPanelController(AppState state, SceneAssembler assembler, Canvas overlay,
 			Runnable onCameraSettingsChanged,
 			java.util.function.Consumer<File> onLoadBackgroundFile,
 			java.util.function.Consumer<File> onStartSlideshow,
 			Runnable onRebuild,
 			Runnable onBloomUpdate,
-			Runnable onStopYoutube) {
+			Runnable onStopYoutube,
+			Runnable onSave) {
             this.state = state;
             this.assembler = assembler;
             this.overlay = overlay;
@@ -3419,8 +3503,9 @@ public class FxGPUNeon {
             this.onRebuild = onRebuild;
             this.onBloomUpdate = onBloomUpdate;
             this.onStopYoutube = onStopYoutube;
+            this.onSave = onSave;
 		}
-		
+
         Stage build(Stage owner) {
             Stage s = new Stage();
             // initOwner 제거: owner(mainStage)는 투명 오버레이로 primary 모니터 전체를 덮음.
@@ -3433,11 +3518,11 @@ public class FxGPUNeon {
             s.setMinWidth(980);
             s.setMinHeight(860);
             s.setTitle("KootPanKingThree 설정");
-			
+
             VBox root = new VBox(8);
             root.setPadding(new Insets(14, 18, 14, 18));
             applyRootStyle(root);
-			
+
             // ── 테마 프리셋 ──────────────────────────────────────────────
             root.getChildren().add(section("● 테마 프리셋"));
             String[][] themes = {
@@ -3452,10 +3537,11 @@ public class FxGPUNeon {
                     if (onStopYoutube != null) onStopYoutube.run(); // YouTube 중지
                     state.applyTheme(AppState.Theme.valueOf(t[1]));
                     assembler.rebuildMaterialsAndScene();
+                    if (onSave != null) onSave.run();
 				});
                 themeRow.getChildren().add(btn);
 			}
-			
+
             // ── 6번째: 레인보우 토글 버튼 ────────────────────────────────
             Button rainbowBtn = new Button(state.rainbowMode ? "🌈 레인보우 ON" : "🌈 레인보우");
             rainbowBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;"
@@ -3472,9 +3558,10 @@ public class FxGPUNeon {
                     rainbowBtn.setText("🌈 레인보우");
                     rainbowBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
 				}
+                if (onSave != null) onSave.run();
 			});
             themeRow.getChildren().add(rainbowBtn);
-			
+
             // ── 7번째: 투명 모드 토글 버튼 ──────────────────────────────
             Button transparentBtn = new Button(state.transparentMode ? "\uD83E\uDEDF 투명 ON" : "\uD83E\uDEDF 투명");
             transparentBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;"
@@ -3490,10 +3577,11 @@ public class FxGPUNeon {
                     transparentBtn.setText("\uD83E\uDEDF 투명");
                     transparentBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
 				}
+                if (onSave != null) onSave.run();
 			});
             themeRow.getChildren().add(transparentBtn);
             root.getChildren().add(themeRow);
-			
+
             // 레인보우 색 변경 간격 선택기 (레인보우 버튼과 같은 줄)
             javafx.scene.control.Label rainbowLbl = new javafx.scene.control.Label("색 변경 간격:");
             rainbowLbl.setStyle("-fx-text-fill:" + dialogTextColor() + ";");
@@ -3509,13 +3597,13 @@ public class FxGPUNeon {
             rainbowIntervalBox.getSelectionModel().select(rainbowSelIdx);
             rainbowIntervalBox.getSelectionModel().selectedIndexProperty().addListener((ob, ov, nv) -> {
                 state.rainbowIntervalSec = intervalValues[nv.intValue()];
-                // 현재 활성 중이면 재시작해서 새 간격 즉시 적용
                 if (state.rainbowMode || assembler.rainbowActive) {
                     assembler.startRainbow(state.rainbowMode ? 0 : 30);
 				}
+                if (onSave != null) onSave.run();
 			});
             root.getChildren().add(new HBox(8, rainbowLbl, rainbowIntervalBox));
-			
+
             // ── 색깔 설정 ────────────────────────────────────────────────
             root.getChildren().add(section("● 색깔 설정"));
             GridPane cg = new GridPane();
@@ -3539,10 +3627,10 @@ public class FxGPUNeon {
             cg.add(colorRowNeon("숫자",     state.numberColor,         c -> { state.numberColor = c;         assembler.rebuildNumbers();           assembler.applyNeonEffects(); onBloomUpdate.run(); },
 			state.neonNumber,         v -> { state.neonNumber = v;         assembler.applyNeonEffects(); onBloomUpdate.run(); }), 0, 8);
             root.getChildren().add(cg);
-			
+
             // ── 네온 점멸 스타일 ─────────────────────────────────────────
             root.getChildren().add(section("● 네온 점멸"));
-			
+
             // 라디오 버튼 그룹
             ToggleGroup blinkGroup = new ToggleGroup();
             RadioButton rbNone   = neonRadio("없음 (항상 켜짐)",  blinkGroup,
@@ -3553,7 +3641,7 @@ public class FxGPUNeon {
 			state.neonBlinkStyle == AppState.NeonBlinkStyle.SHARP);
             RadioButton rbRandom = neonRadio("불규칙 깜빡임",     blinkGroup,
 			state.neonBlinkStyle == AppState.NeonBlinkStyle.RANDOM);
-			
+
             blinkGroup.selectedToggleProperty().addListener((ob, ov, nv) -> {
                 if (nv == rbNone)   state.neonBlinkStyle = AppState.NeonBlinkStyle.NONE;
                 else if (nv == rbPulse)  state.neonBlinkStyle = AppState.NeonBlinkStyle.PULSE;
@@ -3561,14 +3649,15 @@ public class FxGPUNeon {
                 else if (nv == rbRandom) state.neonBlinkStyle = AppState.NeonBlinkStyle.RANDOM;
                 state.neonFlickerPhase = 0.0;
                 state.neonRandomCounter = 0;
+                if (onSave != null) onSave.run();
 			});
-			
+
             HBox radioRow1 = new HBox(14, rbNone, rbPulse);
             HBox radioRow2 = new HBox(14, rbSharp, rbRandom);
             radioRow1.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             radioRow2.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             root.getChildren().addAll(radioRow1, radioRow2);
-			
+
             // 속도 슬라이더
             Slider blinkSpeed = slider(0.2, 6.0, state.neonFlickerSpeed);
             Label blinkSpeedLabel = value(String.format("%.1f Hz", state.neonFlickerSpeed));
@@ -3577,8 +3666,9 @@ public class FxGPUNeon {
                 blinkSpeedLabel.setText(String.format("%.1f Hz", state.neonFlickerSpeed));
                 state.neonFlickerPhase = 0.0;
 			});
+            blinkSpeed.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("속도"), blinkSpeed, blinkSpeedLabel));
-			
+
             // 깊이 슬라이더 (꺼지는 정도)
             Slider blinkDepth = slider(0.0, 1.0, state.neonFlickerDepth);
             Label blinkDepthLabel = value(String.format("%.0f%%", state.neonFlickerDepth * 100));
@@ -3586,8 +3676,9 @@ public class FxGPUNeon {
                 state.neonFlickerDepth = nv.doubleValue();
                 blinkDepthLabel.setText(String.format("%.0f%%", state.neonFlickerDepth * 100));
 			});
+            blinkDepth.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("깊이"), blinkDepth, blinkDepthLabel));
-			
+
             // ── 높이 조정 ────────────────────────────────────────────────
             root.getChildren().add(section("● 높이 조정"));
             Slider minuteTickHeight = slider(0.4, 13.5, state.oneMinuteTickHeight);
@@ -3597,8 +3688,9 @@ public class FxGPUNeon {
                 minuteTickHeightLabel.setText(String.format("%.2f", state.oneMinuteTickHeight));
                 assembler.rebuildMaterialsAndScene();
 			});
+            minuteTickHeight.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("1분 눈금 높이"), minuteTickHeight, minuteTickHeightLabel));
-			
+
             Slider hourTickHeight = slider(1.0, 24.0, state.fiveMinuteTickHeight);
             Label hourTickHeightLabel = value(String.format("%.2f", state.fiveMinuteTickHeight));
             hourTickHeight.valueProperty().addListener((ob, ov, nv) -> {
@@ -3606,8 +3698,9 @@ public class FxGPUNeon {
                 hourTickHeightLabel.setText(String.format("%.2f", state.fiveMinuteTickHeight));
                 assembler.rebuildMaterialsAndScene();
 			});
+            hourTickHeight.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("5분 눈금 높이"), hourTickHeight, hourTickHeightLabel));
-			
+
             Slider numberHeight = slider(0.4, 9.0, state.numberHeightScale);
             Label numberHeightLabel = value(String.format("%.2f", state.numberHeightScale));
             numberHeight.valueProperty().addListener((ob, ov, nv) -> {
@@ -3615,11 +3708,12 @@ public class FxGPUNeon {
                 numberHeightLabel.setText(String.format("%.2f", state.numberHeightScale));
                 assembler.rebuildMaterialsAndScene();
 			});
+            numberHeight.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("숫자 높이"), numberHeight, numberHeightLabel));
-			
+
             // ── 시계 크기 / 투명도 ───────────────────────────────────────
             root.getChildren().add(section("● 시계 크기 / 투명도"));
-			
+
             // 카메라 거리 (첫 번째 항목)
             Slider cameraDistance = slider(160, 860, state.cameraDistance);
             Label cameraDistanceLabel = value(String.format("%.0f", state.cameraDistance));
@@ -3628,8 +3722,9 @@ public class FxGPUNeon {
                 cameraDistanceLabel.setText(String.format("%.0f", state.cameraDistance));
                 onCameraSettingsChanged.run();
 			});
+            cameraDistance.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("카메라 거리"), cameraDistance, cameraDistanceLabel));
-			
+
             Slider size = slider(70, 220, state.coinRadius);
             Label sizeLabel = value(String.format("%.0f", state.coinRadius));
             size.valueChangingProperty().addListener((ob, wasChanging, isChanging) -> {
@@ -3640,6 +3735,7 @@ public class FxGPUNeon {
             size.setOnMouseReleased(e -> {
                 assembler.setInteractiveResizing(false);
                 assembler.applyVisibilityState();
+                if (onSave != null) onSave.run();
 			});
             size.valueProperty().addListener((ob, ov, nv) -> {
                 state.coinRadius = nv.doubleValue();
@@ -3648,17 +3744,18 @@ public class FxGPUNeon {
                 if (!state.interactiveResizing) assembler.applyVisibilityState();
 			});
             root.getChildren().add(new HBox(8, plain("크기"), size, sizeLabel));
-			
+
             // YouTube 확대/축소 슬라이더 (0=전체보기, 1=꽉채우기)
             Slider ytZoom = slider(0.0, 1.0, state.youtubeScale);
             Label ytZoomLabel = value(String.format("%.0f%%", state.youtubeScale * 100));
             ytZoom.valueProperty().addListener((ob, ov, nv) -> {
                 state.youtubeScale = nv.doubleValue();
                 ytZoomLabel.setText(String.format("%.0f%%", state.youtubeScale * 100));
-                assembler.applyBackgroundImage(); // 즉시 반영
+                assembler.applyBackgroundImage();
 			});
+            ytZoom.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("YouTube 확대"), ytZoom, ytZoomLabel));
-			
+
             Slider opacity = slider(0.10, 1.00, state.clockOpacity);
             Label opacityLabel = value(String.format("%.0f%%", state.clockOpacity * 100));
             opacity.valueProperty().addListener((ob, ov, nv) -> {
@@ -3667,8 +3764,9 @@ public class FxGPUNeon {
                 overlay.setOpacity(state.clockOpacity);
                 opacityLabel.setText(String.format("%.0f%%", state.clockOpacity * 100));
 			});
+            opacity.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("불투명도"), opacity, opacityLabel));
-			
+
             // ── 흔들기 ───────────────────────────────────────────────────
             root.getChildren().add(section("● 흔들기"));
             Slider speed = slider(AppState.SPEED_MIN, AppState.SPEED_MAX, state.savedSpeed);
@@ -3678,29 +3776,32 @@ public class FxGPUNeon {
                 if (!state.paused) state.autoSpeed = state.savedSpeed;
                 speedLabel.setText(String.format("%.3f", state.savedSpeed));
 			});
+            speed.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("속도"), speed, speedLabel));
-			
+
             Slider swingY = slider(20, 180, state.swingRangeY);
             Label swingYLabel = value(String.format("%.0f°", state.swingRangeY));
             swingY.valueProperty().addListener((ob, ov, nv) -> {
                 state.swingRangeY = nv.doubleValue();
                 swingYLabel.setText(String.format("%.0f°", state.swingRangeY));
 			});
+            swingY.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("좌우"), swingY, swingYLabel));
-			
+
             Slider swingX = slider(0, 90, state.swingRangeX);
             Label swingXLabel = value(String.format("%.0f°", state.swingRangeX));
             swingX.valueProperty().addListener((ob, ov, nv) -> {
                 state.swingRangeX = nv.doubleValue();
                 swingXLabel.setText(String.format("%.0f°", state.swingRangeX));
 			});
+            swingX.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             root.getChildren().add(new HBox(8, plain("상하"), swingX, swingXLabel));
-			
+
             addDigitalSettingsSection(root);
-			
+
             // ── 배경 이미지 / 슬라이드쇼 (통합) ─────────────────────────
             root.getChildren().add(section("● 배경 이미지 / 슬라이드쇼"));
-			
+
             // 현재 상태 레이블
             String initLabelText = state.backgroundImageFile == null ? "(없음)"
 			: (state.slideshowEnabled
@@ -3708,7 +3809,7 @@ public class FxGPUNeon {
 			: state.backgroundImageFile.getName());
             Label imgFileLabel = plain(initLabelText);
             imgFileLabel.setStyle("-fx-text-fill:#444444; -fx-font-style:italic;");
-			
+
             // 전환 간격 ChoiceBox (슬라이드쇼 체크박스와 연동)
             int[] intervalSecs = {1, 2, 3, 4, 5, 10, 15, 20, 30, 60, 90, 120, 180, 300};
             ChoiceBox<String> intervalBox = new ChoiceBox<>();
@@ -3729,9 +3830,10 @@ public class FxGPUNeon {
                 if (nv != null && nv.intValue() >= 0 && nv.intValue() < intervalSecs.length) {
                     state.slideshowIntervalNanos = (long) intervalSecs[nv.intValue()] * 1_000_000_000L;
                     state.slideshowLastSwitchNanos = 0L;
+                    if (onSave != null) onSave.run();
 				}
 			});
-			
+
             // 슬라이드 쇼 체크박스 — 이미지 선택 후 부모 폴더 자동 적용
             CheckBox cbSlideshow = new CheckBox("슬라이드 쇼");
             cbSlideshow.setSelected(state.slideshowEnabled);
@@ -3765,11 +3867,10 @@ public class FxGPUNeon {
 					? state.backgroundImageFile.getName() : "(없음)");
                     imgFileLabel.setStyle("-fx-text-fill:#444444; -fx-font-style:italic;");
 				}
-                // Fix3: 활성화 기준을 cbSlideshow.isSelected()가 아닌 state.slideshowEnabled(실제 상태)로 수정
-                //   — 폴더 1개 이미지 케이스에서 체크박스는 false이지만 이미 위에서 처리됨
                 intervalBox.setDisable(!state.slideshowEnabled);
+                if (onSave != null) onSave.run();
 			});
-			
+
             // 이미지 선택 버튼
             Button btnSelectImg = new Button("이미지 선택");
             btnSelectImg.setOnAction(e -> {
@@ -3804,7 +3905,8 @@ public class FxGPUNeon {
                             onLoadBackgroundFile.accept(chosen);
                             imgFileLabel.setText(chosen.getName());
                             imgFileLabel.setStyle("-fx-text-fill:#004400; -fx-font-style:normal;");
-                            cbSlideshow.setDisable(false); // 이미지 있으니 슬라이드쇼 가능
+                            cbSlideshow.setDisable(false);
+                            if (onSave != null) onSave.run();
 						}
 						} catch (Exception ex) {
 						System.out.println("⚠ 오류: " + chosen.getName() + " , " + chosen.toURI().toString() + " , " + ex.getMessage());
@@ -3814,7 +3916,7 @@ public class FxGPUNeon {
 					}
 				}
 			});
-			
+
             // 중지 버튼 — 이미지 + 슬라이드쇼 모두 초기화
             Button btnStop = new Button("중지");
             btnStop.setOnAction(e -> {
@@ -3831,19 +3933,19 @@ public class FxGPUNeon {
                 imgFileLabel.setStyle("-fx-text-fill:#444444; -fx-font-style:italic;");
                 assembler.applyBackgroundImage();
                 assembler.applyVisibilityState();
+                if (onSave != null) onSave.run();
 			});
-			
+
             // [이미지 선택] [☐ 슬라이드 쇼] [전환간격▼] [중지]
             HBox imgControlRow = new HBox(6, btnSelectImg, cbSlideshow, intervalBox, btnStop);
             imgControlRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             root.getChildren().addAll(imgControlRow, imgFileLabel);
-			
+
             // ── 표시 옵션 (수평 배열) ──────────────────────────────────────
             root.getChildren().add(section("● 표시 옵션"));
             CheckBox cbNum = checkbox("시 숫자 표시", state.showNumbers,
-			v -> { state.showNumbers = v; assembler.applyVisibilityState(); });
-			
-            // 글래스 opacity 슬라이더 행 (cbGlass 체크 여부에 따라 표시/숨김)
+			v -> { state.showNumbers = v; assembler.applyVisibilityState(); if (onSave != null) onSave.run(); });
+
             Slider glassOpacitySlider = slider(0.0, 1.0, state.glassOpacity);
             Label glassOpacityLabel = value(String.format("%.0f%%", state.glassOpacity * 100));
             glassOpacitySlider.valueProperty().addListener((ob, ov, nv) -> {
@@ -3851,26 +3953,28 @@ public class FxGPUNeon {
                 glassOpacityLabel.setText(String.format("%.0f%%", state.glassOpacity * 100));
                 assembler.applyGlassOpacity();
 			});
+            glassOpacitySlider.setOnMouseReleased(e -> { if (onSave != null) onSave.run(); });
             HBox glassOpacityRow = new HBox(8, plain("  └ 불투명도"), glassOpacitySlider, glassOpacityLabel);
             glassOpacityRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             glassOpacityRow.setVisible(state.showGlass);
             glassOpacityRow.setManaged(state.showGlass);
-			
+
             CheckBox cbGlass = checkbox("글래스 레이어", state.showGlass, v -> {
                 state.showGlass = v;
                 assembler.rebuildGlass();
                 assembler.applyVisibilityState();
                 glassOpacityRow.setVisible(v);
                 glassOpacityRow.setManaged(v);
+                if (onSave != null) onSave.run();
 			});
-			
+
             CheckBox cbConvex = checkbox("볼록 유리 효과", state.showConvexGlass,
-			v -> { state.showConvexGlass = v; assembler.applyCrystalVisibilityPublic(); });
+			v -> { state.showConvexGlass = v; assembler.applyCrystalVisibilityPublic(); if (onSave != null) onSave.run(); });
             cbConvex.setDisable(state.crystalMode != 1);
             HBox optRow = new HBox(16, cbNum, cbGlass, cbConvex);
             optRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             root.getChildren().addAll(optRow, glassOpacityRow);
-			
+
             // ── 폰트 + 카메라 ────────────────────────────────────────────
             root.getChildren().add(section("● 폰트"));
             ChoiceBox<String> numFont = new ChoiceBox<>();
@@ -3878,10 +3982,10 @@ public class FxGPUNeon {
 			"Tahoma","Consolas","Courier New","Impact");
             numFont.setValue(state.numberFont);
             numFont.getSelectionModel().selectedItemProperty().addListener((ob, ov, nv) -> {
-                if (nv != null) { state.numberFont = nv; assembler.rebuildNumbers(); }
+                if (nv != null) { state.numberFont = nv; assembler.rebuildNumbers(); if (onSave != null) onSave.run(); }
 			});
             root.getChildren().add(new HBox(10, plain("숫자 폰트"), numFont));
-			
+
             // ── 크리스탈 / 반사 효과 (수평 배열) ────────────────────────
             root.getChildren().add(section("● 크리스탈 / 반사 효과"));
             ToggleGroup tg = new ToggleGroup();
@@ -3899,22 +4003,23 @@ public class FxGPUNeon {
                     assembler.rebuildCrystalEffect();
                     assembler.applyVisibilityState();
                     cbConvex.setDisable(mode != 1);
+                    if (onSave != null) onSave.run();
 				});
                 crystalRow.getChildren().add(rb);
 			}
             root.getChildren().add(crystalRow);
-			
+
             // ── 타이틀바: 제목 + 오른쪽 상단 [...] 버튼 ──────────────────
             Label titleLabel = new Label("KootPanKingThree 설정");
             titleLabel.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(titleLabel, javafx.scene.layout.Priority.ALWAYS);
             titleLabel.setStyle("-fx-text-fill:#000000; -fx-font-weight:bold; -fx-padding:8 10 8 10;");
-			
+
             Button btnAppearance = new Button("...");
             btnAppearance.setStyle("-fx-font-size:12px; -fx-padding:4 10 4 10; -fx-cursor:hand;");
             btnAppearance.setTooltip(new Tooltip("설정창 배경색 / 메뉴 폰트 변경"));
             btnAppearance.setOnAction(e -> openAppearanceDialog(s));
-			
+
             HBox titleBar = new HBox(titleLabel, btnAppearance);
             titleBar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             titleBar.setStyle("-fx-background-color:#f0f0f0; -fx-padding:0 6 0 0;");
@@ -3927,17 +4032,17 @@ public class FxGPUNeon {
                 s.setX(e.getScreenX() - offset[0]);
                 s.setY(e.getScreenY() - offset[1]);
 			});
-			
+
             // 설정창 내용이 많아졌으므로 세로 스크롤 추가 + 최소 너비 보장
             root.setMinWidth(920);
             root.setPrefWidth(920);
-			
+
             ScrollPane scroll = new ScrollPane(root);
             scroll.setFitToWidth(true);
             scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
             scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
             scroll.setStyle("-fx-background-color:transparent; -fx-background:transparent;");
-			
+
             // 화면 높이의 85% 까지만 설정창이 커지도록 제한
             Screen curScreen = Screen.getScreensForRectangle(
 				owner.getX() + state.viewportWidth * 0.5,
@@ -3945,12 +4050,12 @@ public class FxGPUNeon {
 			.stream().findFirst().orElse(Screen.getPrimary());
             double maxH = curScreen.getVisualBounds().getHeight() * 0.85;
             scroll.setMaxHeight(maxH);
-			
+
             VBox container = new VBox(titleBar, scroll);
             Scene sc = new Scene(container, 980, 860);
             s.setScene(sc);
             s.sizeToScene();
-			
+
             // 설정창은 마우스 커서가 있는 모니터(= 현재 시계를 보고 있는 모니터)의 중앙에 띄운다.
             // mainStage는 가상 데스크탑 전체를 덮으므로 owner 크기/위치로 모니터를 특정할 수 없다.
             // 시계 중심 좌표(JavaFX 논리픽셀)로 현재 모니터를 판별한다.
@@ -3963,7 +4068,7 @@ public class FxGPUNeon {
 			.stream().findFirst()
 			.orElse(Screen.getPrimary());
             final Rectangle2D vb = targetScreen.getVisualBounds();
-			
+
             // show() 이후 runLater에서 setX/setY:
             // show() 전에는 s.getWidth/Height()가 0 → 중심 보정 불가
             // show() 후 runLater에서 정확한 창 크기로 중앙 정렬
@@ -3974,21 +4079,21 @@ public class FxGPUNeon {
 			});
             return s;
 		}
-		
-		
+
+
         private void addDigitalSettingsSection(VBox root) {
             root.getChildren().add(section("● 디지탈 시계 설정"));
-			
+
             java.util.List<String> allFonts = javafx.scene.text.Font.getFamilies();
-			
+
             Label note = plain("날짜 행과 시분초 행의 모든 설정을 메인 설정으로 통합했습니다.");
             note.setStyle(note.getStyle() + " -fx-font-style:italic;");
             root.getChildren().add(note);
-			
+
             GridPane dateGrid = new GridPane();
             dateGrid.setHgap(10);
             dateGrid.setVgap(8);
-			
+
             CheckBox dateOnOff = checkbox("날짜 표시", state.showFaceDate, v -> {
                 state.showFaceDate = v;
                 refreshDigitalSection();
@@ -3998,7 +4103,7 @@ public class FxGPUNeon {
                 assembler.updateFaceDateTimeTextures();
                 refreshDigitalSection();
 			});
-			
+
             ComboBox<String> dateFmtBox = new ComboBox<>();
             dateFmtBox.getItems().addAll("N월 N일, 요일", "YYYY-MM-DD (요일)", "MM/DD (요일)", "N월 N일");
             dateFmtBox.getSelectionModel().select(state.faceDateFormatIndex);
@@ -4007,7 +4112,7 @@ public class FxGPUNeon {
                 state.faceDateFormatIndex = Math.max(0, dateFmtBox.getSelectionModel().getSelectedIndex());
                 refreshDigitalSection();
 			});
-			
+
             ComboBox<String> dateFontBox = new ComboBox<>();
             dateFontBox.getItems().addAll(allFonts);
             dateFontBox.setValue(state.faceDateFontFamily);
@@ -4018,7 +4123,7 @@ public class FxGPUNeon {
                     refreshDigitalSection();
 				}
 			});
-			
+
             Spinner<Integer> dateSizeSpinner = new Spinner<>(8, 120, (int) state.faceDateFontSize);
             dateSizeSpinner.setEditable(true);
             dateSizeSpinner.valueProperty().addListener((ob, ov, nv) -> {
@@ -4027,7 +4132,7 @@ public class FxGPUNeon {
                     refreshDigitalSection();
 				}
 			});
-			
+
             int drgb = state.faceDateColorRgb;
             ColorPicker dateColorPicker = new ColorPicker(
 			Color.rgb((drgb >> 16) & 0xFF, (drgb >> 8) & 0xFF, drgb & 0xFF, ((drgb >> 24) & 0xFF) / 255.0));
@@ -4040,7 +4145,7 @@ public class FxGPUNeon {
 				((int) Math.round(c.getBlue() * 255));
                 refreshDigitalSection();
 			});
-			
+
             ToggleGroup dateDirGroup = new ToggleGroup();
             RadioButton drbFixed = neonRadio("고정", dateDirGroup, state.faceDateScrollDir == 0);
             RadioButton drbRTL   = neonRadio("우→좌", dateDirGroup, state.faceDateScrollDir == 1);
@@ -4056,14 +4161,14 @@ public class FxGPUNeon {
 			});
             HBox dateDirRow = new HBox(10, drbFixed, drbRTL, drbLTR, drbPing);
             dateDirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-			
+
             Slider dateSpeedSlider = slider(0.2, 6.0, state.faceDateScrollSpeed);
             Label dateSpeedVal = value(String.format("%.1f", state.faceDateScrollSpeed));
             dateSpeedSlider.valueProperty().addListener((ob, ov, nv) -> {
                 state.faceDateScrollSpeed = nv.doubleValue();
                 dateSpeedVal.setText(String.format("%.1f", state.faceDateScrollSpeed));
 			});
-			
+
             dateGrid.add(dateOnOff, 0, 0);
             dateGrid.add(dateNeonOn, 1, 0);
             dateGrid.add(plain("날짜 형식"), 0, 1); dateGrid.add(dateFmtBox, 1, 1, 3, 1);
@@ -4073,11 +4178,11 @@ public class FxGPUNeon {
             dateGrid.add(plain("날짜 스크롤"), 0, 4); dateGrid.add(dateDirRow, 1, 4, 3, 1);
             dateGrid.add(plain("날짜 속도"), 0, 5); dateGrid.add(dateSpeedSlider, 1, 5, 2, 1); dateGrid.add(dateSpeedVal, 3, 5);
             root.getChildren().add(dateGrid);
-			
+
             GridPane timeGrid = new GridPane();
             timeGrid.setHgap(10);
             timeGrid.setVgap(8);
-			
+
             CheckBox timeOnOff = checkbox("시분초 표시", state.showDigital, v -> {
                 state.showDigital = v;
                 refreshDigitalSection();
@@ -4087,7 +4192,7 @@ public class FxGPUNeon {
                 assembler.updateFaceDateTimeTextures();
                 refreshDigitalSection();
 			});
-			
+
             ComboBox<String> timeFmtBox = new ComboBox<>();
             timeFmtBox.getItems().addAll("HH:mm:ss", "hh:mm:ss a", "HH:mm", "hh:mm a");
             timeFmtBox.getSelectionModel().select(state.digitalFormatIndex);
@@ -4096,7 +4201,7 @@ public class FxGPUNeon {
                 state.digitalFormatIndex = Math.max(0, timeFmtBox.getSelectionModel().getSelectedIndex());
                 refreshDigitalSection();
 			});
-			
+
             ComboBox<String> timeFontBox = new ComboBox<>();
             timeFontBox.getItems().addAll(allFonts);
             timeFontBox.setValue(state.digitalFontFamily);
@@ -4107,7 +4212,7 @@ public class FxGPUNeon {
                     refreshDigitalSection();
 				}
 			});
-			
+
             Spinner<Integer> timeSizeSpinner = new Spinner<>(8, 120, (int) state.digitalFontSize);
             timeSizeSpinner.setEditable(true);
             timeSizeSpinner.valueProperty().addListener((ob, ov, nv) -> {
@@ -4116,7 +4221,7 @@ public class FxGPUNeon {
                     refreshDigitalSection();
 				}
 			});
-			
+
             int trgb = state.digitalColorRgb;
             ColorPicker timeColorPicker = new ColorPicker(
 			Color.rgb((trgb >> 16) & 0xFF, (trgb >> 8) & 0xFF, trgb & 0xFF, ((trgb >> 24) & 0xFF) / 255.0));
@@ -4129,7 +4234,7 @@ public class FxGPUNeon {
 				((int) Math.round(c.getBlue() * 255));
                 refreshDigitalSection();
 			});
-			
+
             ToggleGroup timeDirGroup = new ToggleGroup();
             RadioButton trbFixed = neonRadio("고정", timeDirGroup, state.digitalScrollDir == 0);
             RadioButton trbRTL   = neonRadio("우→좌", timeDirGroup, state.digitalScrollDir == 1);
@@ -4146,14 +4251,14 @@ public class FxGPUNeon {
 			});
             HBox timeDirRow = new HBox(10, trbFixed, trbRTL, trbLTR, trbPing);
             timeDirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-			
+
             Slider timeSpeedSlider = slider(0.2, 6.0, state.digitalScrollSpeed);
             Label timeSpeedVal = value(String.format("%.1f", state.digitalScrollSpeed));
             timeSpeedSlider.valueProperty().addListener((ob, ov, nv) -> {
                 state.digitalScrollSpeed = nv.doubleValue();
                 timeSpeedVal.setText(String.format("%.1f", state.digitalScrollSpeed));
 			});
-			
+
             ComboBox<String> digitalBlinkBox = new ComboBox<>();
             digitalBlinkBox.getItems().addAll("NONE", "PULSE", "SHARP", "RANDOM");
             digitalBlinkBox.setValue(String.valueOf(state.digitalNeonBlinkStyle));
@@ -4164,7 +4269,7 @@ public class FxGPUNeon {
                     refreshDigitalSection();
 				}
 			});
-			
+
             timeGrid.add(timeOnOff, 0, 0);
             timeGrid.add(timeNeonOn, 1, 0);
             timeGrid.add(plain("시분초 형식"), 0, 1); timeGrid.add(timeFmtBox, 1, 1, 3, 1);
@@ -4176,7 +4281,7 @@ public class FxGPUNeon {
             timeGrid.add(plain("디지탈 네온 점멸"), 0, 6); timeGrid.add(digitalBlinkBox, 1, 6);
             root.getChildren().add(timeGrid);
 		}
-		
+
         private void refreshDigitalSection() {
             assembler.updateFaceDateTimeTextures();
             boolean visible = (state.showDigital || state.showFaceDate) && !state.transparentMode;
@@ -4187,7 +4292,7 @@ public class FxGPUNeon {
                 assembler.removeDigitalGroup();
 			}
 		}
-		
+
         /** [...] 버튼 클릭 → 설정창 외관(배경색·메뉴 폰트) 변경 팝업 */
         private void openAppearanceDialog(Stage owner) {
             Stage popup = new Stage();
@@ -4195,16 +4300,16 @@ public class FxGPUNeon {
             popup.initStyle(StageStyle.UTILITY);
             popup.setTitle("외관 설정");
             popup.setAlwaysOnTop(true);
-			
+
             Label lb1 = new Label("배경색");
             ColorPicker bgPicker = new ColorPicker(Color.web(state.dialogBgColor));
-			
+
             Label lb2 = new Label("메뉴 폰트");
             ChoiceBox<String> fontBox = new ChoiceBox<>();
             fontBox.getItems().addAll("System", "맑은 고딕", "나눔고딕", "나눔명조",
 			"Arial", "Consolas", "Georgia", "Tahoma", "Verdana");
             fontBox.setValue(state.dialogFontFamily);
-			
+
             Button btnApply = new Button("적용");
             btnApply.setDefaultButton(true);
             btnApply.setOnAction(ev -> {
@@ -4217,20 +4322,21 @@ public class FxGPUNeon {
                 popup.close();
                 owner.close();     // 현재 설정창 닫기 → onHidden: setupStage=null
                 onRebuild.run();   // 동기 순서 보장
+                if (onSave != null) onSave.run();
 			});
-			
+
             GridPane gp = new GridPane();
             gp.setHgap(12); gp.setVgap(10);
             gp.setPadding(new Insets(16));
             gp.add(lb1,      0, 0); gp.add(bgPicker, 1, 0);
             gp.add(lb2,      0, 1); gp.add(fontBox,  1, 1);
             gp.add(btnApply, 1, 2);
-			
+
             popup.setScene(new Scene(gp));
             popup.sizeToScene();
             popup.show();
 		}
-		
+
         /** root VBox에 dialogBgColor + dialogFontFamily CSS 적용 */
         private void applyRootStyle(VBox root) {
             String fontPart = "System".equals(state.dialogFontFamily)
@@ -4238,7 +4344,7 @@ public class FxGPUNeon {
             root.setStyle("-fx-background-color:" + state.dialogBgColor
 			+ "; -fx-font-size:12px;" + fontPart);
 		}
-		
+
         /** 배경색 밝기(luminance)에 따라 텍스트 색을 자동 결정 */
         private String dialogTextColor() {
             try {
@@ -4250,7 +4356,7 @@ public class FxGPUNeon {
                 return "#000000";
 			}
 		}
-		
+
         private HBox colorRow(String name, Color init, java.util.function.Consumer<Color> onChange) {
             Label lb = plain(name);
             lb.setMinWidth(90);
@@ -4261,7 +4367,7 @@ public class FxGPUNeon {
             row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             return row;
 		}
-		
+
         /**
 			* 색깔 설정 행 + NEON 체크박스.
 			* 레이아웃: [이름 라벨] [ColorPicker] [✦ NEON 체크박스]
@@ -4272,15 +4378,15 @@ public class FxGPUNeon {
 			java.util.function.Consumer<Boolean> onNeon) {
             Label lb = plain(name);
             lb.setMinWidth(52);
-			
+
             ColorPicker cp = new ColorPicker(init);
             cp.setPrefWidth(88);
-			
+
             CheckBox neonCb = new CheckBox("✦");
             neonCb.setSelected(neonInit);
             neonCb.setTooltip(new Tooltip("NEON 발광 효과"));
             updateNeonCbStyle(neonCb, neonInit, init);
-			
+
             // cp.setOnAction 은 한 번만 등록 (이전에 두 번 등록하여 첫 번째가 덮어씌워지던 버그 수정)
             cp.setOnAction(e -> {
                 onChange.accept(cp.getValue());
@@ -4291,12 +4397,12 @@ public class FxGPUNeon {
                 onNeon.accept(checked);
                 updateNeonCbStyle(neonCb, checked, cp.getValue());
 			});
-			
+
             HBox row = new HBox(6, lb, cp, neonCb);
             row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
             return row;
 		}
-		
+
         /** NEON 체크박스 스타일: 체크 시 형광색 텍스트, 미체크 시 기본 색 */
         private void updateNeonCbStyle(CheckBox cb, boolean on, Color base) {
             if (on) {
@@ -4309,14 +4415,14 @@ public class FxGPUNeon {
                 cb.setStyle("-fx-text-fill:" + dialogTextColor() + ";");
 			}
 		}
-		
+
         private static String toHexColor(Color c) {
             return String.format("#%02x%02x%02x",
 				(int)(c.getRed()   * 255),
 				(int)(c.getGreen() * 255),
 			(int)(c.getBlue()  * 255));
 		}
-		
+
         private CheckBox checkbox(String text, boolean init, java.util.function.Consumer<Boolean> onChange) {
             CheckBox cb = new CheckBox(text);
             cb.setSelected(init);
@@ -4324,32 +4430,32 @@ public class FxGPUNeon {
             cb.setOnAction(e -> onChange.accept(cb.isSelected()));
             return cb;
 		}
-		
+
         private Slider slider(double min, double max, double value) {
             Slider s = new Slider(min, max, value);
             s.setPrefWidth(180);
             return s;
 		}
-		
+
         private Label section(String s) {
             Label l = new Label(s);
             l.setStyle("-fx-text-fill:" + dialogTextColor()
 			+ "; -fx-font-weight:bold; -fx-padding:6 0 2 0;");
             return l;
 		}
-		
+
         private Label plain(String s) {
             Label l = new Label(s);
             l.setStyle("-fx-text-fill:" + dialogTextColor() + ";");
             return l;
 		}
-		
+
         private Label value(String s) {
             Label l = plain(s);
             l.setMinWidth(46);
             return l;
 		}
-		
+
         /** 네온 점멸 스타일 라디오 버튼 */
         private RadioButton neonRadio(String text, ToggleGroup group, boolean selected) {
             RadioButton rb = new RadioButton(text);
@@ -4357,6 +4463,281 @@ public class FxGPUNeon {
             rb.setSelected(selected);
             rb.setStyle("-fx-text-fill:" + dialogTextColor() + "; -fx-font-size:11px;");
             return rb;
+		}
+	}
+
+    // ───────────────────────── FX INI Manager ─────────────────────────
+    /**
+		* 인스턴스별 시계 상태를 INI 파일에 저장/복원한다.
+		* 모든 키는 _FX. 접두어를 사용한다. 기존 INI 의 다른 키는 보존된다.
+	*/
+    final class FxIniManager {
+        private final String iniPath;
+
+        FxIniManager(String iniPath) { this.iniPath = iniPath; }
+
+        // ── 저장 ──────────────────────────────────────────────────────
+        synchronized void save(AppState st, double stageX, double stageY) {
+            java.util.Properties p = loadRaw();
+            // 창 위치
+            set(p, "_FX.stageX",    stageX);
+            set(p, "_FX.stageY",    stageY);
+            // 형태
+            set(p, "_FX.coinRadius",           st.coinRadius);
+            set(p, "_FX.clockOpacity",         st.clockOpacity);
+            set(p, "_FX.paused",               st.paused);
+            set(p, "_FX.savedSpeed",           st.savedSpeed);
+            set(p, "_FX.swingRangeY",          st.swingRangeY);
+            set(p, "_FX.swingRangeX",          st.swingRangeX);
+            set(p, "_FX.baseAngleX",           st.baseAngleX);
+            set(p, "_FX.showNumbers",          st.showNumbers);
+            set(p, "_FX.showGlass",            st.showGlass);
+            set(p, "_FX.glassOpacity",         st.glassOpacity);
+            set(p, "_FX.showConvexGlass",      st.showConvexGlass);
+            set(p, "_FX.crystalMode",          st.crystalMode);
+            set(p, "_FX.transparentMode",      st.transparentMode);
+            set(p, "_FX.youtubeScale",         st.youtubeScale);
+            set(p, "_FX.numberHeightScale",    st.numberHeightScale);
+            set(p, "_FX.numberFont",           st.numberFont);
+            set(p, "_FX.oneMinuteTickHeight",  st.oneMinuteTickHeight);
+            set(p, "_FX.fiveMinuteTickHeight", st.fiveMinuteTickHeight);
+            set(p, "_FX.cameraDistance",       st.cameraDistance);
+            // 색상 (hex)
+            set(p, "_FX.faceColor",            colorToHex(st.faceColor));
+            set(p, "_FX.backColor",            colorToHex(st.backColor));
+            set(p, "_FX.rimColor",             colorToHex(st.rimColor));
+            set(p, "_FX.hourHandColor",        colorToHex(st.hourHandColor));
+            set(p, "_FX.minuteHandColor",      colorToHex(st.minuteHandColor));
+            set(p, "_FX.secondHandColor",      colorToHex(st.secondHandColor));
+            set(p, "_FX.fiveMinuteTickColor",  colorToHex(st.fiveMinuteTickColor));
+            set(p, "_FX.oneMinuteTickColor",   colorToHex(st.oneMinuteTickColor));
+            set(p, "_FX.numberColor",          colorToHex(st.numberColor));
+            // NEON 플래그
+            set(p, "_FX.neonFace",             st.neonFace);
+            set(p, "_FX.neonBack",             st.neonBack);
+            set(p, "_FX.neonRim",              st.neonRim);
+            set(p, "_FX.neonHourHand",         st.neonHourHand);
+            set(p, "_FX.neonMinuteHand",       st.neonMinuteHand);
+            set(p, "_FX.neonSecondHand",       st.neonSecondHand);
+            set(p, "_FX.neonFiveMinuteTick",   st.neonFiveMinuteTick);
+            set(p, "_FX.neonOneMinuteTick",    st.neonOneMinuteTick);
+            set(p, "_FX.neonNumber",           st.neonNumber);
+            set(p, "_FX.neonBlinkStyle",       st.neonBlinkStyle.name());
+            set(p, "_FX.neonFlickerSpeed",     st.neonFlickerSpeed);
+            set(p, "_FX.neonFlickerDepth",     st.neonFlickerDepth);
+            // 레인보우
+            set(p, "_FX.rainbowMode",          st.rainbowMode);
+            set(p, "_FX.rainbowIntervalSec",   st.rainbowIntervalSec);
+            // 디지탈 시계
+            set(p, "_FX.showDigital",              st.showDigital);
+            set(p, "_FX.digitalFormatIndex",       st.digitalFormatIndex);
+            set(p, "_FX.digitalFontFamily",        st.digitalFontFamily);
+            set(p, "_FX.digitalFontSize",          st.digitalFontSize);
+            set(p, "_FX.digitalColorRgb",          st.digitalColorRgb);
+            set(p, "_FX.digitalScrollDir",         st.digitalScrollDir);
+            set(p, "_FX.digitalScrollSpeed",       st.digitalScrollSpeed);
+            set(p, "_FX.neonFaceTime",             st.neonFaceTime);
+            set(p, "_FX.digitalNeonBlinkStyle",    st.digitalNeonBlinkStyle.name());
+            // 날짜
+            set(p, "_FX.showFaceDate",             st.showFaceDate);
+            set(p, "_FX.faceDateFormatIndex",      st.faceDateFormatIndex);
+            set(p, "_FX.faceDateFontFamily",       st.faceDateFontFamily);
+            set(p, "_FX.faceDateFontSize",         st.faceDateFontSize);
+            set(p, "_FX.faceDateColorRgb",         st.faceDateColorRgb);
+            set(p, "_FX.faceDateScrollDir",        st.faceDateScrollDir);
+            set(p, "_FX.faceDateScrollSpeed",      st.faceDateScrollSpeed);
+            set(p, "_FX.neonFaceDate",             st.neonFaceDate);
+            // 배경
+            set(p, "_FX.backgroundImageFile",
+			st.backgroundImageFile != null ? st.backgroundImageFile.getAbsolutePath() : "");
+            set(p, "_FX.slideshowEnabled",         st.slideshowEnabled);
+            set(p, "_FX.slideshowIntervalNanos",   st.slideshowIntervalNanos);
+            if (st.slideshowFiles != null && !st.slideshowFiles.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                for (java.io.File f : st.slideshowFiles) {
+                    if (sb.length() > 0) sb.append(';');
+                    sb.append(f.getAbsolutePath());
+				}
+                p.setProperty("_FX.slideshowFiles", sb.toString());
+				} else {
+                p.setProperty("_FX.slideshowFiles", "");
+			}
+            // 다이얼로그 외관
+            set(p, "_FX.dialogBgColor",            st.dialogBgColor);
+            set(p, "_FX.dialogFontFamily",         st.dialogFontFamily);
+            // 세계시계
+            set(p, "_FX.timeZone",                 st.theTimeZone.getId());
+            set(p, "_FX.cityPrefix",               st.cityPrefix);
+            writeRaw(p);
+		}
+
+        /**
+			* INI 에서 _FX.* 키를 AppState 에 복원한다.
+			* @return [stageX, stageY] — 저장된 값 없으면 [NaN, NaN]
+		*/
+        double[] load(AppState st) {
+            java.util.Properties p = loadRaw();
+            if (p.isEmpty()) return new double[]{Double.NaN, Double.NaN};
+
+            double stageX = getDouble(p, "_FX.stageX", Double.NaN);
+            double stageY = getDouble(p, "_FX.stageY", Double.NaN);
+            // 형태
+            st.coinRadius           = getDouble(p, "_FX.coinRadius",           st.coinRadius);
+            st.clockOpacity         = getDouble(p, "_FX.clockOpacity",         st.clockOpacity);
+            st.paused               = getBool  (p, "_FX.paused",               st.paused);
+            st.savedSpeed           = getDouble(p, "_FX.savedSpeed",           st.savedSpeed);
+            st.autoSpeed            = st.paused ? 0.0 : st.savedSpeed;
+            st.swingRangeY          = getDouble(p, "_FX.swingRangeY",          st.swingRangeY);
+            st.swingRangeX          = getDouble(p, "_FX.swingRangeX",          st.swingRangeX);
+            st.baseAngleX           = getDouble(p, "_FX.baseAngleX",           st.baseAngleX);
+            st.showNumbers          = getBool  (p, "_FX.showNumbers",          st.showNumbers);
+            st.showGlass            = getBool  (p, "_FX.showGlass",            st.showGlass);
+            st.glassOpacity         = getDouble(p, "_FX.glassOpacity",         st.glassOpacity);
+            st.showConvexGlass      = getBool  (p, "_FX.showConvexGlass",      st.showConvexGlass);
+            st.crystalMode          = getInt   (p, "_FX.crystalMode",          st.crystalMode);
+            st.transparentMode      = getBool  (p, "_FX.transparentMode",      st.transparentMode);
+            st.youtubeScale         = getDouble(p, "_FX.youtubeScale",         st.youtubeScale);
+            st.numberHeightScale    = getDouble(p, "_FX.numberHeightScale",    st.numberHeightScale);
+            st.numberFont           = getStr   (p, "_FX.numberFont",           st.numberFont);
+            st.oneMinuteTickHeight  = getDouble(p, "_FX.oneMinuteTickHeight",  st.oneMinuteTickHeight);
+            st.fiveMinuteTickHeight = getDouble(p, "_FX.fiveMinuteTickHeight", st.fiveMinuteTickHeight);
+            st.cameraDistance       = getDouble(p, "_FX.cameraDistance",       st.cameraDistance);
+            // 색상
+            st.faceColor           = hexToColor(p, "_FX.faceColor",           st.faceColor);
+            st.backColor           = hexToColor(p, "_FX.backColor",           st.backColor);
+            st.rimColor            = hexToColor(p, "_FX.rimColor",            st.rimColor);
+            st.hourHandColor       = hexToColor(p, "_FX.hourHandColor",       st.hourHandColor);
+            st.minuteHandColor     = hexToColor(p, "_FX.minuteHandColor",     st.minuteHandColor);
+            st.secondHandColor     = hexToColor(p, "_FX.secondHandColor",     st.secondHandColor);
+            st.fiveMinuteTickColor = hexToColor(p, "_FX.fiveMinuteTickColor", st.fiveMinuteTickColor);
+            st.oneMinuteTickColor  = hexToColor(p, "_FX.oneMinuteTickColor",  st.oneMinuteTickColor);
+            st.numberColor         = hexToColor(p, "_FX.numberColor",         st.numberColor);
+            // NEON
+            st.neonFace             = getBool(p, "_FX.neonFace",           st.neonFace);
+            st.neonBack             = getBool(p, "_FX.neonBack",           st.neonBack);
+            st.neonRim              = getBool(p, "_FX.neonRim",            st.neonRim);
+            st.neonHourHand         = getBool(p, "_FX.neonHourHand",       st.neonHourHand);
+            st.neonMinuteHand       = getBool(p, "_FX.neonMinuteHand",     st.neonMinuteHand);
+            st.neonSecondHand       = getBool(p, "_FX.neonSecondHand",     st.neonSecondHand);
+            st.neonFiveMinuteTick   = getBool(p, "_FX.neonFiveMinuteTick", st.neonFiveMinuteTick);
+            st.neonOneMinuteTick    = getBool(p, "_FX.neonOneMinuteTick",  st.neonOneMinuteTick);
+            st.neonNumber           = getBool(p, "_FX.neonNumber",         st.neonNumber);
+            String blinkName = getStr(p, "_FX.neonBlinkStyle", "");
+            if (!blinkName.isEmpty()) {
+                try { st.neonBlinkStyle = AppState.NeonBlinkStyle.valueOf(blinkName); }
+                catch (Exception ignored) {}
+			}
+            st.neonFlickerSpeed   = getDouble(p, "_FX.neonFlickerSpeed", st.neonFlickerSpeed);
+            st.neonFlickerDepth   = getDouble(p, "_FX.neonFlickerDepth", st.neonFlickerDepth);
+            // 레인보우
+            st.rainbowMode        = getBool  (p, "_FX.rainbowMode",        st.rainbowMode);
+            st.rainbowIntervalSec = getDouble(p, "_FX.rainbowIntervalSec", st.rainbowIntervalSec);
+            // 디지탈
+            st.showDigital        = getBool  (p, "_FX.showDigital",           st.showDigital);
+            st.digitalFormatIndex = getInt   (p, "_FX.digitalFormatIndex",    st.digitalFormatIndex);
+            st.digitalFontFamily  = getStr   (p, "_FX.digitalFontFamily",     st.digitalFontFamily);
+            st.digitalFontSize    = getDouble(p, "_FX.digitalFontSize",       st.digitalFontSize);
+            st.digitalColorRgb    = getInt   (p, "_FX.digitalColorRgb",       st.digitalColorRgb);
+            st.digitalScrollDir   = getInt   (p, "_FX.digitalScrollDir",      st.digitalScrollDir);
+            st.digitalScrollSpeed = getDouble(p, "_FX.digitalScrollSpeed",    st.digitalScrollSpeed);
+            st.neonFaceTime       = getBool  (p, "_FX.neonFaceTime",          st.neonFaceTime);
+            String dnb = getStr(p, "_FX.digitalNeonBlinkStyle", "");
+            if (!dnb.isEmpty()) {
+                try { st.digitalNeonBlinkStyle = AppState.NeonBlinkStyle.valueOf(dnb); }
+                catch (Exception ignored) {}
+			}
+            // 날짜
+            st.showFaceDate        = getBool  (p, "_FX.showFaceDate",        st.showFaceDate);
+            st.faceDateFormatIndex = getInt   (p, "_FX.faceDateFormatIndex", st.faceDateFormatIndex);
+            st.faceDateFontFamily  = getStr   (p, "_FX.faceDateFontFamily",  st.faceDateFontFamily);
+            st.faceDateFontSize    = getDouble(p, "_FX.faceDateFontSize",    st.faceDateFontSize);
+            st.faceDateColorRgb    = getInt   (p, "_FX.faceDateColorRgb",    st.faceDateColorRgb);
+            st.faceDateScrollDir   = getInt   (p, "_FX.faceDateScrollDir",   st.faceDateScrollDir);
+            st.faceDateScrollSpeed = getDouble(p, "_FX.faceDateScrollSpeed", st.faceDateScrollSpeed);
+            st.neonFaceDate        = getBool  (p, "_FX.neonFaceDate",        st.neonFaceDate);
+            // 배경
+            String bgPath = getStr(p, "_FX.backgroundImageFile", "");
+            if (!bgPath.isEmpty()) {
+                java.io.File bgFile = new java.io.File(bgPath);
+                if (bgFile.exists()) st.backgroundImageFile = bgFile;
+			}
+            st.slideshowEnabled       = getBool(p, "_FX.slideshowEnabled",      st.slideshowEnabled);
+            st.slideshowIntervalNanos = getLong(p, "_FX.slideshowIntervalNanos", st.slideshowIntervalNanos);
+            String ssFiles = getStr(p, "_FX.slideshowFiles", "");
+            if (!ssFiles.isEmpty()) {
+                st.slideshowFiles.clear();
+                for (String fp : ssFiles.split(";")) {
+                    if (!fp.trim().isEmpty()) {
+                        java.io.File f = new java.io.File(fp.trim());
+                        if (f.exists()) st.slideshowFiles.add(f);
+					}
+				}
+			}
+            // 다이얼로그 외관
+            st.dialogBgColor    = getStr(p, "_FX.dialogBgColor",    st.dialogBgColor);
+            st.dialogFontFamily = getStr(p, "_FX.dialogFontFamily", st.dialogFontFamily);
+            // 세계시계
+            String tz = getStr(p, "_FX.timeZone", "");
+            if (!tz.isEmpty()) {
+                try { st.theTimeZone = java.time.ZoneId.of(tz); }
+                catch (Exception ignored) {}
+			}
+            st.cityPrefix = getStr(p, "_FX.cityPrefix", st.cityPrefix);
+            System.out.println("[FxIni] 복원 완료: " + iniPath);
+            return new double[]{stageX, stageY};
+		}
+
+        // ── 파일 I/O ─────────────────────────────────────────────────
+        private java.util.Properties loadRaw() {
+            java.util.Properties p = new java.util.Properties();
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(iniPath)) {
+                p.load(fis);
+			} catch (Exception ignored) {}
+            return p;
+		}
+        private synchronized void writeRaw(java.util.Properties p) {
+            try {
+                java.io.File f = new java.io.File(iniPath);
+                if (f.getParentFile() != null) f.getParentFile().mkdirs();
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f)) {
+                    p.store(fos, "KootPanKingThree FX Clock State");
+				}
+			} catch (Exception e) { AppLogger.logException(e); }
+		}
+        // ── set 헬퍼 ─────────────────────────────────────────────────
+        private void set(java.util.Properties p, String k, double v)  { p.setProperty(k, String.valueOf(v)); }
+        private void set(java.util.Properties p, String k, int v)     { p.setProperty(k, String.valueOf(v)); }
+        private void set(java.util.Properties p, String k, long v)    { p.setProperty(k, String.valueOf(v)); }
+        private void set(java.util.Properties p, String k, boolean v) { p.setProperty(k, String.valueOf(v)); }
+        private void set(java.util.Properties p, String k, String v)  { p.setProperty(k, v != null ? v : ""); }
+        // ── get 헬퍼 ─────────────────────────────────────────────────
+        private String  getStr   (java.util.Properties p, String k, String def)  {
+            String v = p.getProperty(k); return (v == null || v.isEmpty()) ? def : v;
+		}
+        private double  getDouble(java.util.Properties p, String k, double def) {
+            try { return Double.parseDouble(p.getProperty(k,"")); } catch (Exception e) { return def; }
+		}
+        private int     getInt   (java.util.Properties p, String k, int def) {
+            try { return Integer.parseInt(p.getProperty(k,"")); } catch (Exception e) { return def; }
+		}
+        private long    getLong  (java.util.Properties p, String k, long def) {
+            try { return Long.parseLong(p.getProperty(k,"")); } catch (Exception e) { return def; }
+		}
+        private boolean getBool  (java.util.Properties p, String k, boolean def) {
+            String v = p.getProperty(k); return (v == null) ? def : Boolean.parseBoolean(v);
+		}
+        // ── 색상 변환 ─────────────────────────────────────────────────
+        private String colorToHex(javafx.scene.paint.Color c) {
+            if (c == null) return "";
+            return String.format("#%02x%02x%02x",
+			(int)(c.getRed()*255), (int)(c.getGreen()*255), (int)(c.getBlue()*255));
+		}
+        private javafx.scene.paint.Color hexToColor(
+			java.util.Properties p, String k, javafx.scene.paint.Color def) {
+            String hex = p.getProperty(k, "");
+            if (hex.isEmpty()) return def;
+            try { return javafx.scene.paint.Color.web(hex); }
+            catch (Exception e) { return def; }
 		}
 	}
 }

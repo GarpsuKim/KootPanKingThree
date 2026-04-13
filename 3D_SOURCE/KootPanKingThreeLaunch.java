@@ -27,23 +27,22 @@ public class KootPanKingThreeLaunch extends Application {
 	public static KootPanKingThreeApp app ;
 	public static Kakao kakao = new Kakao();
 	public static MainWindow mainWindow = new MainWindow();;
-
 	public KootPanKingThreeLaunch () {
 		System.out.println("[KootPanKingThreeLaunch]");
 	};
-
 	@Override
     public void start(Stage primaryStage) {
 		System.out.println("■■■■■ start(Stage primaryStage)");	
 		showStartupScheduleTextLater();
+		googleCalendarService.setSETTINGS_DIR(AppContext.SETTINGS_DIR);
         mainWindow.theMainWindow(primaryStage);
+		telegramSetup();
 	}
 	private static void showStartupScheduleTextLater() {
 		new Thread(() -> {
 			try {
 				Thread.sleep(30_000);
 			} catch (InterruptedException ignored) {}
-			
 			int waitCount = 0;
 			while (mainWindow == null && waitCount < 200) { // 최대 10초
 				try {
@@ -51,25 +50,25 @@ public class KootPanKingThreeLaunch extends Application {
 				} catch (InterruptedException ignored) {}
 				waitCount++;
 			}
-			
 			if (mainWindow == null) {
 				System.out.println("mainWindow 초기화 안 됨");
 				return;
 			}
-			
-			if (startupScheduleText != null && !startupScheduleText.isEmpty()) {
+			// if (startupScheduleText != null && !startupScheduleText.isEmpty()) {
 				javafx.application.Platform.runLater(() -> {
 					System.out.println("일정 통보 다이알로그 등록");
+					firstFinalGmail();
+					KakaoSetup();
 					mainWindow.showScheduleDialog("📅 향후 3일 일정", startupScheduleText);
 				});
-			}
+			// }
 		}, "StartupScheduleDelay").start();
 	}
 	
     private static void firstFinalGmail() {
 		// GmailSender gmail = GmailSender.getInstance();
 		gmail.init();
-		// gmail.sendStartupNotice(startupScheduleText);  // 쓰레드 동기화 안되어서 텔레그램으로 이동
+		gmail.sendStartupNotice(startupScheduleText);  // 쓰레드 동기화 안되어서 텔레그램으로 이동
 		// 5. 종료 메일 hook (1회)
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 			try {
@@ -86,6 +85,7 @@ public class KootPanKingThreeLaunch extends Application {
 	}
 	
 	private static void telegramSetup() {
+		googleCalendarService.setSETTINGS_DIR(AppContext.SETTINGS_DIR);
 		tg = TelegramBot.getInstance(new TelegramBot.CommandHandler() {
 			@Override public java.io.File captureClockScreen() throws Exception {
 				if (screenCapture == null) throw new IllegalStateException("screenCapture not initialized");
@@ -206,7 +206,6 @@ public class KootPanKingThreeLaunch extends Application {
 				}
 				startupScheduleText = sb.toString().trim();
 				if (startupScheduleText.isEmpty()) return;
-				gmail.sendStartupNotice(startupScheduleText);
 				tg.sendTelegram(startupScheduleText);
 				// javafx.application.Platform.runLater(() ->	showScheduleDialog("📅 향후 3일 일정", startupScheduleText));
 				} catch (Exception e) {
@@ -251,9 +250,11 @@ public class KootPanKingThreeLaunch extends Application {
 	public static void main(String[] args) {
 		AppLogger.init();
 		AppContext.init();
+		/*
 		firstFinalGmail();
 		telegramSetup();
 		KakaoSetup();
+		*/
 		try {
 			System.out.println("[(Application.launch)-------000]");
 			launch();
