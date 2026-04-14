@@ -224,7 +224,6 @@ public class FxGPUNeon {
             startAnimation();
 
             mainStage.initStyle(StageStyle.TRANSPARENT);
-            mainStage.setAlwaysOnTop(true);
             mainStage.setTitle("KootPanKingThree Refactored");
             mainStage.setScene(scene);
             mainStage.setX(vb.getMinX());

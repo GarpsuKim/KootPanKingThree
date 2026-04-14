@@ -1,6 +1,5 @@
 import javafx.application.Application;
 import javafx.stage.Stage;
-
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -14,7 +13,6 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.WindowEvent;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -25,12 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
 import java.util.Map;
-
 public class MainWindow {
-	
 	private static volatile MainWindow instance;
 	private static volatile boolean fxStarted = false;
-	
 	// ── 색 상수 ──────────────────────────────────────────────────
     private static final String BG      = "linear-gradient(to bottom right, #fff7fb 0%, #ffe8f4 45%, #ffd6eb 100%)";
     private static final String FG      = "#6b2148";
@@ -43,11 +38,9 @@ public class MainWindow {
     private static final String GLASS_PANEL  = "rgba(255, 255, 255, 0.32)";
     private static final String GLASS_BORDER = "rgba(209, 79, 146, 0.35)";
     private static final String GLASS_HOVER  = "rgba(255, 255, 255, 0.52)";
-	
     // ── 테마 모드 ───────────────────────────────────────────────
     private enum ThemeMode { BASIC, PINK_GLASS }
     private static  ThemeMode themeMode = ThemeMode.PINK_GLASS;
-	
     private static final String LOG_STYLE =
 	"-fx-font-family: 'Malgun Gothic'; -fx-font-size: 13px;"
 	+ "-fx-text-fill: " + FG + ";"
@@ -57,21 +50,17 @@ public class MainWindow {
 	+ "-fx-border-color: " + GLASS_BORDER + ";"
 	+ "-fx-border-radius: 16;"
 	+ "-fx-border-width: 1;";
-	
     // ── UI 컴포넌트 ───────────────────────────────────────────────
     private static  Stage    stage;
     private static  TextArea logArea;
     private static  Label    statusBar;
-	
     // ─────────────────────────────────────────────────────────────
     private static final String APP_NAME = "[KootPanKingThree 3차원_끝판왕 (v1.0)]";
-	
     private static String       appDir;
     private static String       settingsDir;
     private static String       configFile;
     private Properties   config     = new Properties();
     // private IniController iniController;
-	
     // ── 세계시계 자식 창 ──────────────────────────────────────────
     // private final java.util.Map<java.time.ZoneId, Stage> childStages = new java.util.LinkedHashMap<>();
 	private static interface CityWindowHandle {
@@ -80,17 +69,15 @@ public class MainWindow {
 		boolean isShowing();
 	}
 	private static final java.util.Map<java.time.ZoneId, CityWindowHandle> childStages = new java.util.LinkedHashMap<>();
-	
     private static String startArg1 = "default1", startArg2 = "default2", startArg3 = "default3";
     private static  GmailSender gmail  = GmailSender.getInstance();
     private static  Kakao        kakao  = new Kakao();
     private static  TelegramBot        tg;
     private static  ChimeController    chimeController; // lazy-init
-	
-	
     private static  GoogleCalendarService googleCalendarService = new GoogleCalendarService();
     private static  NaverCalendarService  naverCalendarService  = new NaverCalendarService();
-	
+    private final AppRestarter.PCShortcut pcShortcut = new AppRestarter.PCShortcut();
+    private final AppRestarter appRestarter = new AppRestarter(gmail, null);
     // ═══════════════════════════════════════════════════════════
     //  생성자 / JavaFX 진입점
     // ═══════════════════════════════════════════════════════════
@@ -132,14 +119,13 @@ public class MainWindow {
         appDir      = AppContext.APP_DIR;
         settingsDir = AppContext.SETTINGS_DIR;
 		System.out.println("■■■■■ theMainWindow(Stage primaryStage)");
-		
 		this.stage = primaryStage;
         primaryStage.setTitle("끝판왕 (KootPanKingThree Ver 1.1)");
         logArea = new TextArea();
         logArea.setEditable(false);
         logArea.setWrapText(false);
         logArea.setStyle(logStyle());
-        logArea.setFont(javafx.scene.text.Font.font("Malgun Gothic", 13));
+        logArea.setFont(javafx.scene.text.Font.font(AppContext.getUiFontFamily(), AppContext.getUiFontSize()));
         ScrollPane scrollPane = new ScrollPane(logArea);
         scrollPane.setFitToWidth(true);
         scrollPane.setFitToHeight(true);
@@ -147,12 +133,34 @@ public class MainWindow {
         statusBar = new Label("준비");
         statusBar.setMaxWidth(Double.MAX_VALUE);
         statusBar.setStyle(statusBarStyle());
+
+        // ── 즐겨찾기 콜백 등록 (buildGeneralPane 호출 전) ────────
+        pcShortcut.favoriteCallback = (favName, favPath) -> {
+            int slot = AppContext.nextEmptyFavoriteSlot();
+            if (slot >= AppContext.FAVORITE_SLOT_COUNT) {
+                showAlert("즐겨찾기 슬롯이 가득 찼습니다 (최대 "
+                    + AppContext.FAVORITE_SLOT_COUNT + "개).", "즐겨찾기");
+                return;
+            }
+            AppContext.setFavorite(slot, favName, favPath);
+            rebuildMenuBar();
+            setStatus("즐겨찾기 추가: " + favName);
+        };
+        TabPane centerTabs = new TabPane();
+        centerTabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        Tab logTab     = new Tab("📋 로그",    scrollPane);
+        Tab generalTab = new Tab("📦 일반 앱", pcShortcut.buildGeneralPane());
+        Tab systemTab  = new Tab("⚙ 시스템 앱", pcShortcut.buildSystemPane());
+        centerTabs.getTabs().addAll(logTab, generalTab, systemTab);
+        centerTabs.getSelectionModel().select(generalTab); // 기본 탭: 일반 앱
+
         BorderPane root = new BorderPane();
         root.setStyle(rootStyle());
-        root.setCenter(scrollPane);
+        root.setCenter(centerTabs);
         root.setBottom(statusBar);
         root.setTop(buildMenuBar());
         Scene scene = new Scene(root, 860, 520);
+        AppContext.applyGlobalFont(scene);  // 전역 폰트 적용
         primaryStage.setScene(scene);
         primaryStage.setOnCloseRequest((WindowEvent e) -> {
             e.consume();
@@ -179,7 +187,6 @@ public class MainWindow {
 			this.stage.requestFocus();
 		}
 	}
-	
 	public static void toggleMainWindowSafe() {
 		System.out.println("■■■■■ toggleMainWindowSafe()");
 		MainWindow w = instance;
@@ -194,9 +201,7 @@ public class MainWindow {
 		Platform.runLater(w::toggleTheMainWindow);
 	}
     // ═══════════════════════════════════════════════════════════
-    private void saveConfig() {
-	}
-	
+    // private void saveConfig() {	}
     /** config 저장 */
 	/*
 		private void saveConfig() {
@@ -242,7 +247,6 @@ public class MainWindow {
             System.err.println("로그 파일 열기 실패: " + e.getMessage());
 		}
 	}
-	
     /** 설정 파일 열기 */
 	private void openConfigFile() {
 		boolean ok = AppContext.openCONFIG_FILE();
@@ -250,7 +254,6 @@ public class MainWindow {
 			showAlert("설정 파일을 열지 못했습니다.\n" + AppContext.CONFIG_FILE, "기본 설정 파일");
 		}
 	}
-	
     /** ChimeController — 마스터 ini(AppContext)에서 설정 복원 */
     private void initChimeControllerIfNeeded(Stage owner) {
         if (chimeController != null) return;
@@ -279,7 +282,6 @@ public class MainWindow {
             chimeController.startCheckTimer();
 		} catch (Exception ignored) {}
 	}
-	
     /** 팝업 메뉴(KootPanKingThreeApp)에서 호출 — 마스터 차임벨 다이얼로그 표시 후 AppContext에 저장 */
     public void showChimeDialogPublic(Stage owner) {
         if (owner == null) owner = stage;
@@ -289,7 +291,6 @@ public class MainWindow {
         // 다이얼로그 닫힌 후 마스터 ini 저장
         saveChimeToAppContext();
 	}
-	
     /** 차임벨 설정을 마스터 ini(AppContext)에 저장 */
     private void saveChimeToAppContext() {
         if (chimeController == null) return;
@@ -305,8 +306,6 @@ public class MainWindow {
         AppContext.set("chimeMinutes", sb.toString());
         AppContext.save();
 	}
-	
-	
     // ── 세계시계 서브메뉴 ────────────────────────────────────────
     private javafx.scene.control.Menu buildGlobalMenu() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("🌍 세계시계");
@@ -345,7 +344,6 @@ public class MainWindow {
 		}
         return menu;
 	}
-	
     // ── 세계시계 자식 창 열기 ─────────────────────────────────────
 	public void openTheCity(String cityName, java.time.ZoneId zoneId, String clockPrefix) {
 		System.out.println("■■■■■ [openTheCity] cityName=" + cityName + " zone=" + zoneId);
@@ -359,10 +357,8 @@ public class MainWindow {
 			}
 		}
 		Stage childStage = new Stage();
-		
 		String childConfigFile =
 		AppContext.ensureCityConfigFile(cityName, clockPrefix, zoneId.getId());
-		
 		KootPanKingThreeApp childApp =
         new KootPanKingThreeApp(childConfigFile, clockPrefix, zoneId);
 		childApp.startInstance(childStage, Arrays.asList(startArg1, startArg2, startArg3));
@@ -388,15 +384,12 @@ public class MainWindow {
 				}
 				if (closing) return;
 				closing = true;
-				
 				childStages.remove(zoneId);
-				
 				try {
 					childApp.close();
 					} catch (Exception ex) {
 					AppLogger.logException(ex);
 				}
-				
 				try {
 					if (childStage.isShowing()) {
 						childStage.close();
@@ -444,21 +437,17 @@ public class MainWindow {
 		CityWindowHandle h = childStages.get(zoneId);
 		if (h != null) h.focus();
 	}
-	
 	public void closeTheCity(java.time.ZoneId zoneId) {
 		CityWindowHandle h = childStages.get(zoneId);
 		if (h != null) h.close();
 	}
-	
 	public void closeAllCities() {
 		java.util.List<CityWindowHandle> list =
         new java.util.ArrayList<>(childStages.values());
-		
 		for (CityWindowHandle h : list) {
 			if (h != null) h.close();
 		}
 	}
-	
 	/*
 		public void openTheCity(String cityName, java.time.ZoneId zoneId, String clockPrefix) {
         System.out.println("■■■■■ [openTheCity] cityName=" + cityName + " zone=" + zoneId);
@@ -493,18 +482,15 @@ public class MainWindow {
     // ── Gmail / Calendar 서브메뉴 ────────────────────────────────
     private javafx.scene.control.Menu buildGmailMenu() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("📧 Gmail / Calendar");
-		
         // "지금 Gmail 보내기" → "Gmail 설정" 으로 명칭 변경 + 다이얼로그 연결
         javafx.scene.control.MenuItem gmailSettings = new javafx.scene.control.MenuItem("Gmail 설정");
         gmailSettings.setOnAction(e -> showGmailSettingsDialog(stage));
-		
         javafx.scene.control.MenuItem guide = new javafx.scene.control.MenuItem("Calendar 설정 안내");
         guide.setOnAction(e -> {
             try { java.awt.Desktop.getDesktop().browse(
 			new java.net.URI("https://support.google.com/calendar/answer/99358"));
             } catch (Exception ex) { showAlert("브라우저 열기 실패: " + ex.getMessage(), "안내"); }
 		});
-		
         javafx.scene.control.Menu googleCal = new javafx.scene.control.Menu("📧 구글 캘린더");
         googleCal.getItems().addAll(
             calMenuAction("향후 3일", () -> showCalendarResult("구글","google",3,"next")),
@@ -513,7 +499,6 @@ public class MainWindow {
             calMenuAction("이번 달",  () -> showCalendarResult("구글","google",0,"month")),
             calMenuAction("다음 달",  () -> showCalendarResult("구글","google",0,"nextmonth"))
 		);
-		
         javafx.scene.control.Menu naverCal = new javafx.scene.control.Menu("🟢 네이버 캘린더");
         naverCal.getItems().addAll(
             calMenuAction("향후 3일", () -> showCalendarResult("네이버","naver",3,"next")),
@@ -522,7 +507,6 @@ public class MainWindow {
             calMenuAction("이번 달",  () -> showCalendarResult("네이버","naver",0,"month")),
             calMenuAction("다음 달",  () -> showCalendarResult("네이버","naver",0,"nextmonth"))
 		);
-		
         // 네이버 설정 서브메뉴
         javafx.scene.control.Menu naverMenu = new javafx.scene.control.Menu("🟢 네이버 설정");
         javafx.scene.control.MenuItem naverGuide  = new javafx.scene.control.MenuItem("네이버 설정 안내");
@@ -533,7 +517,6 @@ public class MainWindow {
 		"네이버 설정 안내"));
         naverPasswd.setOnAction(e -> showNaverSettingsDialog(stage));
         naverMenu.getItems().addAll(naverGuide, naverPasswd);
-		
         menu.getItems().addAll(
             gmailSettings, guide, new javafx.scene.control.SeparatorMenuItem(),
             googleCal, new javafx.scene.control.SeparatorMenuItem(),
@@ -542,13 +525,11 @@ public class MainWindow {
 		);
         return menu;
 	}
-	
     private javafx.scene.control.MenuItem calMenuAction(String label, Runnable action) {
         javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(label);
         item.setOnAction(e -> new Thread(action, "CalendarQuery").start());
         return item;
 	}
-	
     private void showCalendarResult(String service, String type, int days, String range) {
         try {
             String title;
@@ -584,14 +565,12 @@ public class MainWindow {
             Platform.runLater(() -> showScheduleDialog("캘린더 오류", "일정 조회 실패:\n" + err));
 		}
 	}
-	
     // ── 카카오톡 서브메뉴 ─────────────────────────────────────────
     private javafx.scene.control.Menu buildKakaoMenuFx() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("카카오톡...");
         javafx.scene.control.MenuItem loginItem = new javafx.scene.control.MenuItem("카카오 로그인됨");
         javafx.scene.control.MenuItem sendItem  = new javafx.scene.control.MenuItem("나에게 메시지 보내기...");
         javafx.scene.control.MenuItem guideItem = new javafx.scene.control.MenuItem("설정 안내...");
-		
         guideItem.setOnAction(e -> showAlert(
             "카카오 REST API Key / Client Secret / Refresh Token 을\n" +
             "설정 파일(clock_settings.ini)에 입력하세요.\n\n" +
@@ -599,14 +578,11 @@ public class MainWindow {
         menu.getItems().addAll(loginItem, sendItem, guideItem);
         return menu;
 	}
-	
     // ── 텔레그램 서브메뉴 ─────────────────────────────────────────
     private javafx.scene.control.Menu buildTelegramMenuFx() {
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu("텔레그램");
-		
         javafx.scene.control.MenuItem tokenSettings = new javafx.scene.control.MenuItem("텔레그램 비밀번호 설정");
         javafx.scene.control.MenuItem help          = new javafx.scene.control.MenuItem("텔레그램 설정 안내");
-		
         tokenSettings.setOnAction(e -> showTelegramSettingsDialog(stage));
         help.setOnAction(e -> {
             if (tg != null) tg.showTelegramHelp(stage);
@@ -614,7 +590,6 @@ public class MainWindow {
         menu.getItems().addAll(tokenSettings, help);
         return menu;
 	}
-	
     // ── Gmail 설정 다이얼로그 (ID + 비밀번호) ───────────────────
     public void showGmailSettingsDialog(javafx.stage.Stage owner) {
         if (owner == null) owner = stage;
@@ -624,23 +599,19 @@ public class MainWindow {
         dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("Gmail 설정");
-		
         // ── 레이블 ───────────────────────────────────────────────
         javafx.scene.control.Label idLbl   = new javafx.scene.control.Label("발신자 Gmail ID:");
         javafx.scene.control.Label passLbl = new javafx.scene.control.Label("발신자 (앱) 비밀번호:");
         javafx.scene.control.Label toLbl   = new javafx.scene.control.Label("수신자 이메일 ID:");
-		
         // ── 발신자 ID ────────────────────────────────────────────
         javafx.scene.control.TextField idField = new javafx.scene.control.TextField(AppContext.getGmailFrom());
         idField.setPrefWidth(280);
         idField.setPromptText("example@gmail.com");
-		
         // ── 발신자 비밀번호 (숨김 + 표시 토글) ─────────────────
         javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
         passField.setText(AppContext.getGmailPass());
         passField.setPrefWidth(280);
         passField.setPromptText("Google 앱 비밀번호 16자리");
-		
         javafx.scene.control.CheckBox showPass = new javafx.scene.control.CheckBox("표시");
         javafx.scene.control.TextField passVisible = new javafx.scene.control.TextField(AppContext.getGmailPass());
         passVisible.setPrefWidth(280);
@@ -653,13 +624,11 @@ public class MainWindow {
             if (show) passVisible.setText(passField.getText());
             else      passField.setText(passVisible.getText());
 		});
-		
         // ── 수신자 이메일 ID ─────────────────────────────────────
         javafx.scene.control.TextField toField = new javafx.scene.control.TextField(
 		AppContext.get("gmail.lastTo", ""));
         toField.setPrefWidth(280);
         toField.setPromptText("수신자@example.com");
-		
         // ── 그리드 ───────────────────────────────────────────────
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8); grid.setVgap(10);
@@ -669,35 +638,29 @@ public class MainWindow {
         grid.add(new javafx.scene.control.Label(""), 0, 2);
         grid.add(passVisible, 1, 2, 2, 1);
         grid.add(toLbl,   0, 3); grid.add(toField,   1, 3, 2, 1);
-		
         // ── 힌트 ─────────────────────────────────────────────────
         javafx.scene.control.Label hint = new javafx.scene.control.Label(
 		"※ Google 계정 → 보안 → 앱 비밀번호에서 생성하세요.");
         hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
         hint.setWrapText(true);
         hint.setPadding(new javafx.geometry.Insets(0, 16, 4, 16));
-		
         // ── 테스트 결과 레이블 ───────────────────────────────────
         javafx.scene.control.Label resultLbl = new javafx.scene.control.Label("");
         resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
         resultLbl.setWrapText(true);
         resultLbl.setMaxWidth(380);
         resultLbl.setPadding(new javafx.geometry.Insets(0, 16, 4, 16));
-		
         // ── 버튼: 저장 / 테스트 발송 / 취소 ────────────────────
         javafx.scene.control.Button okBtn   = new javafx.scene.control.Button("저장");
         javafx.scene.control.Button testBtn = new javafx.scene.control.Button("테스트 Gmail 발송");
         javafx.scene.control.Button canBtn  = new javafx.scene.control.Button("취소");
         okBtn.setDefaultButton(true); canBtn.setCancelButton(true);
         okBtn.setPrefWidth(72); canBtn.setPrefWidth(120); testBtn.setPrefWidth(130);
-		
         // 현재 입력 필드에서 pass 문자열을 읽는 헬퍼
         java.util.function.Supplier<String> getCurrentPass = () ->
 		showPass.isSelected() ? passVisible.getText().trim()
 		: passField.getText().trim();
-		
         canBtn.setOnAction(ev -> dlg.close());
-		
         okBtn.setOnAction(ev -> {
             String id   = idField.getText().trim();
             String pass = getCurrentPass.get();
@@ -712,7 +675,6 @@ public class MainWindow {
             dlg.close();
             showAlert("Gmail 설정이 저장되었습니다.", "Gmail 설정");
 		});
-		
         testBtn.setOnAction(ev -> {
             String id   = idField.getText().trim();
             String pass = getCurrentPass.get();
@@ -750,18 +712,15 @@ public class MainWindow {
 				});
 			}, "GmailTestSend").start();
 		});
-		
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, testBtn, okBtn, canBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         btnRow.setPadding(new javafx.geometry.Insets(0, 16, 12, 16));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, hint, resultLbl, btnRow);
         root.setStyle("-fx-background-color: white;");
         dlg.setScene(new javafx.scene.Scene(root));
         dlg.sizeToScene();
         dlg.showAndWait();
 	}
-	
     // ── 네이버 설정 다이얼로그 (ID + 비밀번호) ─────────────────
     public void showNaverSettingsDialog(javafx.stage.Stage owner) {
         if (owner == null) owner = stage;
@@ -771,19 +730,15 @@ public class MainWindow {
         dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("네이버 CalDAV 설정");
-		
         javafx.scene.control.Label idLbl   = new javafx.scene.control.Label("네이버 ID:");
         javafx.scene.control.Label passLbl = new javafx.scene.control.Label("비밀번호:");
-		
         javafx.scene.control.TextField idField = new javafx.scene.control.TextField(AppContext.getNaverId());
         idField.setPrefWidth(260);
         idField.setPromptText("네이버 아이디");
-		
         javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
         passField.setText(AppContext.getNaverPassword());
         passField.setPrefWidth(260);
         passField.setPromptText("네이버 비밀번호");
-		
         javafx.scene.control.CheckBox showPass = new javafx.scene.control.CheckBox("표시");
         javafx.scene.control.TextField passVisible = new javafx.scene.control.TextField(AppContext.getNaverPassword());
         passVisible.setPrefWidth(260);
@@ -796,7 +751,6 @@ public class MainWindow {
             if (show) passVisible.setText(passField.getText());
             else      passField.setText(passVisible.getText());
 		});
-		
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8); grid.setVgap(10);
         grid.setPadding(new javafx.geometry.Insets(16));
@@ -804,17 +758,14 @@ public class MainWindow {
         grid.add(passLbl, 0, 1); grid.add(passField, 1, 1); grid.add(showPass, 2, 1);
         grid.add(new javafx.scene.control.Label(""), 0, 2);
         grid.add(passVisible, 1, 2, 2, 1);
-		
         javafx.scene.control.Label hint = new javafx.scene.control.Label(
 		"※ 네이버 캘린더 → 설정 → CalDAV 연동을 먼저 활성화하세요.");
         hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
         hint.setWrapText(true);
-		
         javafx.scene.control.Button okBtn  = new javafx.scene.control.Button("저장");
         javafx.scene.control.Button canBtn = new javafx.scene.control.Button("취소");
         okBtn.setDefaultButton(true); canBtn.setCancelButton(true);
         okBtn.setPrefWidth(72); canBtn.setPrefWidth(72);
-		
         canBtn.setOnAction(ev -> dlg.close());
         okBtn.setOnAction(ev -> {
             String id   = idField.getText().trim();
@@ -827,11 +778,9 @@ public class MainWindow {
             dlg.close();
             showAlert("네이버 설정이 저장되었습니다.", "네이버 설정");
 		});
-		
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, okBtn, canBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         btnRow.setPadding(new javafx.geometry.Insets(0, 16, 12, 16));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, hint, btnRow);
         hint.setPadding(new javafx.geometry.Insets(0, 16, 6, 16));
         root.setStyle("-fx-background-color: white;");
@@ -839,7 +788,6 @@ public class MainWindow {
         dlg.sizeToScene();
         dlg.showAndWait();
 	}
-	
     // ── 텔레그램 설정 다이얼로그 (botToken + myChatId) ─────────
     public void showTelegramSettingsDialog(javafx.stage.Stage owner) {
         if (owner == null) owner = stage;
@@ -849,35 +797,28 @@ public class MainWindow {
         dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
         dlg.setAlwaysOnTop(true);
         dlg.setTitle("텔레그램 설정");
-		
         javafx.scene.control.Label tokenLbl  = new javafx.scene.control.Label("Bot Token:");
         javafx.scene.control.Label chatIdLbl = new javafx.scene.control.Label("My Chat ID:");
-		
         javafx.scene.control.TextField tokenField = new javafx.scene.control.TextField(AppContext.getTelegramBotToken());
         tokenField.setPrefWidth(320);
         tokenField.setPromptText("123456789:ABCdef...");
-		
         javafx.scene.control.TextField chatIdField = new javafx.scene.control.TextField(AppContext.getTelegramMyChatId());
         chatIdField.setPrefWidth(320);
         chatIdField.setPromptText("숫자 Chat ID");
-		
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8); grid.setVgap(10);
         grid.setPadding(new javafx.geometry.Insets(16));
         grid.add(tokenLbl,  0, 0); grid.add(tokenField,  1, 0);
         grid.add(chatIdLbl, 0, 1); grid.add(chatIdField, 1, 1);
-		
         javafx.scene.control.Label hint = new javafx.scene.control.Label(
             "※ BotFather에서 봇을 생성한 뒤 Token을 입력하세요.\n" +
 		"   Chat ID는 @userinfobot 에서 확인할 수 있습니다.");
         hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
         hint.setWrapText(true);
-		
         javafx.scene.control.Button okBtn  = new javafx.scene.control.Button("저장");
         javafx.scene.control.Button canBtn = new javafx.scene.control.Button("취소");
         okBtn.setDefaultButton(true); canBtn.setCancelButton(true);
         okBtn.setPrefWidth(72); canBtn.setPrefWidth(72);
-		
         canBtn.setOnAction(ev -> dlg.close());
         okBtn.setOnAction(ev -> {
             String token  = tokenField.getText().trim();
@@ -889,11 +830,9 @@ public class MainWindow {
             dlg.close();
             showAlert("텔레그램 설정이 저장되었습니다.", "텔레그램 설정");
 		});
-		
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8, okBtn, canBtn);
         btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         btnRow.setPadding(new javafx.geometry.Insets(0, 16, 12, 16));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0, grid, hint, btnRow);
         hint.setPadding(new javafx.geometry.Insets(0, 16, 6, 16));
         root.setStyle("-fx-background-color: white;");
@@ -901,21 +840,17 @@ public class MainWindow {
         dlg.sizeToScene();
         dlg.showAndWait();
 	}
-	
     // ── About 다이얼로그 ──────────────────────────────────────────
     private void showAboutDialog() {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initStyle(javafx.stage.StageStyle.UTILITY);
         dlg.setAlwaysOnTop(true);
         dlg.setResizable(false);
-		
         final int[] sec = {48};
         dlg.setTitle(APP_NAME + "  —  " + sec[0] + "초 후 닫힘");
-		
         javafx.scene.text.TextFlow tf = new javafx.scene.text.TextFlow();
         tf.setPadding(new javafx.geometry.Insets(12, 16, 8, 16));
         tf.setPrefWidth(460);
-		
         String[][] items = {
             {"• 대리석 질감 아나로그 시계",                                        "#2aa198"},
             {"• 자유 자재 시계 디자인",                                            "#268bd2"},
@@ -929,9 +864,7 @@ public class MainWindow {
             t.setStyle("-fx-font-family: 'Malgun Gothic'; -fx-font-size: 14px;");
             tf.getChildren().add(t);
 		}
-		
         javafx.scene.control.Separator sep = new javafx.scene.control.Separator();
-		
         final String blogUrl = "https://blog.naver.com/garpsu/224213400580";
         javafx.scene.control.Hyperlink link = new javafx.scene.control.Hyperlink(
 		"→ 자세한 안내 : " + blogUrl);
@@ -940,24 +873,18 @@ public class MainWindow {
             try { java.awt.Desktop.getDesktop().browse(new java.net.URI(blogUrl)); }
             catch (Exception ex) { System.out.println("[About] 링크 열기 실패: " + ex.getMessage()); }
 		});
-		
         javafx.scene.control.Button okBtn = new javafx.scene.control.Button("OK");
         okBtn.setDefaultButton(true);
-		
         javafx.scene.layout.HBox linkBox = new javafx.scene.layout.HBox(link);
         linkBox.setPadding(new javafx.geometry.Insets(4, 10, 2, 10));
-		
         javafx.scene.layout.HBox btnBox = new javafx.scene.layout.HBox(okBtn);
         btnBox.setAlignment(javafx.geometry.Pos.CENTER);
         btnBox.setPadding(new javafx.geometry.Insets(4, 10, 8, 10));
-		
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(tf, sep, linkBox, btnBox);
         dlg.setScene(new javafx.scene.Scene(root));
-		
         final javafx.animation.Timeline[] holder = {null};
         Runnable doClose = () -> { if (holder[0] != null) holder[0].stop(); dlg.close(); };
         okBtn.setOnAction(ev -> doClose.run());
-		
         javafx.animation.Timeline tl = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 sec[0]--;
@@ -968,11 +895,9 @@ public class MainWindow {
         tl.setCycleCount(48);
         holder[0] = tl;
         dlg.setOnHidden(ev -> { if (holder[0] != null) holder[0].stop(); });
-		
         dlg.show();
         tl.play();
 	}
-	
     /** 일정 다이얼로그 — 300초 카운트다운 후 자동 닫힘 */
     public void showScheduleDialog(String title, String content) {
         javafx.stage.Stage dlg = new javafx.stage.Stage();
@@ -980,7 +905,6 @@ public class MainWindow {
         dlg.setTitle(title);
         dlg.setAlwaysOnTop(true);
         dlg.setResizable(true);
-		
         javafx.scene.control.TextArea ta = new javafx.scene.control.TextArea(content);
         ta.setEditable(false);
         ta.setWrapText(true);
@@ -988,23 +912,17 @@ public class MainWindow {
         javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(ta);
         sp.setFitToWidth(true);
         sp.setFitToHeight(true);
-		
         javafx.scene.control.Label countdown = new javafx.scene.control.Label("자동 닫힘: 300초");
         countdown.setStyle("-fx-text-fill: #888888; -fx-font-size: 11px;");
-		
         javafx.scene.control.Button closeBtn = new javafx.scene.control.Button("닫기");
         closeBtn.setDefaultButton(true);
-		
         javafx.scene.layout.HBox bottom = new javafx.scene.layout.HBox(12, countdown, closeBtn);
         bottom.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         bottom.setPadding(new javafx.geometry.Insets(6, 10, 6, 10));
-		
         javafx.scene.layout.BorderPane root = new javafx.scene.layout.BorderPane();
         root.setCenter(sp);
         root.setBottom(bottom);
-		
         dlg.setScene(new javafx.scene.Scene(root, 480, 400));
-		
         final int[] remain = {300};
         final javafx.animation.Timeline[] holder = {null};
         Runnable doClose = () -> {
@@ -1012,7 +930,6 @@ public class MainWindow {
             dlg.close();
 		};
         closeBtn.setOnAction(e -> doClose.run());
-		
         javafx.animation.Timeline tl = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 remain[0]--;
@@ -1028,36 +945,50 @@ public class MainWindow {
         dlg.show();
         tl.play();
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  공개 API
     // ═══════════════════════════════════════════════════════════
-	
     /** 설정값 조회 */
     private String getConfigValue(String key, String defaultValue) {
         return config.getProperty(key, defaultValue);
 	}
-	
     /** 여러 설정값 저장 */
+	/*
     private void setMultipleConfigAndSave(String... entries) {
         for (int i = 0; i + 1 < entries.length; i += 2)
 		config.setProperty(entries[i], entries[i + 1]);
         saveConfig();
 	}
-	
+	*/
     /** 단일 설정값 저장 */
+	/*
     private void setConfigAndSave(String key, String value) {
         config.setProperty(key, value);
         saveConfig();
 	}
-	
+	*/
+    /** 앱 재시작 */
+    private void doRestart() {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.initOwner(stage);
+        confirm.setTitle("앱 재시작");
+        confirm.setHeaderText(null);
+        confirm.setContentText("설정을 저장하고 앱을 재시작하겠습니까?");
+        confirm.setOnShown(e ->
+            ((javafx.stage.Stage) confirm.getDialogPane().getScene().getWindow())
+                .setAlwaysOnTop(true));
+        confirm.showAndWait().ifPresent(btn -> {
+            if (btn != ButtonType.OK) return;
+            //  appRestarter.restartApp(this::saveConfig);
+            appRestarter.restartApp();
+        });
+    }
     /** 프로그램 완전 종료 */
     private void exitAll() {
-        saveConfig();
+        // saveConfig();
         AppLogger.close();
         Platform.exit();
 	}
-	
     /** 로그 메시지 추가 (FX 스레드 안팎 모두 안전). */
     public void log(String message) {
         if (Platform.isFxApplicationThread()) {
@@ -1066,19 +997,15 @@ public class MainWindow {
             Platform.runLater(() -> appendLog(message));
 		}
 	}
-	
     /** 구분선 추가 */
     public void logSep() {
         log("─────────────────────────────────────────────────────────────");
 	}
-	
     /** 상태바 텍스트 갱신 */
     public void setStatus(String text) {
         Platform.runLater(() -> setRuntimeStatus(text));
 	}
-	
     public Stage getStage() { return stage; }
-	
     // ═══════════════════════════════════════════════════════════
     //  메뉴바 빌드
     // ═══════════════════════════════════════════════════════════
@@ -1091,11 +1018,11 @@ public class MainWindow {
             buildToolsMenu(),
             buildLifeMenu(),
             buildOfficeMenu(),
+	        pcShortcut.createMenuWithWindow(stage),
             buildHelpMenu()
 		);
         return bar;
 	}
-	
     private Menu buildFileMenu() {
         Menu menu = makeMenu("File", "파일 열기 및 프로그램 제어");
         menu.getItems().add(makeSectionHeader("파일"));
@@ -1103,12 +1030,16 @@ public class MainWindow {
 		"텍스트 파일을 열어 새 창에 표시", "Ctrl+O", this::doOpen));
         menu.getItems().add(makeRichMenuItem("🪟", "Close",
 		"이 창을 닫습니다 (시계 유지)", "Ctrl+W", this::doClose));
+        menu.getItems().add(makeSectionHeader("설정"));
+        menu.getItems().add(makeRichMenuItem("🔤", "Font",
+		"UI 전체 폰트 변경", null, this::showFontDialog));
         menu.getItems().add(makeSectionHeader("종료"));
+        menu.getItems().add(makeRichMenuItem("🔄", "시스템 재시작",
+		"앱을 저장 후 재시작합니다", null, this::doRestart));
         menu.getItems().add(makeRichMenuItem("⏻", "Exit",
 		"프로그램 완전 종료", "Ctrl+Q", this::doExit));
         return menu;
 	}
-	
     private Menu buildToolsMenu() {
         Menu menu = makeMenu("도구", "알림 및 외부 서비스 기능");
         menu.getItems().add(makeSectionHeader("알림"));
@@ -1121,7 +1052,6 @@ public class MainWindow {
 		menu.getItems().add(buildTelegramMenuFx());
 		return menu;
 	}
-	
     private Menu buildLifeMenu() {
         Menu menu = makeMenu("생활도구", "시간/날씨/천문 정보");
         menu.getItems().add(makeSectionHeader("외부 서비스"));
@@ -1140,13 +1070,11 @@ public class MainWindow {
 		"GitHub 최신 다운로드", null, this::updateCalendarHtml));
         return menu;
 	}
-	
     private Menu buildOfficeMenu() {
-        Menu menu = makeMenu("업무도구", "업무 프로그램 실행");
+        Menu menu = makeMenu("즐겨찾기", "즐겨찾기 프로그램 실행");
         populateOfficeMenuItems(menu);
         return menu;
 	}
-	
     private void populateOfficeMenuItems(Menu menu) {
         menu.getItems().clear();
         menu.getItems().add(makeSectionHeader("Office"));
@@ -1156,66 +1084,54 @@ public class MainWindow {
 		() -> launchByRegistry("winword.exe")));
         menu.getItems().add(makeRichMenuItem("📑", "PowerPoint", null, null,
 		() -> launchByRegistry("powerpnt.exe")));
-		
         menu.getItems().add(makeSectionHeader("등록된 도구"));
-		
         java.util.List<Integer> filledSlots = new java.util.ArrayList<>();
-        for (int i = 0; i < OFFICE_SLOT_COUNT; i++) {
-            String n = getConfigValue(slotNameKey(i), "");
-            String p = getConfigValue(slotPathKey(i), "");
+        for (int i = 0; i < AppContext.FAVORITE_SLOT_COUNT; i++) {
+            String n = AppContext.getFavoriteName(i);
+            String p = AppContext.getFavoritePath(i);
             if (!n.isEmpty() && !p.isEmpty()) filledSlots.add(i);
 		}
         for (int fi = 0; fi < filledSlots.size(); fi++) {
             int slotIdx  = filledSlots.get(fi);
-            String name  = getConfigValue(slotNameKey(slotIdx), "");
-            String path  = getConfigValue(slotPathKey(slotIdx), "");
+            String name  = AppContext.getFavoriteName(slotIdx);
+            String path  = AppContext.getFavoritePath(slotIdx);
             int prevSlot = fi > 0 ? filledSlots.get(fi - 1) : -1;
             int nextSlot = fi < filledSlots.size() - 1 ? filledSlots.get(fi + 1) : -1;
             menu.getItems().add(buildSlotSubMenu(menu, slotIdx, name, path, prevSlot, nextSlot));
 		}
-		
         menu.getItems().add(makeSectionHeader("관리"));
-        int nextEmpty = findNextEmptySlot();
-        if (nextEmpty < OFFICE_SLOT_COUNT) {
+        int nextEmpty = AppContext.nextEmptyFavoriteSlot();
+        if (nextEmpty < AppContext.FAVORITE_SLOT_COUNT) {
             menu.getItems().add(makeRichMenuItem("➕", "새 도구 등록",
-                "업무 프로그램 추가 (슬롯 " + (nextEmpty + 1) + "/" + OFFICE_SLOT_COUNT + ")", null,
-			() -> openSlotEditor(findNextEmptySlot())));
+                "즐겨찾기 추가 (슬롯 " + (nextEmpty + 1) + "/" + AppContext.FAVORITE_SLOT_COUNT + ")", null,
+			() -> openSlotEditor(AppContext.nextEmptyFavoriteSlot())));
 			} else {
             MenuItem fullItem = makeRichMenuItem("🚫", "슬롯이 가득 찼습니다",
-			"최대 " + OFFICE_SLOT_COUNT + "개까지 등록 가능합니다", null, null);
+			"최대 " + AppContext.FAVORITE_SLOT_COUNT + "개까지 등록 가능합니다", null, null);
             fullItem.setDisable(true);
             menu.getItems().add(fullItem);
 		}
 	}
-	
     private int findNextEmptySlot() {
-        for (int i = 0; i < OFFICE_SLOT_COUNT; i++) {
-            String name = getConfigValue(slotNameKey(i), "");
-            String path = getConfigValue(slotPathKey(i), "");
-            if (name.isEmpty() || path.isEmpty()) return i;
-		}
-        return OFFICE_SLOT_COUNT;
+        return AppContext.nextEmptyFavoriteSlot();
 	}
-	
     private Menu buildSlotSubMenu(Menu officeMenu, int slotIdx,
 		String name, String path, int prevSlot, int nextSlot) {
         Menu slotMenu = makeMenu("📌 " + name, path);
-		
         slotMenu.getItems().add(makeRichMenuItem("▶", "실행",
 		path, null, () -> launchByPath(path)));
         slotMenu.getItems().add(new SeparatorMenuItem());
-		
         MenuItem delItem = makeRichMenuItem("🗑️", "삭제", "이 항목을 삭제합니다", null, () -> {
             Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
             confirm.initOwner(stage);
-            confirm.setTitle("업무도구 삭제");
+            confirm.setTitle("즐겨찾기 삭제");
             confirm.setHeaderText(null);
             confirm.setContentText("「" + name + "」 을 삭제하시겠습니까?");
             confirm.setOnShown(ev ->
 			((Stage) confirm.getDialogPane().getScene().getWindow()).setAlwaysOnTop(true));
             confirm.showAndWait().ifPresent(btn -> {
                 if (btn != ButtonType.OK) return;
-                setMultipleConfigAndSave(slotNameKey(slotIdx), "", slotPathKey(slotIdx), "");
+                AppContext.removeFavorite(slotIdx);
                 Platform.runLater(() -> {
                     populateOfficeMenuItems(officeMenu);
                     officeMenu.show();
@@ -1224,25 +1140,94 @@ public class MainWindow {
 		});
         slotMenu.getItems().add(delItem);
         slotMenu.getItems().add(new SeparatorMenuItem());
-		
         MenuItem upItem = makeRichMenuItem("↑", "위로 이동", "목록에서 한 칸 위로", null, () -> {
             swapSlots(slotIdx, prevSlot);
             Platform.runLater(() -> { populateOfficeMenuItems(officeMenu); officeMenu.show(); });
 		});
         upItem.setDisable(prevSlot < 0);
         slotMenu.getItems().add(upItem);
-		
         MenuItem downItem = makeRichMenuItem("↓", "아래로 이동", "목록에서 한 칸 아래로", null, () -> {
             swapSlots(slotIdx, nextSlot);
             Platform.runLater(() -> { populateOfficeMenuItems(officeMenu); officeMenu.show(); });
 		});
         downItem.setDisable(nextSlot < 0);
         slotMenu.getItems().add(downItem);
-		
         return slotMenu;
 	}
-	
-    private Menu buildHelpMenu() {
+	private Menu buildHelpMenu() {
+		Menu menu = makeMenu("Help", "로그, 설정, 다운로드, About, 개발자 문의");
+		// ── 유지보수 ─────────────────────────────────────────────
+		menu.getItems().add(makeSectionHeader("유지보수"));
+		menu.getItems().add(makeRichMenuItem("🔄", "프로그램 업그레이드",
+		"GitHub 에서 최신 버전을 내려받아 덮어씁니다", null, this::showUpgradeStub));
+		// ── 부팅 자동 실행 (CheckMenuItem) ──────────────────────
+		CheckMenuItem autoStartItem = new CheckMenuItem("🖥  부팅 자동 실행");
+		autoStartItem.setStyle(
+			"-fx-font-family:'Malgun Gothic'; -fx-font-size:13px;"
+		+ " -fx-text-fill:" + fgColor() + ";");
+		autoStartItem.setOnAction(e -> {
+			boolean enable = autoStartItem.isSelected();
+			new Thread(() -> {
+				boolean ok = AppRestarter.AutoStart.set(enable);
+				Platform.runLater(() -> {
+					if (!ok) {
+						autoStartItem.setSelected(!enable);   // 실패 시 원래 상태 복원
+						showAlert("자동 실행 " + (enable ? "등록" : "해제") + " 실패.\n"
+						+ "관리자 권한 문제일 수 있습니다.", "부팅 자동 실행");
+					}
+					// 성공 시 별도 알림 없음 — 체크 상태 자체가 피드백
+				});
+			}, "AutoStartToggle").start();
+		});
+		menu.getItems().add(autoStartItem);
+		// ── onShowing: 상태바 + 자동 실행 등록 여부 동기화 ──────
+		// makeMenu() 가 세팅한 onShowing 을 아래에서 재정의 (상태바 문자열 포함)
+		menu.setOnShowing(e -> {
+			showMenuStatus("로그, 설정, 다운로드, About, 개발자 문의");
+			new Thread(() -> {
+				boolean checked = AppRestarter.AutoStart.check();
+				Platform.runLater(() -> autoStartItem.setSelected(checked));
+			}, "AutoStartCheck").start();
+		});
+		// ── 로그 / 설정 ─────────────────────────────────────────
+		menu.getItems().add(makeSectionHeader("로그 / 설정"));
+		menu.getItems().add(makeRichMenuItem("📋", "Log조회",
+		"현재 로그 파일을 표시합니다", null, this::doShowLogFile));
+		menu.getItems().add(makeRichMenuItem("🗑", "지난Log데이타 삭제",
+		"이전 날짜 로그 파일을 삭제합니다", null, this::doDeleteOldLogs));
+		menu.getItems().add(makeRichMenuItem("⚙️", "기본 설정 파일",
+		"설정 파일(ini)을 표시합니다", null, this::doShowConfigFile));
+		// ── 링크 ────────────────────────────────────────────────
+		menu.getItems().add(makeSectionHeader("링크"));
+		menu.getItems().add(makeRichMenuItem("👨‍💻", "개발자 소개",
+			"김갑수 / 대한민국 서울", null,
+		() -> openBrowser("https://github.com/GarpsuKim")));
+		menu.getItems().add(makeRichMenuItem("⬇", "설치 파일",
+			"끝판왕 설치파일 다운로드", null,
+		() -> openBrowser("https://github.com/GarpsuKim/KootPanKingThree/releases/tag/KootPanKingThree")));
+		menu.getItems().add(makeRichMenuItem("🧩", "프로그램 소스",
+			"Java 프로그램 소스", null,
+		() -> openBrowser("https://github.com/GarpsuKim/KootPanKingThree")));
+		menu.getItems().add(makeRichMenuItem("☕", "Java/JVM",
+			"Java 환경 설치파일 다운로드", null,
+		() -> openBrowser("https://www.oracle.com/java")));
+		// ── 정보 ────────────────────────────────────────────────
+		menu.getItems().add(makeSectionHeader("정보"));
+		MenuItem aboutItem = makeRichMenuItem("ℹ️", "About",
+		"프로그램 정보", "F1", this::doShowAbout);
+		aboutItem.setAccelerator(javafx.scene.input.KeyCombination.keyCombination("F1"));
+		menu.getItems().add(aboutItem);
+		menu.getItems().add(makeRichMenuItem("📩", "오류 신고 및 개발자에게 문의",
+		"개발자에게 이메일로 문의합니다", null, this::doContactDeveloper));
+		// ── 화면 ────────────────────────────────────────────────
+		menu.getItems().add(makeSectionHeader("화면"));
+		menu.getItems().add(makeRichMenuItem(
+			themeMode == ThemeMode.PINK_GLASS ? "💙" : "💖",
+			themeMode == ThemeMode.PINK_GLASS ? "기본 테마로 되돌리기" : "핑크 글래스로 전환",
+		"화면 테마를 전환합니다", null, this::toggleTheme));
+		return menu;
+	}
+    private Menu buildHelpMenu000() {
         Menu menu = makeMenu("Help", "로그, 설정, 다운로드, About, 개발자 문의");
         menu.getItems().add(makeSectionHeader("유지보수"));
         menu.getItems().add(makeRichMenuItem("🔄", "프로그램 업그레이드",
@@ -1281,11 +1266,9 @@ public class MainWindow {
 		"화면 테마를 전환합니다", null, this::toggleTheme));
         return menu;
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  메뉴 액션
     // ═══════════════════════════════════════════════════════════
-	
     private void doOpen() {
         new Thread(() -> {
             FileChooser fc = new FileChooser();
@@ -1305,13 +1288,11 @@ public class MainWindow {
 			});
 		}, "FileChooserInit").start();
 	}
-	
     private void doClose() {
         config.remove("mainWindow");
-        saveConfig();
+        // saveConfig();
         stage.hide();
 	}
-	
     private void doExit() {
         Stage dlg = new Stage();
         dlg.initOwner(stage);
@@ -1319,19 +1300,15 @@ public class MainWindow {
         dlg.initStyle(StageStyle.UTILITY);
         dlg.setTitle("종료 확인");
         dlg.setAlwaysOnTop(true);
-		
         Label msg = new Label("프로그램을 종료하시겠습니까?");
         msg.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:13px;");
-		
         Button yes = new Button("Yes");
         Button no  = new Button("No");
         yes.setPrefWidth(72); no.setPrefWidth(72);
-		
         final boolean[] confirmed = {false};
         final int[]     sec       = {15};
         Label timerLbl = new Label("자동 취소까지: 15초");
         timerLbl.setStyle("-fx-text-fill:#888888; -fx-font-size:11px;");
-		
         javafx.animation.Timeline countdown = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 sec[0]--;
@@ -1342,25 +1319,19 @@ public class MainWindow {
 		);
         countdown.setCycleCount(15);
         countdown.play();
-		
         yes.setOnAction(e -> { confirmed[0] = true;  countdown.stop(); dlg.close(); });
         no .setOnAction(e -> { confirmed[0] = false; countdown.stop(); dlg.close(); });
-		
         HBox btns = new HBox(10, yes, no);
         btns.setAlignment(Pos.CENTER);
-		
         VBox root = new VBox(12, msg, timerLbl, btns);
         root.setPadding(new Insets(16));
         root.setAlignment(Pos.CENTER);
-		
         dlg.setScene(new Scene(root));
         dlg.sizeToScene();
         dlg.showAndWait();
-		
         if (!confirmed[0]) return;
         exitAll();
 	}
-	
     private void showUpgradeStub() {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(stage);
@@ -1369,7 +1340,6 @@ public class MainWindow {
         alert.setContentText("이 기능은 현재 지원되지 않습니다.");
         alert.showAndWait();
 	}
-	
     private void doShowLogFile() {
         try {
             String path = AppLogger.getLogFilePath();
@@ -1382,7 +1352,6 @@ public class MainWindow {
             System.err.println("로그 파일 열기 실패: " + e.getMessage());
 		}
 	}
-	
     private void doDeleteOldLogs() {
         String logPath = AppLogger.getLogFilePath();
         if (logPath == null || logPath.isEmpty()) {
@@ -1412,15 +1381,12 @@ public class MainWindow {
             showAlert(deleted + "개 삭제 완료.", "Log삭제");
 		});
 	}
-	
     private void doShowConfigFile() {
         openConfigFile();
 	}
-	
     private void doShowAbout() {
         showAboutDialog();
 	}
-	
     private void doContactDeveloper() {
         final String RECEIVER = "garpsu@naver.com";
         Stage dlg = new Stage();
@@ -1429,22 +1395,17 @@ public class MainWindow {
         dlg.initStyle(StageStyle.UTILITY);
         dlg.setTitle("프로그램 오류 신고 및 개발자에게 문의");
         dlg.setAlwaysOnTop(true);
-		
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8); grid.setVgap(8);
         grid.setPadding(new Insets(14));
-		
         grid.add(new Label("수신자:"), 0, 0);
         grid.add(new Label(RECEIVER), 1, 0);
-		
         grid.add(new Label("발신자 전화:"), 0, 1);
         TextField phoneField = new TextField(); phoneField.setPromptText("010-xxxx-yyyy");
         grid.add(phoneField, 1, 1);
-		
         grid.add(new Label("발신자 성명:"), 0, 2);
         TextField nameField = new TextField();
         grid.add(nameField, 1, 2);
-		
         grid.add(new Label("문의 유형:"), 0, 3);
         ToggleGroup typeGroup = new ToggleGroup();
         RadioButton rbErr = new RadioButton("오류 신고");  rbErr.setToggleGroup(typeGroup);
@@ -1452,59 +1413,53 @@ public class MainWindow {
         RadioButton rbAdd = new RadioButton("추가 요청");  rbAdd.setToggleGroup(typeGroup);
         HBox typeRow = new HBox(8, rbErr, rbImp, rbAdd);
         grid.add(typeRow, 1, 3);
-		
         grid.add(new Label("내용:"), 0, 4);
         TextArea bodyArea = new TextArea(); bodyArea.setPrefRowCount(7); bodyArea.setWrapText(true);
         grid.add(bodyArea, 1, 4);
-
         // ── 사용자 첨부 파일 목록 ─────────────────────────────
         java.util.List<java.io.File> userAttachFiles = new java.util.ArrayList<>();
         javafx.collections.ObservableList<String> attachNames =
-            javafx.collections.FXCollections.observableArrayList();
+		javafx.collections.FXCollections.observableArrayList();
         javafx.scene.control.ListView<String> attachList = new javafx.scene.control.ListView<>(attachNames);
         attachList.setPrefHeight(72);
         attachList.setPlaceholder(new Label("(첨부 파일 없음)"));
-
         Button attachBtn  = new Button("📎 파일 첨부");
         Button attachDelBtn = new Button("삭제");
         attachDelBtn.setDisable(true);
         attachList.getSelectionModel().selectedIndexProperty().addListener(
-            (ob, ov, nv) -> attachDelBtn.setDisable(nv.intValue() < 0));
-
+		(ob, ov, nv) -> attachDelBtn.setDisable(nv.intValue() < 0));
         attachBtn.setOnAction(ev -> {
             FileChooser fc = new FileChooser();
             fc.setTitle("첨부 파일 선택 (여러 개 가능)");
             fc.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("모든 파일", "*.*"));
+			new FileChooser.ExtensionFilter("모든 파일", "*.*"));
             java.util.List<java.io.File> chosen = fc.showOpenMultipleDialog(dlg);
             if (chosen != null) {
                 for (java.io.File f : chosen) {
                     if (!userAttachFiles.contains(f)) {
                         userAttachFiles.add(f);
                         attachNames.add(f.getName() + "  (" + (f.length() / 1024) + " KB)");
-                    }
-                }
-            }
-        });
+					}
+				}
+			}
+		});
         attachDelBtn.setOnAction(ev -> {
             int idx = attachList.getSelectionModel().getSelectedIndex();
             if (idx >= 0) {
                 userAttachFiles.remove(idx);
                 attachNames.remove(idx);
-            }
-        });
+			}
+		});
         HBox attachBtnRow = new HBox(6, attachBtn, attachDelBtn);
         VBox attachBox = new VBox(4, attachBtnRow, attachList);
         attachBox.setPadding(new Insets(0));
         grid.add(new Label("파일 첨부:"), 0, 5);
         grid.add(attachBox, 1, 5);
-		
         // ── 전송 결과 표시 라벨 ──────────────────────────────────
         Label resultLbl = new Label("");
         resultLbl.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
         resultLbl.setWrapText(true);
         resultLbl.setMaxWidth(400);
-		
         Button okBtn  = new Button("확인");  okBtn.setPrefWidth(80);
         Button canBtn = new Button("취소");  canBtn.setPrefWidth(80);
         canBtn.setOnAction(e -> dlg.close());
@@ -1553,7 +1508,7 @@ public class MainWindow {
             if (logPath != null && !logPath.isEmpty()) {
                 java.io.File logFile = new java.io.File(logPath);
                 if (logFile.exists()) attachFiles.add(logFile);
-            }
+			}
             attachFiles.addAll(userAttachFiles);  // 사용자 추가 파일
             okBtn.setDisable(true);
             okBtn.setText("전송 중...");
@@ -1564,7 +1519,6 @@ public class MainWindow {
             new Thread(() -> {
                 String err = null;
                 try {
-					
 					Map<String, String> env = System.getenv();
 					String SyetemENV = "";
 					for (Map.Entry<String, String> entry : env.entrySet()) {
@@ -1577,7 +1531,6 @@ public class MainWindow {
 					}
 					String mailBodyText = fBody + "\n[SyetemENV]■■■■■\n" + SyetemENV
 					+ "\n\n\n[getPropertyValue]■■■■■\n" + getPropertyValue;
-					
                     gmail.sendOneSmtpWithAttachments(fFrom, fPass, RECEIVER, fSubject, mailBodyText, fAttach);
 					} catch (Exception ex) {
                     err = ex.getMessage();
@@ -1596,19 +1549,16 @@ public class MainWindow {
 				});
 			}, "ContactDeveloper").start();
 		});
-		
         HBox btns = new HBox(8, okBtn, canBtn);
         btns.setAlignment(Pos.CENTER_RIGHT);
         resultLbl.setPadding(new Insets(0, 14, 4, 14));
         VBox root = new VBox(0, grid, resultLbl, btns);
         btns.setPadding(new Insets(0, 14, 10, 14));
-		
         dlg.setScene(new Scene(root));
         dlg.sizeToScene();
         dlg.setResizable(true);
         dlg.showAndWait();
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  텍스트 파일 뷰어 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
@@ -1624,11 +1574,9 @@ public class MainWindow {
 			}
 		}, "FileOpen").start();
 	}
-	
     private void showTextWindow(File file, String encLabel, String content) {
         Stage sub = new Stage();
         sub.setTitle("📄 " + file.getName());
-		
         TextArea ta = new TextArea(content);
         ta.setEditable(false);
         ta.setWrapText(true);
@@ -1640,10 +1588,8 @@ public class MainWindow {
             + "-fx-background-radius: 16;"
             + "-fx-border-color: " + borderColor() + ";"
 		+ "-fx-border-radius: 16;");
-		
         ScrollPane sp = new ScrollPane(ta);
         sp.setFitToWidth(true); sp.setFitToHeight(true);
-		
         Label info = new Label(" " + encLabel + "  |  "
 		+ file.getAbsolutePath() + "  (" + file.length() + " bytes)");
         info.setStyle(
@@ -1651,24 +1597,18 @@ public class MainWindow {
             + "-fx-font-family:'Malgun Gothic'; -fx-font-size:11px;"
 		+ "-fx-padding: 2 4 2 4; -fx-border-color:" + borderColor() + "; -fx-border-width:1 0 0 0;");
         info.setMaxWidth(Double.MAX_VALUE);
-		
         BorderPane root = new BorderPane(sp);
         root.setBottom(info);
-		
         javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
         int w = (int) Math.min(screen.getWidth() * 0.7, 1100);
         int h = (int) Math.min(screen.getHeight() * 0.7, 800);
         sub.setScene(new Scene(root, Math.max(600, w), Math.max(400, h)));
         sub.show();
 	}
-	
     // ═══════════════════════════════════════════════════════════
-    //  업무도구 헬퍼 (기존 코드 그대로)
+    //  즐겨찾기 헬퍼 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
-    private static final int OFFICE_SLOT_COUNT = 20;
-    private static String slotNameKey(int i) { return "office.slot." + i + ".name"; }
-    private static String slotPathKey(int i) { return "office.slot." + i + ".path"; }
-	
+    // OFFICE_SLOT_COUNT / slotNameKey / slotPathKey → AppContext.FAVORITE_SLOT_COUNT / getFavoriteName / getFavoritePath 로 이전
     private void launchByRegistry(String exeName) {
         String path = null;
         try {
@@ -1683,11 +1623,10 @@ public class MainWindow {
 			if (ln.contains("REG_SZ")) { path = ln.split("REG_SZ")[1].trim(); break; }
 		} catch (Exception ex) { path = null; }
         if (path == null || path.isEmpty()) {
-            showAlert(exeName + " 경로를 찾을 수 없습니다.", "업무도구"); return;
+            showAlert(exeName + " 경로를 찾을 수 없습니다.", "즐겨찾기"); return;
 		}
         launchByPath(path);
 	}
-	
     private void launchByPath(String path) {
         try {
             if (path.toLowerCase().endsWith(".lnk"))
@@ -1695,20 +1634,17 @@ public class MainWindow {
             else
 			new ProcessBuilder(path).start();
 			} catch (Exception ex) {
-            showAlert("실행 실패: " + ex.getMessage(), "업무도구");
+            showAlert("실행 실패: " + ex.getMessage(), "즐겨찾기");
 		}
 	}
-	
     private void openSlotEditor(int idx) {
-        String curName = getConfigValue(slotNameKey(idx), "");
-        String curPath = getConfigValue(slotPathKey(idx), "");
-		
+        String curName = AppContext.getFavoriteName(idx);
+        String curPath = AppContext.getFavoritePath(idx);
         Stage dlg = new Stage();
         dlg.initOwner(stage);
         dlg.initModality(Modality.APPLICATION_MODAL);
         dlg.initStyle(StageStyle.UTILITY);
-        dlg.setTitle("업무도구 슬롯 " + (idx + 1) + " 등록");
-		
+        dlg.setTitle("즐겨찾기 슬롯 " + (idx + 1) + " 등록");
         TextField nameField = new TextField(curName); nameField.setPrefWidth(220);
         TextField pathField = new TextField(curPath); pathField.setPrefWidth(280);
         Button browseBtn = new Button("찾아보기...");
@@ -1731,7 +1667,6 @@ public class MainWindow {
 				}
 			}
 		});
-		
         Button ok  = new Button("확인");  ok.setPrefWidth(72);
         Button can = new Button("취소");  can.setPrefWidth(72);
         can.setOnAction(e -> dlg.close());
@@ -1739,43 +1674,36 @@ public class MainWindow {
             String n = nameField.getText().trim();
             String p = pathField.getText().trim();
             if (n.isEmpty() || p.isEmpty()) {
-                showAlert("이름과 경로를 모두 입력하세요.", "업무도구"); return;
+                showAlert("이름과 경로를 모두 입력하세요.", "즐겨찾기"); return;
 			}
-            setMultipleConfigAndSave(slotNameKey(idx), n, slotPathKey(idx), p);
+            AppContext.setFavorite(idx, n, p);
             dlg.close();
             rebuildMenuBar();
 		});
-		
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(6); grid.setVgap(8); grid.setPadding(new Insets(14));
         grid.add(new Label("이름:"), 0, 0); grid.add(nameField, 1, 0, 2, 1);
         grid.add(new Label("경로:"), 0, 1); grid.add(pathField, 1, 1); grid.add(browseBtn, 2, 1);
-		
         HBox btns = new HBox(8, ok, can);
         btns.setAlignment(Pos.CENTER_RIGHT);
         btns.setPadding(new Insets(0, 14, 10, 14));
-		
         VBox root = new VBox(0, grid, btns);
         dlg.setScene(new Scene(root));
         dlg.sizeToScene();
         dlg.showAndWait();
 	}
-	
     private void swapSlots(int src, int dst) {
-        String sn = getConfigValue(slotNameKey(src), "");
-        String sp = getConfigValue(slotPathKey(src), "");
-        String dn = getConfigValue(slotNameKey(dst), "");
-        String dp = getConfigValue(slotPathKey(dst), "");
-        setMultipleConfigAndSave(
-            slotNameKey(src), dn, slotPathKey(src), dp,
-		slotNameKey(dst), sn, slotPathKey(dst), sp);
+        String sn = AppContext.getFavoriteName(src);
+        String sp = AppContext.getFavoritePath(src);
+        String dn = AppContext.getFavoriteName(dst);
+        String dp = AppContext.getFavoritePath(dst);
+        AppContext.setFavorite(src, dn, dp);
+        AppContext.setFavorite(dst, sn, sp);
 	}
-	
     private void rebuildMenuBar() {
         Platform.runLater(() ->
 		((BorderPane) stage.getScene().getRoot()).setTop(buildMenuBar()));
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  생활도구 헬퍼 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
@@ -1788,14 +1716,12 @@ public class MainWindow {
         if (!dir.exists()) dir.mkdirs();
         return new java.io.File(dir, "calendar.html");
 	}
-	
     private void openCalendarHtml() {
         java.io.File f = getCalendarFile();
         if (!f.exists()) { showAlert("[만년달력 갱신]을 먼저 실행하세요.", "만년달력"); return; }
         try { java.awt.Desktop.getDesktop().browse(f.toURI()); }
         catch (Exception ex) { showAlert("브라우저 열기 실패: " + ex.getMessage(), "만년달력"); }
 	}
-	
     private void updateCalendarHtml() {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.initOwner(stage);
@@ -1828,12 +1754,10 @@ public class MainWindow {
 			}, "CalendarUpdate").start();
 		});
 	}
-	
     private void openBrowser(String url) {
         try { java.awt.Desktop.getDesktop().browse(new java.net.URI(url)); }
         catch (Exception ex) { showAlert("브라우저 열기 실패: " + ex.getMessage(), "오류"); }
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  로그 내부 구현 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
@@ -1844,14 +1768,12 @@ public class MainWindow {
         String short_ = message.length() > 80 ? message.substring(0, 78) + "…" : message;
         setRuntimeStatus(short_);
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  유틸 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
     private void showNotReady() {
         showAlert("시계가 아직 초기화되지 않았습니다.\n잠시 후 다시 시도하세요.", "알림");
 	}
-	
     private void showAlert(String msg, String title) {
         Platform.runLater(() -> {
             Alert a = new Alert(Alert.AlertType.INFORMATION);
@@ -1862,26 +1784,103 @@ public class MainWindow {
             a.showAndWait();
 		});
 	}
-	
     private String defaultStatusText = " 준비";
     private String lastRuntimeStatus = defaultStatusText;
     private boolean menuStatusActive = false;
-	
     private void setRuntimeStatus(String text) {
         lastRuntimeStatus = " " + text;
         if (!menuStatusActive) statusBar.setText(lastRuntimeStatus);
 	}
-	
     private void showMenuStatus(String text) {
         menuStatusActive = true;
         statusBar.setText(" " + text);
 	}
-	
     private void clearMenuStatus() {
         menuStatusActive = false;
         statusBar.setText(lastRuntimeStatus != null ? lastRuntimeStatus : defaultStatusText);
 	}
-	
+    // ── 폰트 선택 다이얼로그 ────────────────────────────────────
+    private void showFontDialog() {
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initOwner(stage);
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dlg.initStyle(javafx.stage.StageStyle.UTILITY);
+        dlg.setAlwaysOnTop(true);
+        dlg.setTitle("폰트 선택");
+
+        // 시스템 폰트 목록
+        java.util.List<String> fonts =
+            new java.util.ArrayList<>(javafx.scene.text.Font.getFamilies());
+
+        javafx.scene.control.ListView<String> listView =
+            new javafx.scene.control.ListView<>(
+                javafx.collections.FXCollections.observableArrayList(fonts));
+        listView.setPrefHeight(340);
+
+        // 현재 선택 폰트 표시
+        String curFamily = AppContext.getUiFontFamily();
+        if (fonts.contains(curFamily))
+            listView.getSelectionModel().select(curFamily);
+        listView.scrollTo(listView.getSelectionModel().getSelectedIndex());
+
+        // 미리보기
+        javafx.scene.control.Label preview = new javafx.scene.control.Label("가나다 ABC 123 미리보기");
+        preview.setStyle("-fx-font-size: 14px;");
+        listView.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> {
+            if (n != null) preview.setStyle(
+                "-fx-font-family: '" + n + "'; -fx-font-size: 14px;");
+        });
+
+        // 크기
+        javafx.scene.control.Label sizeLbl =
+            new javafx.scene.control.Label("크기:");
+        javafx.scene.control.Spinner<Integer> sizeSpinner =
+            new javafx.scene.control.Spinner<>(8, 24, AppContext.getUiFontSize());
+        sizeSpinner.setEditable(true);
+        sizeSpinner.setPrefWidth(75);
+
+        javafx.scene.layout.HBox sizeBox = new javafx.scene.layout.HBox(8, sizeLbl, sizeSpinner);
+        sizeBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        sizeBox.setPadding(new javafx.geometry.Insets(6, 0, 6, 0));
+
+        // 버튼
+        javafx.scene.control.Button btnOk =
+            new javafx.scene.control.Button("확인");
+        javafx.scene.control.Button btnCancel =
+            new javafx.scene.control.Button("취소");
+        btnOk.setDefaultButton(true);
+        btnCancel.setCancelButton(true);
+
+        btnOk.setOnAction(e -> {
+            String sel = listView.getSelectionModel().getSelectedItem();
+            if (sel != null) {
+                AppContext.setUiFontFamily(sel);
+                AppContext.setUiFontSize(sizeSpinner.getValue());
+                // 즉시 전체 적용
+                AppContext.applyGlobalFont(stage.getScene());
+                logArea.setStyle(logStyle());
+                logArea.setFont(javafx.scene.text.Font.font(
+                    AppContext.getUiFontFamily(), AppContext.getUiFontSize()));
+                statusBar.setStyle(statusBarStyle());
+                rebuildMenuBar();
+            }
+            dlg.close();
+        });
+        btnCancel.setOnAction(e -> dlg.close());
+
+        javafx.scene.layout.HBox btnBox =
+            new javafx.scene.layout.HBox(8, btnOk, btnCancel);
+        btnBox.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(8,
+            new javafx.scene.control.Label("폰트 선택:"),
+            listView, preview, sizeBox, btnBox);
+        root.setPadding(new javafx.geometry.Insets(12));
+        root.setPrefWidth(320);
+
+        dlg.setScene(new javafx.scene.Scene(root));
+        dlg.showAndWait();
+    }
     // ── 테마 토글 ──────────────────────────────────────────────
     private void toggleTheme() {
         themeMode = (themeMode == ThemeMode.PINK_GLASS) ? ThemeMode.BASIC : ThemeMode.PINK_GLASS;
@@ -1890,28 +1889,23 @@ public class MainWindow {
         statusBar.setStyle(statusBarStyle());
         rebuildMenuBar();
 	}
-	
     // ── 메뉴 팩토리 (기존 코드 그대로) ──────────────────────────
     private Menu makeMenu(String text) { return makeMenu(text, null); }
-	
     private Menu makeMenu(String text, String helpText) {
         Menu m = new Menu(text);
-        m.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:13px; -fx-text-fill:" + fgColor() + ";");
+        m.setStyle("-fx-font-family:'" + AppContext.getUiFontFamily() + "'; -fx-font-size:" + AppContext.getUiFontSize() + "px; -fx-text-fill:" + fgColor() + ";");
         m.setOnShowing(e -> { if (helpText != null && !helpText.isEmpty()) showMenuStatus(helpText); });
         m.setOnHidden(e -> clearMenuStatus());
         return m;
 	}
-	
     private MenuItem makeMenuItem(String text, String tooltip) {
         return makeRichMenuItem(null, text, tooltip, null, null);
 	}
-	
     private MenuItem makeDisabledItem(String text) {
         MenuItem item = makeRichMenuItem("⛔", text, "현재는 사용할 수 없는 항목입니다.", null, null);
         item.setDisable(true);
         return item;
 	}
-	
     private MenuItem makeRichMenuItem(String icon, String text, String helpText,
 		String shortcut, Runnable action) {
         javafx.scene.layout.HBox row = new javafx.scene.layout.HBox(8);
@@ -1919,17 +1913,14 @@ public class MainWindow {
         row.setPadding(new Insets(3, 8, 3, 8));
         row.setStyle("-fx-background-color: " + glassPanelColor()
 		+ "; -fx-background-radius: 14; -fx-border-color: transparent; -fx-border-radius:14;");
-		
         if (icon != null && !icon.isEmpty()) {
             Label iconLabel = new Label(icon);
             iconLabel.setStyle("-fx-font-size:14px;");
             row.getChildren().add(iconLabel);
 		}
-		
         Label textLabel = new Label(text);
         textLabel.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:13px; -fx-text-fill:" + fgColor() + ";");
         row.getChildren().add(textLabel);
-		
         if (shortcut != null && !shortcut.isEmpty()) {
             javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
             javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
@@ -1937,9 +1928,7 @@ public class MainWindow {
             scLabel.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:11px; -fx-text-fill:" + TS_CLR + ";");
             row.getChildren().addAll(spacer, scLabel);
 		}
-		
         CustomMenuItem item = new CustomMenuItem(row, true);
-		
         if (helpText != null && !helpText.isEmpty()) {
             Tooltip.install(row, makeSmallTooltip(helpText));
             row.setOnMouseEntered(e -> {
@@ -1954,11 +1943,9 @@ public class MainWindow {
                 clearMenuStatus();
 			});
 		}
-		
         item.setOnAction(e -> { if (action != null) action.run(); });
         return item;
 	}
-	
     private CustomMenuItem makeSectionHeader(String text) {
         Label label = new Label(text);
         label.setStyle("-fx-font-size:11px; -fx-font-weight:bold; -fx-text-fill:"
@@ -1973,7 +1960,6 @@ public class MainWindow {
         item.setDisable(true);
         return item;
 	}
-	
     private Tooltip makeSmallTooltip(String text) {
         Tooltip t = new Tooltip(text);
         t.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:11px;"
@@ -1981,7 +1967,6 @@ public class MainWindow {
 		+ "; -fx-background-radius:8; -fx-border-color:" + borderColor() + "; -fx-border-radius:8;");
         return t;
 	}
-	
     // ── 색 헬퍼 ───────────────────────────────────────────────
     private String bgColor()         { return themeMode == ThemeMode.PINK_GLASS ? BG : "#ebf5ff"; }
     private String fgColor()         { return themeMode == ThemeMode.PINK_GLASS ? FG : "#1a3a6b"; }
@@ -1989,10 +1974,9 @@ public class MainWindow {
     private String borderColor()     { return themeMode == ThemeMode.PINK_GLASS ? GLASS_BORDER : "rgba(100,140,200,0.40)"; }
     private String glassPanelColor() { return themeMode == ThemeMode.PINK_GLASS ? GLASS_PANEL : "rgba(255,255,255,0.55)"; }
     private String glassHoverColor() { return themeMode == ThemeMode.PINK_GLASS ? GLASS_HOVER  : "rgba(210,228,255,0.65)"; }
-	
     // ── 스타일 빌더 ───────────────────────────────────────────
     private String logStyle() {
-        return "-fx-font-family: 'Malgun Gothic'; -fx-font-size: 13px;"
+        return "-fx-font-family: '" + AppContext.getUiFontFamily() + "'; -fx-font-size: " + AppContext.getUiFontSize() + "px;"
 		+ "-fx-text-fill: " + fgColor() + ";"
 		+ "-fx-background-color: " + (themeMode == ThemeMode.PINK_GLASS ? "rgba(255,255,255,0.30)" : "#ebf5ff") + ";"
 		+ "-fx-control-inner-background: " + (themeMode == ThemeMode.PINK_GLASS ? "rgba(255,255,255,0.30)" : "#ebf5ff") + ";"
@@ -2001,29 +1985,24 @@ public class MainWindow {
 		+ "-fx-border-radius: 16;"
 		+ "-fx-border-width: 1;";
 	}
-	
     private String scrollPaneStyle() {
         return "-fx-background: transparent; -fx-background-color: transparent;"
 		+ "-fx-border-color: transparent;";
 	}
-	
     private String statusBarStyle() {
         return "-fx-background-color: " + barBgColor() + ";"
 		+ "-fx-text-fill: " + fgColor() + ";"
-		+ "-fx-font-family: 'Malgun Gothic'; -fx-font-size: 11px;"
+		+ "-fx-font-family: '" + AppContext.getUiFontFamily() + "'; -fx-font-size: " + Math.max(9, AppContext.getUiFontSize() - 2) + "px;"
 		+ "-fx-padding: 3 6 3 6;";
 	}
-	
     private String rootStyle() {
         return "-fx-background-color: " + bgColor() + ";";
 	}
-	
     private String menuBarStyle() {
         return themeMode == ThemeMode.PINK_GLASS ? MENU_BG
 		: "-fx-background-color: rgba(210,228,255,0.72);"
 		+ "-fx-border-color: rgba(100,140,200,0.45); -fx-border-width: 0 0 1 0;";
 	}
-	
     // ═══════════════════════════════════════════════════════════
     //  TextFileReader 내부 유틸 클래스 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
@@ -2033,7 +2012,6 @@ public class MainWindow {
             public final String content;
             Result(String e, String c) { encLabel = e; content = c; }
 		}
-		
         public static Result read(File file) throws Exception {
             byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
             String[] candidates = {"UTF-8", "EUC-KR", "MS949", "ISO-8859-1"};
@@ -2045,7 +2023,6 @@ public class MainWindow {
 			}
             return new Result("UTF-8", new String(bytes, "UTF-8"));
 		}
-		
         public static String readContent(File file) throws Exception {
             return read(file).content;
 		}

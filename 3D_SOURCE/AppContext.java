@@ -597,4 +597,77 @@ public final class AppContext {
 		openIniFile(CONFIG_FILE);
 		}
 	*/
+
+    // ── UI 폰트 ─────────────────────────────────────────────────
+    /** 메인윈도우 전체 폰트 패밀리 (기본: Malgun Gothic) */
+    public static String getUiFontFamily() {
+        return get("ui.font.family", "Malgun Gothic");
+    }
+    public static void setUiFontFamily(String family) {
+        set("ui.font.family", family != null ? family.trim() : "Malgun Gothic");
+        save();
+    }
+
+    /** 메인윈도우 전체 폰트 크기 (기본: 13) */
+    public static int getUiFontSize() {
+        return getInt("ui.font.size", 13);
+    }
+    public static void setUiFontSize(int size) {
+        setInt("ui.font.size", size > 0 ? size : 13);
+        save();
+    }
+
+    /**
+     * JavaFX Scene 전체에 폰트를 일괄 적용.
+     * scene.getRoot().setStyle(...)로 하위 모든 노드에 상속.
+     * MainWindow.theMainWindow() 또는 applyTheme() 호출 시 사용.
+     */
+    // =========================================================
+    // [18] 즐겨찾기 슬롯 (마스터 INI 저장)
+    //      키 형식: favorite.slot.{i}.name / favorite.slot.{i}.path
+    //      MainWindow 업무도구(즐겨찾기) 메뉴에서 사용.
+    // =========================================================
+    public  static final int FAVORITE_SLOT_COUNT = 20;
+    private static String favNameKey(int i) { return "favorite.slot." + i + ".name"; }
+    private static String favPathKey(int i) { return "favorite.slot." + i + ".path"; }
+
+    /** i번 슬롯 이름 조회 */
+    public static String getFavoriteName(int i) {
+        return get(favNameKey(i), "");
+    }
+    /** i번 슬롯 경로 조회 */
+    public static String getFavoritePath(int i) {
+        return get(favPathKey(i), "");
+    }
+    /** i번 슬롯 등록 후 저장 */
+    public static void setFavorite(int i, String name, String path) {
+        set(favNameKey(i), name  != null ? name  : "");
+        set(favPathKey(i), path  != null ? path  : "");
+        save();
+    }
+    /** i번 슬롯 삭제 후 저장 */
+    public static void removeFavorite(int i) {
+        remove(favNameKey(i));
+        remove(favPathKey(i));
+        save();
+    }
+    /** 비어있는 첫 슬롯 인덱스 반환 (없으면 FAVORITE_SLOT_COUNT) */
+    public static int nextEmptyFavoriteSlot() {
+        for (int i = 0; i < FAVORITE_SLOT_COUNT; i++) {
+            if (getFavoriteName(i).isEmpty() || getFavoritePath(i).isEmpty()) return i;
+        }
+        return FAVORITE_SLOT_COUNT;
+    }
+
+    public static void applyGlobalFont(javafx.scene.Scene scene) {
+        if (scene == null) return;
+        String family = getUiFontFamily();
+        int    size   = getUiFontSize();
+        scene.getRoot().setStyle(
+            scene.getRoot().getStyle()
+            + "-fx-font-family: '" + family + "';"
+            + "-fx-font-size: " + size + "px;"
+        );
+    }
+
 }
