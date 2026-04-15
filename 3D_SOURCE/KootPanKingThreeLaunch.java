@@ -7,6 +7,9 @@ import java.util.Date;
 import lc.kra.system.mouse.GlobalMouseHook;
 import lc.kra.system.mouse.event.GlobalMouseAdapter;
 import lc.kra.system.mouse.event.GlobalMouseEvent;
+import lc.kra.system.keyboard.GlobalKeyboardHook;
+import lc.kra.system.keyboard.event.GlobalKeyAdapter;
+import lc.kra.system.keyboard.event.GlobalKeyEvent;
 
 public class KootPanKingThreeLaunch extends Application {
     // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
@@ -23,6 +26,7 @@ public class KootPanKingThreeLaunch extends Application {
 	public static MainWindow mainWindow = new MainWindow();;
 	private static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
 	private static GlobalMouseHook mouseHook;               // 글로벌 마우스 훅
+	private static GlobalKeyboardHook keyboardHook;         // 글로벌 키보드 훅
 	private static Stage primaryStageRef;                   // 시계 보이기/숨기기용
 	public KootPanKingThreeLaunch () {
 		System.out.println("[KootPanKingThreeLaunch ()]");
@@ -36,6 +40,7 @@ public class KootPanKingThreeLaunch extends Application {
         mainWindow.theMainWindow(primaryStage);
 		telegramSetup();
 		setupMouseHook();
+		setupKeyboardHook();
 	}
 	private static void showStartupScheduleTextLater() {
 		new Thread(() -> {
@@ -217,7 +222,7 @@ public class KootPanKingThreeLaunch extends Application {
 					boolean right = (event.getButtons() & GlobalMouseEvent.BUTTON_RIGHT) != GlobalMouseEvent.BUTTON_NO;
 					if (left && right) {
 						Platform.runLater(() -> {
-							// 시계: alwaysOnTop 트릭으로 맨 앞 (즉시 원복)
+							// 시계: alwaysOnTop으로 맨 앞으로
 							if (app != null && app.clockController != null) {
 								Stage clockStage = app.clockController.getStage();
 								if (clockStage != null) {
@@ -225,11 +230,12 @@ public class KootPanKingThreeLaunch extends Application {
 									clockStage.setAlwaysOnTop(true);
 									clockStage.toFront();
 									clockStage.requestFocus();
-									clockStage.setAlwaysOnTop(false);
+									if (!app.alwaysOnTop)
+										clockStage.setAlwaysOnTop(false);
 									System.out.println("[MouseHook] 시계 맨 앞으로");
 								}
 							}
-							// 메인창 토글 (show 시 alwaysOnTop 트릭은 toggleTheMainWindow 안에서 처리)
+							// 메인창 토글 (이미 존재하는 메서드 사용)
 							if (mainWindow != null)
 								mainWindow.toggleTheMainWindow();
 						});
@@ -239,6 +245,40 @@ public class KootPanKingThreeLaunch extends Application {
 			System.out.println("[MouseHook] 글로벌 마우스 훅 시작");
 		} catch (Exception e) {
 			System.out.println("[MouseHook] 훅 초기화 실패: " + e.getMessage());
+		}
+	}
+
+	private static void setupKeyboardHook() {
+		try {
+			keyboardHook = new GlobalKeyboardHook(false);
+			keyboardHook.addKeyListener(new GlobalKeyAdapter() {
+				@Override public void keyPressed(GlobalKeyEvent event) {
+					int vk = event.getVirtualKeyCode();
+					// 윈도우키(좌/우) → 마우스 버튼 2개와 동일한 처리
+					if (vk == GlobalKeyEvent.VK_LWIN || vk == GlobalKeyEvent.VK_RWIN) {
+						Platform.runLater(() -> {
+							// 시계: alwaysOnTop 트릭으로 맨 앞 (즉시 원복)
+							if (app != null && app.clockController != null) {
+								Stage clockStage = app.clockController.getStage();
+								if (clockStage != null) {
+									if (!clockStage.isShowing()) clockStage.show();
+									clockStage.setAlwaysOnTop(true);
+									clockStage.toFront();
+									clockStage.requestFocus();
+									clockStage.setAlwaysOnTop(false);
+									System.out.println("[KeyboardHook] 시계 맨 앞으로");
+								}
+							}
+							// 메인창 토글
+							if (mainWindow != null)
+								mainWindow.toggleTheMainWindow();
+						});
+					}
+				}
+			});
+			System.out.println("[KeyboardHook] 글로벌 키보드 훅 시작");
+		} catch (Exception e) {
+			System.out.println("[KeyboardHook] 훅 초기화 실패: " + e.getMessage());
 		}
 	}
 
@@ -289,6 +329,11 @@ public class KootPanKingThreeLaunch extends Application {
 		try {
 			if (mouseHook != null && mouseHook.isAlive()) {
 				mouseHook.shutdownHook();
+			}
+		} catch (Exception ignored) {}
+		try {
+			if (keyboardHook != null && keyboardHook.isAlive()) {
+				keyboardHook.shutdownHook();
 			}
 		} catch (Exception ignored) {}
 		AppLogger.close();
