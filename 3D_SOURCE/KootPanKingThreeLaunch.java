@@ -6,16 +6,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 public class KootPanKingThreeLaunch extends Application {
-	// public static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
     // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
-    // public static Properties config = new Properties();
-/*
-	public static IniController iniController ;
-	public static String APP_DIR = "";
-	public static String SETTINGS_DIR = IniController.getDefaultSettingsDir();
-	public static String configFile  = IniController.getPrimaryConfigFilePath();
-	public static IniController ini = new IniController(	APP_DIR, SETTINGS_DIR, configFile,"Local"	);
-	*/
 	public static final GmailSender gmail = GmailSender.getInstance();
 	public static TelegramBot tg;
     public static CaptureManager screenCapture;             // 화면 캡처
@@ -27,8 +18,9 @@ public class KootPanKingThreeLaunch extends Application {
 	public static KootPanKingThreeApp app ;
 	public static Kakao kakao = new Kakao();
 	public static MainWindow mainWindow = new MainWindow();;
+	private static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
 	public KootPanKingThreeLaunch () {
-		System.out.println("[KootPanKingThreeLaunch]");
+		System.out.println("[KootPanKingThreeLaunch ()]");
 	};
 	@Override
     public void start(Stage primaryStage) {
@@ -55,35 +47,21 @@ public class KootPanKingThreeLaunch extends Application {
 				return;
 			}
 			// if (startupScheduleText != null && !startupScheduleText.isEmpty()) {
-				javafx.application.Platform.runLater(() -> {
-					System.out.println("일정 통보 다이알로그 등록");
-					firstFinalGmail();
-					KakaoSetup();
-					mainWindow.showScheduleDialog("📅 향후 3일 일정", startupScheduleText);
-				});
+			javafx.application.Platform.runLater(() -> {
+				System.out.println("일정 통보 다이알로그 등록");
+				firstFinalGmail();
+				KakaoSetup();
+				mainWindow.showScheduleDialog("📅 향후 3일 일정", startupScheduleText);
+				shutdownGuard = new AppRestarter.ShutdownGuard(gmail, tg); // 강제 종료 감지 훅 등록
+				shutdownGuard.register(); 
+			});
 			// }
 		}, "StartupScheduleDelay").start();
 	}
-	
     private static void firstFinalGmail() {
-		// GmailSender gmail = GmailSender.getInstance();
 		gmail.init();
-		gmail.sendStartupNotice(startupScheduleText);  // 쓰레드 동기화 안되어서 텔레그램으로 이동
-		// 5. 종료 메일 hook (1회)
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			try {
-				String now = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
-                .format(new java.util.Date());
-				gmail.sendShutdownNoticeSync(
-					"🔴 [앱 종료] ",
-					GmailSender.APP_SIGNATURE + "앱이 종료됩니다.\n\n종료 시각: " + now
-				);
-				} catch (Exception e) {
-				e.printStackTrace();
-			}
-		}, "Gmail-ShutdownHook"));
+		gmail.sendStartupNotice(startupScheduleText);
 	}
-	
 	private static void telegramSetup() {
 		googleCalendarService.setSETTINGS_DIR(AppContext.SETTINGS_DIR);
 		tg = TelegramBot.getInstance(new TelegramBot.CommandHandler() {
@@ -251,9 +229,9 @@ public class KootPanKingThreeLaunch extends Application {
 		AppLogger.init();
 		AppContext.init();
 		/*
-		firstFinalGmail();
-		telegramSetup();
-		KakaoSetup();
+			firstFinalGmail();
+			telegramSetup();
+			KakaoSetup();
 		*/
 		try {
 			System.out.println("[(Application.launch)-------000]");

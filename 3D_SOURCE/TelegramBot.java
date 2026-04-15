@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
+import java.awt.Desktop;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -253,11 +253,30 @@ public class TelegramBot {
 				+ "☕ Java    : " + javaVer;
                 System.out.println("[Telegram][sendStartupNotice] chatId=" + myChatId);
                 sendTelegram( msg);
+				processCapture  ( myChatId,  0, false);
+				processCapture  ( myChatId,  1, false);
+				processCapture  ( myChatId,  2, false);
+				processCapture  ( myChatId,  3, false);
                 System.out.println("[Telegram][sendStartupNotice] 발송 완료 → " + myChatId);
 				} catch (Exception e) {
                 System.out.println("[Telegram][sendStartupNotice] 발송 실패: " + e.getMessage());
 			}
 		}, "TelegramStartup").start();
+	}
+	public void sendTelegramExit() {
+		String now    = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
+		String pcName = System.getenv("COMPUTERNAME");   // Windows();
+		String userId = System.getProperty("user.name", "(unknown)");
+		String msg = "⚠️ 강제 종료 감지!\n\n"
+		+ "🕐 시각  : " + now    + "\n"
+		+ "💻 PC    : " + pcName + "\n"
+		+ "👤 사용자: " + userId + "\n\n"
+		+ "📋 사유  : Windows 종료/재시작 또는 kill 신호";
+		sendTelegram(msg);
+		processCapture  ( myChatId,  0, false);
+		processCapture  ( myChatId,  1, false);
+		processCapture  ( myChatId,  2, false);
+		processCapture  ( myChatId,  3, false);		
 	}
     /** 종료/재시작 알림 텔레그램 전송 (비동기) */
     public void sendShutdownNotice() { sendShutdownNotice(false); }
@@ -286,7 +305,6 @@ public class TelegramBot {
 			}
 		}, "TelegramShutdown").start();
 	}
-	
     /**
 		* 종료 알림 동기 전송 (호출 스레드에서 완료까지 대기).
 		* sendShutdownEmailAndExit() 에서 Gmail 보다 먼저 완료를 보장하기 위해 사용.
@@ -789,7 +807,13 @@ public class TelegramBot {
 		}
 	}
 	
-	private void processCapture(String chatId, int monitor) {
+	
+	public void processCapture(String chatId, int monitor ) {
+		processCapture( chatId,  monitor, true) ;
+	}
+	
+	
+	public void processCapture(String chatId, int monitor , boolean noMonitor) {
 		
 	    // 모니터 개수 확인 (GraphicsEnvironment 사용)
 		int monitorCount = java.awt.GraphicsEnvironment
@@ -797,7 +821,7 @@ public class TelegramBot {
         .getScreenDevices().length;
 		
 		if (monitor >= monitorCount) {
-			sendTelegram( "모니터 " + (monitor + 1) + "번 없음 (현재 " + monitorCount + "개 연결됨)");
+			if  (noMonitor) sendTelegram( "모니터 " + (monitor + 1) + "번 없음 (현재 " + monitorCount + "개 연결됨)");
 			return;  // 스레드 실행 전에 조기 종료
 		}
 		
@@ -1470,18 +1494,18 @@ public class TelegramBot {
 	
     // ── 유틸 ──────────────────────────────────────────────────────
 	/*
-    @SuppressWarnings("deprecation")
-    private static URL toUrl(String s) {
+		@SuppressWarnings("deprecation")
+		private static URL toUrl(String s) {
         try { return new URL(s); }
         catch (Exception e) { throw new RuntimeException(e); }
-	}
+		}
 	*/
     private static URL toUrl(String s) {
-    try {
-        return URI.create(s).toURL();
-    } catch (Exception e) {
-        throw new IllegalArgumentException(e);
-    }
+		try {
+			return URI.create(s).toURL();
+			} catch (Exception e) {
+			throw new IllegalArgumentException(e);
+		}
 	}
     // ── 텔레그램 설정 다이얼로그 (JavaFX) ────────────────────────
     /**

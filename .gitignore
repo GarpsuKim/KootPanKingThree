@@ -8,6 +8,7 @@
 *.java.*
 INI_bak/
 3D_Class/
+3D_Dist/
 log/
 ERROR_OF_COMPILE/
 img/
@@ -19,3 +20,4 @@ TEST/
 temp/
 tmp/
 3D_Lib/javafx-sdk-21.0.10/
+@TEST/

@@ -493,7 +493,7 @@ public class AppRestarter {
                 System.out.println("[ShutdownGuard] 종료 신호 감지 — 알림 전송 시작");
                 sendNotifications();
                 System.out.println("[ShutdownGuard] 완료");
-                AppLogger.close();
+                // AppLogger.close();
 			}, "ShutdownGuard-Hook");
             Runtime.getRuntime().addShutdownHook(hookThread);
             System.out.println("[ShutdownGuard] 등록 완료");
@@ -504,30 +504,23 @@ public class AppRestarter {
         public void resume()  { cancelled = false; }
         private void sendNotifications() {
             String now    = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
-            String pcName = getPcName();
+            String pcName = System.getenv("COMPUTERNAME");   // Windows();
             String userId = System.getProperty("user.name", "(unknown)");
-            Thread tgThread   = new Thread(() -> sendTelegram(now, pcName, userId), "SG-Telegram");
+            Thread tgThread   = new Thread(() -> sendTelegramExit(), "SG-Telegram");
             Thread mailThread = new Thread(() -> sendEmail(now, pcName, userId),    "SG-Email");
             tgThread.start();
             mailThread.start();
             try { tgThread.join(4000); }   catch (InterruptedException ignored) {}
             try { mailThread.join(4000); } catch (InterruptedException ignored) {}
 		}
-        private void sendTelegram(String now, String pcName, String userId) {
-			/*
-				if (tg == null || !tg.polling || tg.botToken.isEmpty() || tg.myChatId.isEmpty()) return;
-				try {
-                String msg = "⚠️ 강제 종료 감지!\n\n"
-				+ "🕐 시각  : " + now    + "\n"
-				+ "💻 PC    : " + pcName + "\n"
-				+ "👤 사용자: " + userId + "\n\n"
-				+ "📋 사유  : Windows 종료/재시작 또는 kill 신호";
-                tg.sendTelegram(tg.myChatId, msg);
+        private void sendTelegramExit() {
+			if ( tg == null ) return;
+			try {
+                tg.sendTelegramExit();
                 System.out.println("[ShutdownGuard] 텔레그램 전송 완료");
 				} catch (Exception e) {
                 System.out.println("[ShutdownGuard] 텔레그램 전송 실패: " + e.getMessage());
-				}
-			*/
+			}
 		}
         private void sendEmail(String now, String pcName, String userId) {
             if (gmail == null || !gmail.isConfigured() || gmail.lastTo.isEmpty()) return;
@@ -541,7 +534,17 @@ public class AppRestarter {
 				+ "사용자  : " + userId + "\n"
 				+ "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 				+ "(kill -9 / SIGKILL 은 감지 불가)";
-                gmail.sendOneSmtp(gmail.lastTo, subject, body);
+				// ── 첨부 파일 수집: 마스터 ini + 로그 파일 ──────────
+				final java.util.List<java.io.File> attachFiles = new java.util.ArrayList<>();
+				java.io.File iniFile = new java.io.File(AppContext.CONFIG_FILE);
+				if (iniFile.exists()) attachFiles.add(iniFile);
+				String logPath = AppLogger.getLogFilePath();
+				if (logPath != null && !logPath.isEmpty()) {
+					java.io.File logFile = new java.io.File(logPath);
+					if (logFile.exists()) attachFiles.add(logFile);
+				}
+
+                gmail.sendOneSmtpWithAttachments(gmail.from, gmail.pass, gmail.lastTo, subject, body, attachFiles);
                 System.out.println("[ShutdownGuard] 이메일 전송 완료");
 				} catch (Exception e) {
                 System.out.println("[ShutdownGuard] 이메일 전송 실패: " + e.getMessage());
@@ -834,21 +837,21 @@ public class AppRestarter {
 			String userHome   = System.getProperty("user.home");
 			String programData = System.getenv("PROGRAMDATA");
 			if (programData == null || programData.isBlank())
-				programData = "C:\\ProgramData";
+			programData = "C:\\ProgramData";
 			java.nio.file.Path commonStartMenu =
-				java.nio.file.Paths.get(programData,
-					"Microsoft", "Windows", "Start Menu");
+			java.nio.file.Paths.get(programData,
+			"Microsoft", "Windows", "Start Menu");
 			java.nio.file.Path commonPrograms =
-				java.nio.file.Paths.get(programData,
-					"Microsoft", "Windows", "Start Menu", "Programs");
+			java.nio.file.Paths.get(programData,
+			"Microsoft", "Windows", "Start Menu", "Programs");
 			java.nio.file.Path userStartMenu =
-				userHome == null || userHome.isBlank() ? null
-				: java.nio.file.Paths.get(
-					userHome, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu");
+			userHome == null || userHome.isBlank() ? null
+			: java.nio.file.Paths.get(
+			userHome, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu");
 			java.nio.file.Path userPrograms =
-				userHome == null || userHome.isBlank() ? null
-				: java.nio.file.Paths.get(
-					userHome, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs");
+			userHome == null || userHome.isBlank() ? null
+			: java.nio.file.Paths.get(
+			userHome, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs");
 			// 일반 앱 원본 수집
 			lnkFiles.addAll(listLnkFilesShallow(commonStartMenu));
 			lnkFiles.addAll(listLnkFilesShallow(commonPrograms));
@@ -899,7 +902,7 @@ public class AppRestarter {
 				File f = e.getValue();
 				String lnkTarget = parseLnkTarget(f);
 				String execTarget = (lnkTarget != null && !lnkTarget.isEmpty())
-					? lnkTarget : f.getAbsolutePath();
+				? lnkTarget : f.getAbsolutePath();
 				result.add(new AppEntry(
 					toDisplayName(f),
 					f,
@@ -985,7 +988,7 @@ public class AppRestarter {
 		private java.util.List<AppEntry> collectWindowsApps() {
 			String programData = System.getenv("PROGRAMDATA");
 			if (programData == null || programData.isBlank())
-				programData = "C:\\ProgramData";
+			programData = "C:\\ProgramData";
 			String userHome = System.getProperty("user.home");
 			String programs = programData + "\\Microsoft\\Windows\\Start Menu\\Programs";
 			// ── 수집 폴더 목록 ──────────────────────────────────────
@@ -1002,17 +1005,17 @@ public class AppRestarter {
 			java.util.List<File> lnkFiles = new java.util.ArrayList<>();
 			for (String sub : subDirs) {
 				java.nio.file.Path p =
-					java.nio.file.Paths.get(programs, sub);
+				java.nio.file.Paths.get(programs, sub);
 				lnkFiles.addAll(listLnkFilesShallow(p));
 				lnkFiles.addAll(listLnkFilesRecursive(p));
 			}
 			// 사용자별 Administrative Tools / Windows Tools
 			if (userHome != null && !userHome.isBlank()) {
 				String userPrograms = userHome
-					+ "\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs";
+				+ "\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs";
 				for (String sub : new String[]{"Administrative Tools","Windows Tools"}) {
 					java.nio.file.Path p =
-						java.nio.file.Paths.get(userPrograms, sub);
+					java.nio.file.Paths.get(userPrograms, sub);
 					lnkFiles.addAll(listLnkFilesShallow(p));
 					lnkFiles.addAll(listLnkFilesRecursive(p));
 				}
@@ -1020,7 +1023,7 @@ public class AppRestarter {
 			// 정렬 + 중복 제거
 			lnkFiles.sort(java.util.Comparator.comparing(
 				f -> f.getName().toLowerCase(java.util.Locale.ROOT),
-				java.lang.String.CASE_INSENSITIVE_ORDER));
+			java.lang.String.CASE_INSENSITIVE_ORDER));
 			java.util.Map<String, File> dedup = new java.util.LinkedHashMap<>();
 			for (File f : lnkFiles) {
 				String key = f.getName().toLowerCase(java.util.Locale.ROOT);
@@ -1031,9 +1034,9 @@ public class AppRestarter {
 			for (File f : dedup.values()) {
 				String lnkTarget = parseLnkTarget(f);
 				String execTarget = (lnkTarget != null && !lnkTarget.isEmpty())
-					? lnkTarget : f.getAbsolutePath();
+				? lnkTarget : f.getAbsolutePath();
 				result.add(new AppEntry(
-					toDisplayName(f), f, execTarget, "WINDOWS_APP"));
+				toDisplayName(f), f, execTarget, "WINDOWS_APP"));
 			}
 			return result;
 		}
@@ -1426,7 +1429,7 @@ public class AppRestarter {
 				if (relPath != null && !relPath.isEmpty()) {
 					try {
 						java.io.File resolved = new java.io.File(
-							lnkFile.getParentFile(), relPath).getCanonicalFile();
+						lnkFile.getParentFile(), relPath).getCanonicalFile();
 						if (resolved.exists()) return resolved.getAbsolutePath();
 					} catch (Exception ignored2) {}
 				}
@@ -1467,7 +1470,7 @@ public class AppRestarter {
 			if (unicode) {
 				if (off + count * 2 > d.length) return "";
 				try { return new String(d, off, count * 2, "UTF-16LE"); } catch (Exception e) { return ""; }
-			} else {
+				} else {
 				if (off + count > d.length) return "";
 				try { return new String(d, off, count, "MS949"); } catch (Exception e) { return new String(d, off, count); }
 			}
@@ -1483,7 +1486,7 @@ public class AppRestarter {
 		}
 		private int u32le(byte[] d, int off) {
 			return (d[off] & 0xFF) | ((d[off+1] & 0xFF) << 8)
-				| ((d[off+2] & 0xFF) << 16) | ((d[off+3] & 0xFF) << 24);
+			| ((d[off+2] & 0xFF) << 16) | ((d[off+3] & 0xFF) << 24);
 		}
 		private String readAnsi(byte[] d, int off) {
 			if (off < 0 || off >= d.length) return "";
@@ -1537,11 +1540,11 @@ public class AppRestarter {
 		private javafx.scene.layout.Region buildButtonPane(
 			java.util.List<AppEntry> entries) {
 			javafx.scene.layout.FlowPane flow =
-				new javafx.scene.layout.FlowPane(12, 12);
+			new javafx.scene.layout.FlowPane(12, 12);
 			flow.setPadding(new javafx.geometry.Insets(16));
 			// ── 1패스: 셀 생성 ────────────────────────────────────
 			java.util.List<javafx.scene.layout.VBox> cells =
-				new java.util.ArrayList<>();
+			new java.util.ArrayList<>();
 			for (AppEntry app : entries) {
 				// ── 아이콘 ─────────────────────────────────────────
 				javafx.scene.image.ImageView iv = createIconView(app);
@@ -1555,26 +1558,26 @@ public class AppRestarter {
 				circle.setStroke(javafx.scene.paint.Color.web("rgba(209,79,146,0.30)"));
 				circle.setStrokeWidth(1.5);
 				javafx.scene.effect.DropShadow shadow =
-					new javafx.scene.effect.DropShadow(
-						8, 0, 2, javafx.scene.paint.Color.web("rgba(209,79,146,0.35)"));
+				new javafx.scene.effect.DropShadow(
+				8, 0, 2, javafx.scene.paint.Color.web("rgba(209,79,146,0.35)"));
 				if (iv != null) iv.setEffect(shadow);
 				javafx.scene.layout.StackPane iconWrap =
-					new javafx.scene.layout.StackPane(
-						circle, iv != null ? iv
-						: new javafx.scene.text.Text("?"));
+				new javafx.scene.layout.StackPane(
+					circle, iv != null ? iv
+				: new javafx.scene.text.Text("?"));
 				iconWrap.setPrefSize(56, 56);
 				// ── 텍스트 ─────────────────────────────────────────
 				javafx.scene.text.Text label =
-					new javafx.scene.text.Text(app.name);
+				new javafx.scene.text.Text(app.name);
 				label.setStyle(
 					"-fx-font-family: 'Malgun Gothic';" +
-					"-fx-font-size: 11px;");
+				"-fx-font-size: 11px;");
 				label.setFill(javafx.scene.paint.Color.web("#6b2148"));
 				label.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
 				label.setWrappingWidth(96);
 				// ── 셀 VBox ────────────────────────────────────────
 				javafx.scene.layout.VBox cell =
-					new javafx.scene.layout.VBox(6, iconWrap, label);
+				new javafx.scene.layout.VBox(6, iconWrap, label);
 				cell.setAlignment(javafx.geometry.Pos.CENTER);
 				cell.setPrefSize(100, 90);
 				cell.setPadding(new javafx.geometry.Insets(6));
@@ -1583,21 +1586,21 @@ public class AppRestarter {
 				cell.setCursor(javafx.scene.Cursor.HAND);
 				// ── Scale 애니메이션 ───────────────────────────────
 				javafx.animation.ScaleTransition scaleUp =
-					new javafx.animation.ScaleTransition(
-						javafx.util.Duration.millis(140), iconWrap);
+				new javafx.animation.ScaleTransition(
+				javafx.util.Duration.millis(140), iconWrap);
 				scaleUp.setToX(1.22); scaleUp.setToY(1.22);
 				javafx.animation.ScaleTransition scaleDown =
-					new javafx.animation.ScaleTransition(
-						javafx.util.Duration.millis(140), iconWrap);
+				new javafx.animation.ScaleTransition(
+				javafx.util.Duration.millis(140), iconWrap);
 				scaleDown.setToX(1.0); scaleDown.setToY(1.0);
 				// ── Glow 효과 ──────────────────────────────────────
 				javafx.scene.effect.Glow glow =
-					new javafx.scene.effect.Glow(0.65);
+				new javafx.scene.effect.Glow(0.65);
 				// ── 툴팁: 타겟 full path ────────────────────────────
 				String tipText = !app.execTarget.isEmpty()
-					? app.execTarget : app.name;
+				? app.execTarget : app.name;
 				javafx.scene.control.Tooltip tooltip =
-					new javafx.scene.control.Tooltip(tipText);
+				new javafx.scene.control.Tooltip(tipText);
 				tooltip.setStyle(
 					"-fx-font-family: 'Malgun Gothic'; -fx-font-size: 12px;" +
 					"-fx-background-color: rgba(255,245,251,0.97);" +
@@ -1606,27 +1609,27 @@ public class AppRestarter {
 					"-fx-border-color: rgba(209,79,146,0.45);" +
 					"-fx-border-radius: 8;" +
 					"-fx-border-width: 1;" +
-					"-fx-padding: 6 10 6 10;");
+				"-fx-padding: 6 10 6 10;");
 				tooltip.setShowDelay(javafx.util.Duration.ZERO);
 				javafx.scene.control.Tooltip.install(cell, tooltip);
 				// ── hover ──────────────────────────────────────────
 				cell.setOnMouseEntered(e -> {
 					cell.setStyle(
 						"-fx-background-color: rgba(209,79,146,0.13);" +
-						"-fx-background-radius: 10;");
+					"-fx-background-radius: 10;");
 					scaleDown.stop(); scaleUp.play();
 					if (iv != null) iv.setEffect(glow);
 					circle.setFill(
-						javafx.scene.paint.Color.web("rgba(255,180,220,0.80)"));
+					javafx.scene.paint.Color.web("rgba(255,180,220,0.80)"));
 				});
 				cell.setOnMouseExited(e -> {
 					cell.setStyle(
 						"-fx-background-color: transparent;" +
-						"-fx-background-radius: 10;");
+					"-fx-background-radius: 10;");
 					scaleUp.stop(); scaleDown.play();
 					if (iv != null) iv.setEffect(shadow);
 					circle.setFill(
-						javafx.scene.paint.Color.web("rgba(255,214,235,0.60)"));
+					javafx.scene.paint.Color.web("rgba(255,214,235,0.60)"));
 				});
 				// ── 포커스 테두리 + 키보드 포커스 시 툴팁 표시 ────
 				cell.focusedProperty().addListener((o, old, focused) -> {
@@ -1636,21 +1639,21 @@ public class AppRestarter {
 							"-fx-background-radius: 10;" +
 							"-fx-border-color: rgba(209,79,146,0.55);" +
 							"-fx-border-radius: 10;" +
-							"-fx-border-width: 1.5;");
+						"-fx-border-width: 1.5;");
 						// 마우스가 없어도 툴팁 표시
 						javafx.application.Platform.runLater(() -> {
 							if (!cell.isFocused()) return;
 							javafx.geometry.Bounds b =
-								cell.localToScreen(cell.getBoundsInLocal());
+							cell.localToScreen(cell.getBoundsInLocal());
 							if (b != null)
-								tooltip.show(cell,
-									b.getMinX(),
-									b.getMaxY() + 4);
+							tooltip.show(cell,
+								b.getMinX(),
+							b.getMaxY() + 4);
 						});
-					} else {
+						} else {
 						cell.setStyle(
 							"-fx-background-color: transparent;" +
-							"-fx-background-radius: 10;");
+						"-fx-background-radius: 10;");
 						tooltip.hide();
 					}
 				});
@@ -1659,19 +1662,19 @@ public class AppRestarter {
 					if (e.getButton() == javafx.scene.input.MouseButton.SECONDARY) {
 						// 우클릭 → 즐겨찾기 팝업
 						javafx.scene.control.ContextMenu cm =
-							new javafx.scene.control.ContextMenu();
+						new javafx.scene.control.ContextMenu();
 						javafx.scene.control.MenuItem miFav =
-							new javafx.scene.control.MenuItem("⭐ 즐겨찾기 추가");
+						new javafx.scene.control.MenuItem("⭐ 즐겨찾기 추가");
 						javafx.scene.control.MenuItem miCancel =
-							new javafx.scene.control.MenuItem("✖ 취소");
+						new javafx.scene.control.MenuItem("✖ 취소");
 						miFav.setOnAction(ae -> {
 							if (favoriteCallback != null) {
 								String favName = app.name;
 								String favPath = !app.execTarget.isEmpty()
-									? app.execTarget : (app.file != null
-										? app.file.getAbsolutePath() : "");
+								? app.execTarget : (app.file != null
+								? app.file.getAbsolutePath() : "");
 								if (!favPath.isEmpty())
-									favoriteCallback.addFavorite(favName, favPath);
+								favoriteCallback.addFavorite(favName, favPath);
 							}
 						});
 						cm.getItems().addAll(miFav, miCancel);
@@ -1697,78 +1700,78 @@ public class AppRestarter {
 				});
 			}
 			javafx.scene.control.ScrollPane scroll =
-				new javafx.scene.control.ScrollPane(flow);
+			new javafx.scene.control.ScrollPane(flow);
 			scroll.setFitToWidth(true);
 			scroll.setFocusTraversable(false);
 			scroll.setStyle(
 				"-fx-background-color: transparent;" +
-				"-fx-background: transparent;");
+			"-fx-background: transparent;");
 			// ── ScrollPane EventFilter: 화살표=네비게이션, 나머지=통과 ──
 			// (Filter 는 위→아래 캡처 단계에서 실행되므로
 			//  여기서 처리 후 consume 해야 ScrollPane 스크롤을 막을 수 있음)
 			final java.util.List<javafx.scene.layout.VBox> cellsRef = cells;
 			scroll.addEventFilter(
 				javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-				javafx.scene.input.KeyCode kc = e.getCode();
-				if (kc != javafx.scene.input.KeyCode.UP   &&
-					kc != javafx.scene.input.KeyCode.DOWN &&
-					kc != javafx.scene.input.KeyCode.LEFT &&
+					javafx.scene.input.KeyCode kc = e.getCode();
+					if (kc != javafx.scene.input.KeyCode.UP   &&
+						kc != javafx.scene.input.KeyCode.DOWN &&
+						kc != javafx.scene.input.KeyCode.LEFT &&
 					kc != javafx.scene.input.KeyCode.RIGHT) return;
-				// 현재 포커스된 셀 찾기
-				javafx.scene.Node focused = scroll.getScene() == null ? null
+					// 현재 포커스된 셀 찾기
+					javafx.scene.Node focused = scroll.getScene() == null ? null
 					: scroll.getScene().getFocusOwner();
-				int curIdx = -1;
-				for (int i = 0; i < cellsRef.size(); i++) {
-					if (cellsRef.get(i) == focused) { curIdx = i; break; }
-				}
-				if (curIdx < 0) { e.consume(); return; }
-				javafx.scene.layout.VBox cur = cellsRef.get(curIdx);
-				javafx.geometry.Bounds b = cur.getBoundsInParent();
-				double cx = b.getCenterX(), cy = b.getCenterY();
-				int best = -1; double bestDist = Double.MAX_VALUE;
-				for (int j = 0; j < cellsRef.size(); j++) {
-					if (j == curIdx) continue;
-					javafx.geometry.Bounds ob = cellsRef.get(j).getBoundsInParent();
-					double ox = ob.getCenterX(), oy = ob.getCenterY();
-					boolean match = false;
-					switch (kc) {
-						case LEFT:  match = ox < cx-10 && Math.abs(oy-cy) < ob.getHeight(); break;
-						case RIGHT: match = ox > cx+10 && Math.abs(oy-cy) < ob.getHeight(); break;
-						case UP:    match = oy < cy-10 && Math.abs(ox-cx) < ob.getWidth();  break;
-						case DOWN:  match = oy > cy+10 && Math.abs(ox-cx) < ob.getWidth();  break;
-						default: break;
+					int curIdx = -1;
+					for (int i = 0; i < cellsRef.size(); i++) {
+						if (cellsRef.get(i) == focused) { curIdx = i; break; }
 					}
-					if (!match) continue;
-					double dist = Math.hypot(ox-cx, oy-cy);
-					if (dist < bestDist) { bestDist = dist; best = j; }
-				}
-				if (best >= 0) {
-					javafx.scene.layout.VBox target = cellsRef.get(best);
-					target.requestFocus();
-					// ── 셀이 뷰포트 밖이면 스크롤 이동 ──────────────
-					javafx.application.Platform.runLater(() -> {
-						javafx.geometry.Bounds cellB = target.getBoundsInParent();
-						javafx.geometry.Bounds viewB = scroll.getViewportBounds();
-						double flowH = flow.getBoundsInLocal().getHeight();
-						double excess = flowH - viewB.getHeight();
-						if (excess <= 0) return;
-						double curV = scroll.getVvalue();
-						double topVisible    = curV * excess;
-						double bottomVisible = topVisible + viewB.getHeight();
-						if (cellB.getMinY() < topVisible) {
-							// 위로 벗어남 → 셀 상단이 뷰포트 상단에 오도록
-							scroll.setVvalue(cellB.getMinY() / excess);
-						} else if (cellB.getMaxY() > bottomVisible) {
-							// 아래로 벗어남 → 셀 하단이 뷰포트 하단에 오도록
-							scroll.setVvalue((cellB.getMaxY() - viewB.getHeight()) / excess);
+					if (curIdx < 0) { e.consume(); return; }
+					javafx.scene.layout.VBox cur = cellsRef.get(curIdx);
+					javafx.geometry.Bounds b = cur.getBoundsInParent();
+					double cx = b.getCenterX(), cy = b.getCenterY();
+					int best = -1; double bestDist = Double.MAX_VALUE;
+					for (int j = 0; j < cellsRef.size(); j++) {
+						if (j == curIdx) continue;
+						javafx.geometry.Bounds ob = cellsRef.get(j).getBoundsInParent();
+						double ox = ob.getCenterX(), oy = ob.getCenterY();
+						boolean match = false;
+						switch (kc) {
+							case LEFT:  match = ox < cx-10 && Math.abs(oy-cy) < ob.getHeight(); break;
+							case RIGHT: match = ox > cx+10 && Math.abs(oy-cy) < ob.getHeight(); break;
+							case UP:    match = oy < cy-10 && Math.abs(ox-cx) < ob.getWidth();  break;
+							case DOWN:  match = oy > cy+10 && Math.abs(ox-cx) < ob.getWidth();  break;
+							default: break;
 						}
-					});
-				}
-				e.consume(); // ScrollPane 스크롤 방지
-			});
-			return scroll;
+						if (!match) continue;
+						double dist = Math.hypot(ox-cx, oy-cy);
+						if (dist < bestDist) { bestDist = dist; best = j; }
+					}
+					if (best >= 0) {
+						javafx.scene.layout.VBox target = cellsRef.get(best);
+						target.requestFocus();
+						// ── 셀이 뷰포트 밖이면 스크롤 이동 ──────────────
+						javafx.application.Platform.runLater(() -> {
+							javafx.geometry.Bounds cellB = target.getBoundsInParent();
+							javafx.geometry.Bounds viewB = scroll.getViewportBounds();
+							double flowH = flow.getBoundsInLocal().getHeight();
+							double excess = flowH - viewB.getHeight();
+							if (excess <= 0) return;
+							double curV = scroll.getVvalue();
+							double topVisible    = curV * excess;
+							double bottomVisible = topVisible + viewB.getHeight();
+							if (cellB.getMinY() < topVisible) {
+								// 위로 벗어남 → 셀 상단이 뷰포트 상단에 오도록
+								scroll.setVvalue(cellB.getMinY() / excess);
+								} else if (cellB.getMaxY() > bottomVisible) {
+								// 아래로 벗어남 → 셀 하단이 뷰포트 하단에 오도록
+								scroll.setVvalue((cellB.getMaxY() - viewB.getHeight()) / excess);
+							}
+						});
+					}
+					e.consume(); // ScrollPane 스크롤 방지
+				});
+				return scroll;
 		}
-		}
+	}
 	private static String psQuote(String s) {
 		if (s == null) return "''";
 		return "'" + s.replace("'", "''") + "'";
