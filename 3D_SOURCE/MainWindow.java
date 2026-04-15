@@ -183,8 +183,10 @@ public class MainWindow {
 			this.stage.hide();
 			} else {
 			this.stage.show();
+			this.stage.setAlwaysOnTop(true);
 			this.stage.toFront();
 			this.stage.requestFocus();
+			this.stage.setAlwaysOnTop(false);
 		}
 	}
 	public static void toggleMainWindowSafe() {
@@ -362,6 +364,12 @@ public class MainWindow {
 		KootPanKingThreeApp childApp =
         new KootPanKingThreeApp(childConfigFile, clockPrefix, zoneId);
 		childApp.startInstance(childStage, Arrays.asList(startArg1, startArg2, startArg3));
+		// 메인 시계(시스템 기본 timezone)면 KootPanKingThreeLaunch.app에 할당
+		if (zoneId.equals(java.time.ZoneId.systemDefault()))
+			KootPanKingThreeLaunch.app = childApp;
+		// 메인 시계(시스템 기본 timezone)면 KootPanKingThreeLaunch.app에 할당
+		if (zoneId.equals(java.time.ZoneId.systemDefault()))
+			KootPanKingThreeLaunch.app = childApp;
 		CityWindowHandle handle = new CityWindowHandle() {
 			private boolean closing = false;
 			@Override
@@ -1880,6 +1888,18 @@ public class MainWindow {
 
         dlg.setScene(new javafx.scene.Scene(root));
         dlg.showAndWait();
+    }
+    // ── 메인창 보이기/숨기기 토글 (글로벌 마우스 훅에서 호출) ──
+    public void toggleWindow() {
+        if (stage == null) return;
+        if (stage.isShowing()) {
+            stage.hide();
+            System.out.println("[MainWindow] 메인창 숨김");
+        } else {
+            stage.show();
+            stage.toFront();
+            System.out.println("[MainWindow] 메인창 표시");
+        }
     }
     // ── 테마 토글 ──────────────────────────────────────────────
     private void toggleTheme() {

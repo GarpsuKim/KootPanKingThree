@@ -4,6 +4,9 @@ import javafx.application.Platform;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import lc.kra.system.mouse.GlobalMouseHook;
+import lc.kra.system.mouse.event.GlobalMouseAdapter;
+import lc.kra.system.mouse.event.GlobalMouseEvent;
 
 public class KootPanKingThreeLaunch extends Application {
     // public static AppRestarter appRestarter;                // 재시작 / AppCDS 관리
@@ -19,16 +22,20 @@ public class KootPanKingThreeLaunch extends Application {
 	public static Kakao kakao = new Kakao();
 	public static MainWindow mainWindow = new MainWindow();;
 	private static AppRestarter.ShutdownGuard shutdownGuard; // 강제 종료 감지 훅
+	private static GlobalMouseHook mouseHook;               // 글로벌 마우스 훅
+	private static Stage primaryStageRef;                   // 시계 보이기/숨기기용
 	public KootPanKingThreeLaunch () {
 		System.out.println("[KootPanKingThreeLaunch ()]");
 	};
 	@Override
     public void start(Stage primaryStage) {
-		System.out.println("■■■■■ start(Stage primaryStage)");	
+		System.out.println("■■■■■ start(Stage primaryStage)");
+		primaryStageRef = primaryStage;
 		showStartupScheduleTextLater();
 		googleCalendarService.setSETTINGS_DIR(AppContext.SETTINGS_DIR);
         mainWindow.theMainWindow(primaryStage);
 		telegramSetup();
+		setupMouseHook();
 	}
 	private static void showStartupScheduleTextLater() {
 		new Thread(() -> {
@@ -201,6 +208,40 @@ public class KootPanKingThreeLaunch extends Application {
 		tg.sendStartupNotice();
 	}	
 	
+	private static void setupMouseHook() {
+		try {
+			mouseHook = new GlobalMouseHook();
+			mouseHook.addMouseListener(new GlobalMouseAdapter() {
+				@Override public void mousePressed(GlobalMouseEvent event) {
+					boolean left  = (event.getButtons() & GlobalMouseEvent.BUTTON_LEFT)  != GlobalMouseEvent.BUTTON_NO;
+					boolean right = (event.getButtons() & GlobalMouseEvent.BUTTON_RIGHT) != GlobalMouseEvent.BUTTON_NO;
+					if (left && right) {
+						Platform.runLater(() -> {
+							// 시계: alwaysOnTop 트릭으로 맨 앞 (즉시 원복)
+							if (app != null && app.clockController != null) {
+								Stage clockStage = app.clockController.getStage();
+								if (clockStage != null) {
+									if (!clockStage.isShowing()) clockStage.show();
+									clockStage.setAlwaysOnTop(true);
+									clockStage.toFront();
+									clockStage.requestFocus();
+									clockStage.setAlwaysOnTop(false);
+									System.out.println("[MouseHook] 시계 맨 앞으로");
+								}
+							}
+							// 메인창 토글 (show 시 alwaysOnTop 트릭은 toggleTheMainWindow 안에서 처리)
+							if (mainWindow != null)
+								mainWindow.toggleTheMainWindow();
+						});
+					}
+				}
+			});
+			System.out.println("[MouseHook] 글로벌 마우스 훅 시작");
+		} catch (Exception e) {
+			System.out.println("[MouseHook] 훅 초기화 실패: " + e.getMessage());
+		}
+	}
+
 	private static void KakaoSetup() {
 		tg.kakao = kakao;
 		kakao.appDir = AppContext.APP_DIR;
@@ -243,6 +284,11 @@ public class KootPanKingThreeLaunch extends Application {
 		try {
 			if (tg != null) {
 				tg.stopPolling();   // 반드시 필요 (없으면 추가)
+			}
+		} catch (Exception ignored) {}
+		try {
+			if (mouseHook != null && mouseHook.isAlive()) {
+				mouseHook.shutdownHook();
 			}
 		} catch (Exception ignored) {}
 		AppLogger.close();

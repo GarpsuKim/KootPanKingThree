@@ -40,6 +40,11 @@ if not exist "%JAVAFX_BIN%\prism_d3d.dll" (
 )
 echo JavaFX DLLs confirmed in: %JAVAFX_BIN%
 
+REM --- 이전 실행 중인 앱 종료 ---
+echo Stopping running instance...
+taskkill /F /IM "%PROJECT%.exe" >nul 2>&1
+timeout /t 3  /nobreak >nul
+
 echo [1] Preparing directories...
 if exist "%BUILD_DIR%"  rmdir /s /q "%BUILD_DIR%"
 if exist "%INPUT_DIR%"  rmdir /s /q "%INPUT_DIR%"
