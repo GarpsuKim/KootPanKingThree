@@ -803,10 +803,10 @@ public class KootPanKingThreeApp {
             MainWindow mw = MainWindow.getInstance();
             if (mw != null) {
                 mw.showChimeDialogPublic((javafx.stage.Stage) chimeItem.getParentPopup().getOwnerWindow());
-            } else if (chimeController != null) {
+				} else if (chimeController != null) {
                 // fallback: 자체 컨트롤러 (자식 시계 등 MainWindow 없을 때)
                 chimeController.showChimeDialog();
-            }
+			}
 		});
         javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 스마트폰 카메라");
 		return chimeItem;
@@ -1449,7 +1449,8 @@ public class KootPanKingThreeApp {
         javafx.scene.control.MenuItem logItem = new javafx.scene.control.MenuItem("Log");
         logItem.setOnAction(e -> openLogFile());
         javafx.scene.control.MenuItem configItem = new javafx.scene.control.MenuItem("[" + theCityName + "] 설정파일 수정");
-		configItem.setOnAction(e -> AppContext.openCONFIG_FILE(myConfigFile));
+		// configItem.setOnAction(e -> AppContext.openCONFIG_FILE(myConfigFile));
+		configItem.setOnAction(e -> {	MainWindow.doShowConfigFile(myConfigFile);	});
 		javafx.scene.control.MenuItem iniCopyItem =
         new javafx.scene.control.MenuItem("[" + theCityName + "] 설정파일 복사");
 		iniCopyItem.setOnAction(e -> copyIniFile());
@@ -3220,7 +3221,9 @@ public class KootPanKingThreeApp {
 	}
     // ── 시스템 메뉴 동작 ────────────────────────────────────────
     private void openLogFile() {
-        try {
+		MainWindow.doShowLogFile();
+		/*
+			try {
             String path = AppLogger.getLogFilePath();
             if (path == null || path.trim().isEmpty()) return;
             java.io.File f = new java.io.File(path);
@@ -3229,7 +3232,8 @@ public class KootPanKingThreeApp {
 			java.awt.Desktop.getDesktop().open(f);
 			} catch (Exception e) {
             System.err.println("로그 파일 열기 실패: " + e.getMessage());
-		}
+			}
+		*/
 	}
     private void openConfigFile() {
 		/*

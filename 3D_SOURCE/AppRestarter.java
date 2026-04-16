@@ -17,6 +17,15 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import javafx.animation.PauseTransition;
+import javafx.application.Platform;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.stage.DirectoryChooser;
+import javafx.stage.Stage;
+import javafx.util.Duration;
+
 /**
 	* AppRestarter - 앱 생명주기 관리 통합 클래스
 	*
@@ -58,19 +67,26 @@ public class AppRestarter {
     // ── 의존성 ────────────────────────────────────────────────
     private final GmailSender       gmail;
     private TelegramBot             tg;
-    // private final java.awt.Window   ownerWindow;
+    // ── FX 업그레이드 다이얼로그용 (static: doUpgrade()가 static) ──
+    private static javafx.stage.Stage ownerStage   = null;
+    private static Runnable           exitCallback = null;
     // ── 경로 캐시 (INI 저장/로드) ────────────────────────────
     private String cachedExePath   = "";
     private String cachedJavawPath = "";
     private String cachedJsaPath   = "";
     // ── 생성자 ───────────────────────────────────────────────
-    public AppRestarter(GmailSender gmail, TelegramBot tg
-		// , java.awt.Window ownerWindow
-		) {
-        this.gmail       = gmail;
-        this.tg          = tg;
-		//        this.ownerWindow = ownerWindow;
-	}
+    public AppRestarter(GmailSender gmail, TelegramBot tg) {
+        this.gmail = gmail;
+        this.tg    = tg;
+    }
+    /** doUpgrade() 다이얼로그의 owner Stage 설정 */
+    public static void setOwnerStage(javafx.stage.Stage stage) {
+        ownerStage = stage;
+    }
+    /** 업그레이드 완료 후 앱을 종료하는 콜백 설정 (예: mainWindow::exitAll) */
+    public static void setExitCallback(Runnable callback) {
+        exitCallback = callback;
+    }
     // ── 캐시 경로 접근자 ─────────────────────────────────────
     public void setCachedPaths(String exePath, String javawPath, String jsaPath) {
         this.cachedExePath   = exePath   != null ? exePath   : "";
@@ -543,7 +559,7 @@ public class AppRestarter {
 					java.io.File logFile = new java.io.File(logPath);
 					if (logFile.exists()) attachFiles.add(logFile);
 				}
-
+				
                 gmail.sendOneSmtpWithAttachments(gmail.from, gmail.pass, gmail.lastTo, subject, body, attachFiles);
                 System.out.println("[ShutdownGuard] 이메일 전송 완료");
 				} catch (Exception e) {
@@ -1839,4 +1855,208 @@ public class AppRestarter {
 			p.waitFor();
 		} catch (Exception ignored) {}
 	}
+	
+	// ── 추가 import (파일 상단에 합산) ──────────────────────────────────────
+	// import javafx.animation.PauseTransition;
+	// import javafx.application.Platform;
+	// import javafx.scene.control.*;
+	// import javafx.scene.layout.*;
+	// import javafx.stage.DirectoryChooser;
+	// import javafx.stage.Stage;
+	// import javafx.util.Duration;
+	// ────────────────────────────────────────────────────────────────────────
+	
+	public static void doUpgrade() {
+		// ── 설치 폴더 기본값 계산 ────────────────────────────────────────────
+		java.io.File exeFile0 = new java.io.File(
+			AppContext.theExePath.isEmpty()
+            ? AppLogger.getExeFilePath()
+            : AppContext.theExePath
+		).getAbsoluteFile();
+		
+		java.io.File kootDir0         = exeFile0.getParentFile() != null
+		? exeFile0.getParentFile()
+		: new java.io.File(".");
+		java.io.File defaultInstallDir = kootDir0.getParentFile() != null
+		? kootDir0.getParentFile()
+		: kootDir0;
+		
+		System.out.println("설치 폴더 : " + defaultInstallDir.getAbsoluteFile());
+		
+		// ── 확인 다이얼로그 (FX) ─────────────────────────────────────────────
+		final java.io.File[] chosenDir = { defaultInstallDir };
+		
+		// 메시지
+		Label msgLabel = new Label(
+			"GitHub 에서 DownLoad_UpGrade.zip 을 아래 폴더에 다운로드하고\n"
+			+ "압축을 해제한 뒤 업그레이드를 시작합니다.\n\n"
+			+ "완료 후 이 프로그램은 자동으로 종료됩니다.\n\n"
+			+ "계속하시겠습니까?"
+		);
+		msgLabel.setWrapText(true);
+		
+		// 폴더 경로 표시
+		TextField dirField = new TextField(chosenDir[0].getAbsolutePath());
+		dirField.setEditable(false);
+		dirField.setPrefWidth(340);
+		
+		// 폴더 선택 버튼
+		Button browseBtn = new Button("폴더 선택...");
+		browseBtn.setOnAction(e -> {
+			DirectoryChooser dc = new DirectoryChooser();
+			dc.setTitle("설치 폴더 선택");
+			dc.setInitialDirectory(chosenDir[0].exists() ? chosenDir[0] : null);
+			// ownerStage: FxSplashWindow 가 보유한 Stage 필드를 전달
+			java.io.File selected = dc.showDialog(ownerStage);
+			if (selected != null) {
+				chosenDir[0] = selected;
+				dirField.setText(selected.getAbsolutePath());
+			}
+		});
+		
+		// 레이아웃
+		HBox dirRow = new HBox(6, new Label("설치 폴더:"), dirField, browseBtn);
+		dirRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+		
+		VBox content = new VBox(10, msgLabel, dirRow);
+		content.setPadding(new javafx.geometry.Insets(4, 0, 0, 0));
+		
+		// 확인 다이얼로그
+		Dialog<ButtonType> dlg = new Dialog<>();
+		dlg.setTitle("프로그램 업그레이드");
+		dlg.setHeaderText(null);
+		dlg.getDialogPane().setContent(content);
+		dlg.getDialogPane().getButtonTypes()
+		.addAll(ButtonType.YES, ButtonType.NO);
+		dlg.initOwner(ownerStage);
+		
+		java.util.Optional<ButtonType> answer = dlg.showAndWait();
+		if (!answer.isPresent() || answer.get() != ButtonType.YES) return;
+		
+		final java.io.File selectedInstallDir = chosenDir[0];
+		
+		// ── 업그레이드 백그라운드 스레드 ────────────────────────────────────
+		new Thread(() -> {
+			try {
+				// 0. 시작프로그램 등록 해제 ─────────────────────────────────
+				if (AppRestarter.AutoStart.check()) {
+					boolean unregistered = AppRestarter.AutoStart.set(false);
+					System.out.println(unregistered	? "✅ 시작프로그램 등록 해제 완료"
+					: "⚠️  시작프로그램 등록 해제 실패 (무시하고 계속)");
+					} else {
+					System.out.println("ℹ️  시작프로그램 미등록 — 해제 생략");	
+				}
+				
+				// 1. 설치 폴더 결정 ─────────────────────────────────────────
+				java.io.File installDir = selectedInstallDir;
+				System.out.println("[Upgrade] zip 저장 폴더: " + installDir.getAbsolutePath());
+				
+				// 2. DownLoad_UpGrade.zip 다운로드 ─────────────────────────
+				String zipUrl = "https://github.com/GarpsuKim/KootPanKingThree/raw/refs/heads/main/BAT/DownLoad_UpGrade.zip";
+				java.io.File zipFile = new java.io.File(installDir, "DownLoad_UpGrade.zip");
+				System.out.println("[Upgrade] 다운로드 시작: " + zipUrl);
+				
+				java.net.HttpURLConnection conn =
+                (java.net.HttpURLConnection) new java.net.URI(zipUrl).toURL().openConnection();
+				conn.setConnectTimeout(15000);
+				conn.setReadTimeout(60000);
+				try (java.io.InputStream in  = conn.getInputStream();
+					java.io.FileOutputStream fos = new java.io.FileOutputStream(zipFile)) {
+					byte[] buf = new byte[8192];
+					int n;
+					while ((n = in.read(buf)) != -1) fos.write(buf, 0, n);
+				}
+				conn.disconnect();
+				System.out.println("[Upgrade] 다운로드 완료: " + zipFile.getAbsolutePath()
+				+ "  (" + zipFile.length() + " bytes)");
+				
+				// 3. zip 압축 해제 ──────────────────────────────────────────
+				System.out.println("[Upgrade] 압축 해제 시작");
+				try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
+				new java.io.FileInputStream(zipFile))) {
+                java.util.zip.ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    java.io.File dest = new java.io.File(installDir, entry.getName());
+                    // Zip-Slip 방지
+                    if (!dest.getCanonicalPath()
+						.startsWith(installDir.getCanonicalPath())) {
+                        System.err.println("[Upgrade] 위험한 경로 무시: " + entry.getName());
+                        zis.closeEntry();
+                        continue;
+					}
+                    if (entry.isDirectory()) {
+                        dest.mkdirs();
+						} else {
+                        dest.getParentFile().mkdirs();
+                        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(dest)) {
+                            byte[] buf = new byte[8192];
+                            int n;
+                            while ((n = zis.read(buf)) != -1) fos.write(buf, 0, n);
+						}
+                        System.out.println("[Upgrade] 해제: " + dest.getAbsolutePath());
+					}
+                    zis.closeEntry();
+				}
+				}
+				System.out.println("[Upgrade] 압축 해제 완료");
+				
+				// 4. 실행 파일 탐색 (BAT 우선, 없으면 EXE) ─────────────────
+				java.io.File[] bats = installDir.listFiles(
+					f -> f.isFile() && f.getName().toLowerCase().endsWith(".bat")
+				&& !f.getName().equalsIgnoreCase("DownLoad_UpGrade.zip"));
+				java.io.File[] exes = installDir.listFiles(
+					f -> f.isFile() && f.getName().toLowerCase().endsWith(".exe")
+				&& !f.getName().equalsIgnoreCase(exeFile0.getName()));
+				
+				java.io.File runTarget = null;
+				if (bats != null && bats.length > 0) {
+					runTarget = bats[0];
+					for (java.io.File f : bats)
+                    if (f.getName().toLowerCase().contains("download_upgrade")) {
+                        runTarget = f; break;
+					}
+					} else if (exes != null && exes.length > 0) {
+					runTarget = exes[0];
+				}
+				
+				if (runTarget == null) {
+					throw new Exception(
+						"실행할 파일을 찾지 못했습니다. (bat/exe 없음)\n경로: "
+					+ installDir.getAbsolutePath());
+				}
+				System.out.println("[Upgrade] 실행 대상: " + runTarget.getAbsolutePath());
+				
+				// 5. 실행 ──────────────────────────────────────────────────
+				ProcessBuilder pb = new ProcessBuilder(
+				"cmd", "/c", "start", "\"\"", runTarget.getAbsolutePath());
+				pb.directory(installDir);
+				pb.start();
+				
+				// 6. 프로그램 종료 (FX 스레드로 위임) ─────────────────────
+				Platform.runLater(() -> {
+					System.out.println("🚀 업데이터 실행됨 — 프로그램을 종료합니다.");	
+					PauseTransition pause = new PauseTransition(Duration.seconds(1));
+					pause.setOnFinished(ev -> {
+						if (exitCallback != null) exitCallback.run();
+						else System.exit(0);
+					});
+					pause.play();
+				});
+				
+				} catch (Exception ex) {
+				System.out.println("❌ 업그레이드 오류: " + ex.getMessage());				
+				
+				ex.printStackTrace();
+				// FX 스레드에서 오류 Alert 표시
+				Platform.runLater(() -> {
+					Alert alert = new Alert(Alert.AlertType.ERROR);
+					alert.setTitle("업그레이드 오류");
+					alert.setHeaderText(null);
+					alert.setContentText("업그레이드 중 오류가 발생했습니다:\n" + ex.getMessage());
+					alert.initOwner(ownerStage);
+					alert.showAndWait();
+				});
+			}
+		}, "UpgradeThread").start();
+	}	
 }
