@@ -802,8 +802,15 @@ public class Multimedia {
             if (statusListener != null) statusListener.onStatus(s);
         }
 
-        private static final int CLIP_SEC = 10;   // 클립 길이 (초)
-        private static final int FPS      = 10;   // 캡처 프레임율
+        private static final int CLIP_SEC  = 10;   // 클립 길이 (초)
+        private static final int FPS       = 10;   // 캡처 프레임율
+        private static final int OUT_WIDTH = 640;  // 출력 해상도 너비 (높이는 비율 자동)
+        private static final int CRF       = 28;   // 인코딩 품질 (낮을수록 고품질·대용량, 기본 23)
+
+        // ── 전송 이력 (static: 인스턴스 교체 후에도 유지) ──────────────
+        private static final java.util.Set<String> sentVideoNames =
+            java.util.Collections.synchronizedSet(
+                new java.util.LinkedHashSet<>());
 
         private final TOOLS.CaptureManager.Camera camera;
         private final TelegramBot                 tg;
@@ -911,10 +918,18 @@ public class Multimedia {
                 if (ok) {
                     // ── 📡 전송중 ─────────────────────────────────────
                     notify(RecStatus.SENDING);
-                    java.nio.file.Files.copy(pcMp4.toPath(), tgTmp.toPath(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    tg.sendVideo(chatId, tgTmp);
-                    tg.sendTelegram("✅ " + seconds + "초 클립 전송 완료");
+                    String clipName = pcMp4.getName();
+                    if (sentVideoNames.contains(clipName)) {
+                        System.out.println("[TgCamSingle] SKIP already-sent: " + clipName);
+                    } else {
+                        java.nio.file.Files.copy(pcMp4.toPath(), tgTmp.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        tg.sendVideo(chatId, tgTmp);
+                        sentVideoNames.add(clipName);
+                        System.out.println("[TgCamSingle] SENT: " + clipName
+                            + "  (list=" + sentVideoNames.size() + ")");
+                        tg.sendTelegram("✅ " + seconds + "초 클립 전송 완료");
+                    }
                 } else {
                     tg.sendTelegram("❌ 인코딩 실패");
                 }
@@ -1018,9 +1033,17 @@ public class Multimedia {
 
                     // ── 📡 전송중 ─────────────────────────────────────
                     notify(RecStatus.SENDING);
-                    java.nio.file.Files.copy(pcMp4.toPath(), tgTmp.toPath(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    tg.sendVideo(chatId, tgTmp);
+                    String clipName = pcMp4.getName();
+                    if (sentVideoNames.contains(clipName)) {
+                        System.out.println("[TgCamLoop] SKIP already-sent: " + clipName);
+                    } else {
+                        java.nio.file.Files.copy(pcMp4.toPath(), tgTmp.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        tg.sendVideo(chatId, tgTmp);
+                        sentVideoNames.add(clipName);
+                        System.out.println("[TgCamLoop] clip " + clipIdx + " SENT: " + clipName
+                            + "  (list=" + sentVideoNames.size() + ")");
+                    }
 
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -1051,11 +1074,15 @@ public class Multimedia {
         // ── ffmpeg 인코딩 ─────────────────────────────────────────────
         private boolean encode(String ffExe, File frameDir, File outMp4) throws Exception {
             String inputPat = new File(frameDir, "frame_%06d.jpg").getAbsolutePath();
+            // scale=OUT_WIDTH:-2 : 너비를 OUT_WIDTH 로 축소, 높이는 짝수 유지 자동 계산
+            String scaleFilter = "scale=" + OUT_WIDTH + ":-2";
             ProcessBuilder pb = new ProcessBuilder(
                 ffExe, "-y",
                 "-framerate", String.valueOf(FPS),
                 "-i", inputPat,
-                "-c:v", "libx264", "-preset", "fast",
+                "-vf", scaleFilter,
+                "-c:v", "libx264", "-preset", "ultrafast",
+                "-crf", String.valueOf(CRF),
                 "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart",
                 outMp4.getAbsolutePath()
