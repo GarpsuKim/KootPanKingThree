@@ -1,0 +1,596 @@
+import java.awt.Desktop;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.regex.*;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+/**
+	* GoogleCalendarService - Google Calendar API Integrations 클래스 (순수 Java 구현)
+	*
+	* ── 외부 JAR 의존성 완전 제거 ─────────────────────────────────────
+	*   google-api-client, google-http-client, opencensus 등 불필요.
+	*   GmailSender / Kakao 와 동한 순수 Java HTTP 방식.
+	*
+	* ── OAuth 2.0 흐름 ────────────────────────────────────────────────
+	*   1) credentials.json 에서 client_id / client_secret 읽기
+	*   2) 브라우저로 Google 인증 페이지 열기
+	*   3) 로컬 HTTP 서버(포트 8888)로 authorization code 수신
+	*   4) code → access_token / refresh_token 교환 후 tokens/token.json Save
+	*   5) 재실행 h token.json 로드 → 만료 h 자동 갱신
+	*
+	* ── credentials.json 위치 ─────────────────────────────────────────
+	*   실행 JAR / EXE 와 같은 Folder
+	*
+	* ── token Save 위치 ───────────────────────────────────────────────
+	*   실행 Folder/tokens/token.json
+*/
+public class GoogleCalendarService {
+    // ── 상수 ──────────────────────────────────────────────────────
+    private static final String CREDENTIALS_FILE = "credentials.json";
+    private static final String TOKEN_FILE        = "token.json";
+    private static final String REDIRECT_URI      = "http://localhost:8888/Callback";
+    private static final String SCOPE             = "https://www.googleapis.com/auth/calendar.readonly";
+    private static final String TOKEN_URL         = "https://oauth2.googleapis.com/token";
+    private static final String CALENDAR_API      = "https://www.googleapis.com/calendar/v3";
+    // ── SETTINGS_DIR 주입 (KootPanKing.SETTINGS_DIR 을 생성 후 setAppDir() 로 주입) ──
+    // KootPanKing.SETTINGS_DIR(%APPDATA%\KootPanKing\settings\) 과 동한 Folder를 Enable.
+    // tg/kakao 는 APP_DIR 을 받아 내부에서 settings\ 를 붙이지만,
+    // GoogleCalendarService 는 SETTINGS_DIR 을 직접 받아 File명만 붙인다.
+    // ★ KootPanKing 에서 calendarService.setAppDir(SETTINGS_DIR) 로 호출할 것.
+    private String SETTINGS_DIR = "";
+    // ── OAuth 토큰 상태 ────────────────────────────────────────────
+    private String clientId     = "";
+    private String clientSecret = "";
+    private String accessToken  = "";
+    private String refreshToken = "";
+    private long   expiresAt    = 0;   // System.currentTimeMillis() 기준
+    private boolean initialized = false;
+    public void setSETTINGS_DIR(String SETTINGS_DIR) {
+        this.SETTINGS_DIR = SETTINGS_DIR != null ? SETTINGS_DIR.trim() : "";
+        System.out.println("[GCalendar] setSETTINGS_DIR : [" + this.SETTINGS_DIR + "]");
+    }
+    /** KootPanKing.SETTINGS_DIR 을 주입한다. init() 호출 전에 반드h Settings해야 한다. */
+    // ── initialization ────────────────────────────────────────────────────
+    /**
+		* Google Calendar 서비스 initialization.
+		* Save된 token.json 이 있으면 로드, 없으면 브라우저 인증 진행.
+		* @return initialization 성공 여부
+	*/
+    public boolean init() {
+        System.out.println("[GCalendar] init : ");
+        try {
+            // credentials.json 로드
+            File credFile = resolveFile(CREDENTIALS_FILE);
+            if (!credFile.exists()) {
+                System.out.println("[GCalendar] CREDENTIALS_FILE missing: " + credFile.getAbsolutePath());
+                return false;
+			}
+            loadCredentials(credFile);
+            // 기존 token.json 로드 시도
+            File tokenFile = resolveFile(TOKEN_FILE);
+            if (tokenFile.exists()) {
+                loadToken(tokenFile);
+                System.out.println("[GCalendar] existing token loaded");
+			}
+            // 토큰이 없거나 refresh_token 도 없으면 → 브라우저 인증
+            if (accessToken.isEmpty() && refreshToken.isEmpty()) {
+                if (!doBrowserAuth()) return false;
+			}
+            // access_token 만료 h 갱신
+            ensureValidToken();
+            initialized = true;
+            System.out.println("[GCalendar] initialization Done");
+            return true;
+			} catch (Exception e) {
+            System.out.println("[GCalendar] initialization Failed: " + e.getMessage());
+            return false;
+		}
+	}
+    public boolean isInitialized() { return initialized; }
+    /**
+		* credentials.json Ready 여부 확인.
+		*
+		* 1) appDir(SETTINGS_DIR)/credentials.json 이 있으면 → true
+		* 2) 없으면 false (로그인 생략)
+		*
+		* ★ static → 인스턴스 메서드로 변경.
+		*    KootPanKing 에서 setAppDir(SETTINGS_DIR) 주입 후 호출해야 정확한 Path를 Enable한다.
+		*    Other드코딩된 C:\\temp 폴백 제거.
+	*/
+    public boolean credentialsExist() {
+        System.out.println("[GCalendar] init : ");
+        File dest = resolveFile(CREDENTIALS_FILE);
+        System.out.println("[GCalendar] CREDENTIALS_FILE search path: " + dest.getAbsolutePath());
+        if (dest.exists()) return true;
+        // C:\temp\credentials.json 을 dest 로 자동 복사 (File명 정확히 치)
+        File tempDir = new File("C:\\temp");
+        if (tempDir.exists() && tempDir.isDirectory()) {
+            File src = new File(tempDir, CREDENTIALS_FILE);
+            if (src.exists()) {
+                try {
+                    dest.getParentFile().mkdirs();
+                    java.nio.file.Files.copy(src.toPath(), dest.toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("[GCalendar] CREDENTIALS_FILE auto copy done: "
+					+ src.getAbsolutePath() + " -> " + dest.getAbsolutePath());
+                    return true;
+					} catch (Exception e) {
+                    System.out.println("[GCalendar] CREDENTIALS_FILE copy failed: " + e.getMessage());
+				}
+				} else {
+                System.out.println("[GCalendar] C:\\temp\\CREDENTIALS_FILE missing");
+			}
+			} else {
+            System.out.println("[GCalendar] C:\\temp Folder missing");
+		}
+        System.out.println("[GCalendar] CREDENTIALS_FILE missing - skipping calendar initialization");
+        return false;
+	}
+    /**
+		* 로그아웃 - 메모리 토큰 initialization + token.json Delete.
+		* 다음 init() 호출 h 브라우저 인증부터 다h 시작.
+		* @return Delete된 token.json Path (File이 없었으면 null)
+	*/
+    public String logout() {
+        accessToken  = "";
+        refreshToken = "";
+        expiresAt    = 0;
+        initialized  = false;
+        File tokenFile = resolveFile(TOKEN_FILE);
+        if (tokenFile.exists()) {
+            String path = tokenFile.getAbsolutePath();
+            tokenFile.delete();
+            System.out.println("[GCalendar] logout done - token deleted: " + path);
+            return path;
+		}
+        System.out.println("[GCalendar] logout done - token file not found");
+        return null;
+	}
+    // ── 공개 API: 정 조회 ───────────────────────────────────────
+    /** Today schedule 조회 */
+    public List<CalendarEvent> getToday() {
+        ZonedDateTime start = LocalDate.now().atStartOfDay(ZoneId.systemDefault());
+        ZonedDateTime end   = start.plusDays(1).minusSeconds(1);
+        return getEvents(start, end);
+	}
+    /** Next N days schedule 조회 (Today 포함) */
+    public List<CalendarEvent> getNextDays(int days) {
+        ZonedDateTime start = LocalDate.now().atStartOfDay(ZoneId.systemDefault());
+        ZonedDateTime end   = start.plusDays(days);
+        return getEvents(start, end);
+	}
+    /** Past N days schedule 조회 (Today 포함) */
+    public List<CalendarEvent> getPastDays(int days) {
+        ZonedDateTime end   = LocalDate.now().plusDays(1).atStartOfDay(ZoneId.systemDefault());
+        ZonedDateTime start = end.minusDays(days);
+        return getEvents(start, end);
+	}
+    /** This week's schedule 조회 (Mon요Sun~Sun요Sun) */
+    public List<CalendarEvent> getThisWeek() {
+        LocalDate today  = LocalDate.now();
+        LocalDate monday = today.with(DayOfWeek.MONDAY);
+        LocalDate sunday = today.with(DayOfWeek.SUNDAY);
+        ZonedDateTime start = monday.atStartOfDay(ZoneId.systemDefault());
+        ZonedDateTime end   = sunday.atTime(23, 59, 59).atZone(ZoneId.systemDefault());
+        return getEvents(start, end);
+	}
+    /** This month's schedule 조회 */
+    public List<CalendarEvent> getThisMonth() {
+        LocalDate today    = LocalDate.now();
+        LocalDate firstDay = today.withDayOfMonth(1);
+        LocalDate lastDay  = today.withDayOfMonth(today.lengthOfMonth());
+        ZonedDateTime start = firstDay.atStartOfDay(ZoneId.systemDefault());
+        ZonedDateTime end   = lastDay.atTime(23, 59, 59).atZone(ZoneId.systemDefault());
+        return getEvents(start, end);
+	}
+    public List<CalendarEvent> getNextMonth() {
+        LocalDate today     = LocalDate.now();
+        LocalDate firstDay  = today.withDayOfMonth(1).plusMonths(1);
+        LocalDate lastDay   = firstDay.withDayOfMonth(firstDay.lengthOfMonth());
+        ZonedDateTime start = firstDay.atStartOfDay(ZoneId.systemDefault());
+        ZonedDateTime end   = lastDay.atTime(23, 59, 59).atZone(ZoneId.systemDefault());
+        return getEvents(start, end);
+	}
+    /** Next Nm 이내 시작 이벤트 조회 (Alarm 폴링용) */
+    public List<CalendarEvent> getUpcomingAlarms(int withinMinutes) {
+        ZonedDateTime now = ZonedDateTime.now();
+        ZonedDateTime end = now.plusMinutes(withinMinutes);
+        return getEvents(now.minusSeconds(30), end);
+	}
+    // ── 내부: 이벤트 조회 ─────────────────────────────────────────
+    private List<CalendarEvent> getEvents(ZonedDateTime start, ZonedDateTime end) {
+        List<CalendarEvent> result = new ArrayList<>();
+        if (!initialized) {
+            System.out.println("[GCalendar] initializationnot done");
+            return result;
+		}
+        try {
+            ensureValidToken();
+            // RFC3339 형식으로 변환
+            DateTimeFormatter rfc3339 = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+            String timeMin = URLEncoder.encode(start.format(rfc3339), "UTF-8");
+            String timeMax = URLEncoder.encode(end.format(rfc3339),   "UTF-8");
+            // ── 모든 캘린더 ID 목록 조회 (국경/기념 포함) ────────
+            List<String> calendarIds = getCalendarIds();
+            if (calendarIds.isEmpty()) calendarIds.add("primary"); // fallback
+            // ── 각 캘린더별 이벤트 조회 후 합산 ──────────────────────
+            Set<String> seenIds = new HashSet<>(); // 중복 이벤트 방지
+            for (String calId : calendarIds) {
+                try {
+                    String url = CALENDAR_API + "/calendars/"
+					+ URLEncoder.encode(calId, "UTF-8") + "/events"
+					+ "?maxResults=50"
+					+ "&singleEvents=true"
+					+ "&orderBy=startTime"
+					+ "&timeMin=" + timeMin
+					+ "&timeMax=" + timeMax;
+                    String json = httpGet(url);
+                    List<CalendarEvent> events = parseEvents(json);
+                    for (CalendarEvent ev : events) {
+                        if (ev.id != null && seenIds.add(ev.id)) {
+                            result.add(ev);
+						}
+					}
+					} catch (Exception e) {
+                    System.out.println("[GCalendar] calendar query error (" + calId + "): " + e.getMessage());
+				}
+			}
+            // 시작 시간 순 정렬
+            result.sort((a, b) -> a.startTime.compareTo(b.startTime));
+			} catch (Exception e) {
+            System.out.println("[GCalendar] event query error: " + e.getMessage());
+		}
+        return result;
+	}
+    /**
+		* 내 계정에 등록된 모든 캘린더 ID 목록 조회.
+		* 국경(ko.south_korea#holiday@group.v.calendar.google.com 등),
+		* 기념, 공유 캘린더 모두 포함.
+	*/
+    private List<String> getCalendarIds() {
+        List<String> ids = new ArrayList<>();
+        try {
+            String url = CALENDAR_API + "/users/me/calendarList?maxResults=100";
+            String json = httpGet(url);
+            JSONObject root = (JSONObject) new JSONParser().parse(json);
+            JSONArray items = (JSONArray) root.get("items");
+            if (items == null) return ids;
+            for (Object obj : items) {
+                JSONObject cal = (JSONObject) obj;
+                String calId = (String) cal.get("id");
+                String summary = (String) cal.get("summary");
+                if (calId != null && !calId.isEmpty()) {
+                    ids.add(calId);
+                    // System.out.println("[GCalendar] Calendar: " + calId + " (" + summary + ")");
+				}
+			}
+			} catch (Exception e) {
+            System.out.println("[GCalendar] calendar list query error: " + e.getMessage());
+		}
+        return ids;
+	}
+    // ── 내부: JSON File싱 ───────────────────────────────────────────
+    private List<CalendarEvent> parseEvents(String json) {
+        List<CalendarEvent> list = new ArrayList<>();
+        try {
+            JSONObject root = (JSONObject) new JSONParser().parse(json);
+            JSONArray items = (JSONArray) root.get("items");
+            if (items == null) return list;
+            for (Object obj : items) {
+                try {
+                    CalendarEvent ev = parseOneEvent((JSONObject) obj);
+                    if (ev != null) list.add(ev);
+					} catch (Exception e) {
+                    System.out.println("[GCalendar] event parsing error: " + e.getMessage());
+				}
+			}
+			} catch (Exception e) {
+            System.out.println("[GCalendar] events JSON parsing error: " + e.getMessage());
+		}
+        return list;
+	}
+    private CalendarEvent parseOneEvent(JSONObject obj) {
+        String id    = (String) obj.get("id");
+        String title = (String) obj.get("summary");
+        if (title == null || title.isEmpty()) title = "(No title)";
+        JSONObject startBlock = (JSONObject) obj.get("start");
+        JSONObject endBlock   = (JSONObject) obj.get("end");
+        if (startBlock == null || endBlock == null) return null;
+        boolean allDay = false;
+        ZonedDateTime startTime, endTime;
+        String startDt   = (String) startBlock.get("dateTime");
+        String startDate = (String) startBlock.get("date");
+        if (startDt != null && !startDt.isEmpty()) {
+            startTime = parseRfc3339(startDt);
+			} else if (startDate != null && !startDate.isEmpty()) {
+            startTime = LocalDate.parse(startDate).atStartOfDay(ZoneId.systemDefault());
+            allDay = true;
+		} else return null;
+        String endDt   = (String) endBlock.get("dateTime");
+        String endDate = (String) endBlock.get("date");
+        if (endDt != null && !endDt.isEmpty()) {
+            endTime = parseRfc3339(endDt);
+			} else if (endDate != null && !endDate.isEmpty()) {
+            endTime = LocalDate.parse(endDate).atStartOfDay(ZoneId.systemDefault());
+			} else {
+            endTime = startTime;
+		}
+        return new CalendarEvent(id, title, startTime, endTime, allDay);
+	}
+    // ── 내부: OAuth 브라우저 인증 ─────────────────────────────────
+    private boolean doBrowserAuth() throws Exception {
+        String authUrl = "https://accounts.google.com/o/oauth2/auth"
+		+ "?client_id="     + URLEncoder.encode(clientId, "UTF-8")
+		+ "&redirect_uri="  + URLEncoder.encode(REDIRECT_URI, "UTF-8")
+		+ "&response_type=code"
+		+ "&access_type=offline"
+		+ "&scope="         + URLEncoder.encode(SCOPE, "UTF-8");
+        System.out.println("[GCalendar] browser authorization started...");
+        System.out.println("[GCalendar] URL: " + authUrl);
+        try { Desktop.getDesktop().browse(new URI(authUrl)); }
+        catch (Exception e) { System.out.println("[GCalendar] Failed to open browser: " + e.getMessage()); }
+        // 로컬 HTTP 서버로 code 수신
+        String code = receiveAuthCode(8888, 120000);
+        if (code == null || code.isEmpty()) {
+            System.out.println("[GCalendar] failed to receive authorization code");
+            return false;
+		}
+        // code → token 교환
+        exchangeToken(code);
+        return !accessToken.isEmpty();
+	}
+    /** 포트 8888 에서 authorization code Wed신 */
+    private String receiveAuthCode(int port, int timeoutMs) {
+        try (ServerSocket ss = new ServerSocket(port)) {
+            ss.setSoTimeout(timeoutMs);
+            Socket sock = ss.accept();
+            BufferedReader br = new BufferedReader(
+			new InputStreamReader(sock.getInputStream(), "UTF-8"));
+            String line = br.readLine(); // GET /Callback?code=xxx HTTP/1.1
+            // 성공 응답 전송
+            String resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n"
+			+ "<html><body><h2>✅ Google Login successful!</h2>"
+			+ "<p>Close this window.</p></body></html>";
+            sock.getOutputStream().write(resp.getBytes("UTF-8"));
+            sock.close();
+            if (line == null) return null;
+            // code= File싱
+            Pattern p = Pattern.compile("[?&]code=([^& ]+)");
+            Matcher m = p.matcher(line);
+            return m.find() ? m.group(1) : null;
+			} catch (Exception e) {
+            System.out.println("[GCalendar] authorization code receive error: " + e.getMessage());
+            return null;
+		}
+	}
+    /** authorization code → access_token / refresh_token */
+    private void exchangeToken(String code) throws Exception {
+        String body = "grant_type=authorization_code"
+		+ "&client_id="     + URLEncoder.encode(clientId,     "UTF-8")
+		+ "&client_secret=" + URLEncoder.encode(clientSecret, "UTF-8")
+		+ "&redirect_uri="  + URLEncoder.encode(REDIRECT_URI, "UTF-8")
+		+ "&code="          + URLEncoder.encode(code,         "UTF-8");
+        String json = httpPost(TOKEN_URL, body);
+        parseAndStoreToken(json);
+        saveToken();
+        System.out.println("[GCalendar] token exchange done");
+	}
+    /** access_token 만료 h refresh_token 으로 갱신 */
+    private synchronized void ensureValidToken() throws Exception {
+        if (accessToken.isEmpty() && !refreshToken.isEmpty()) {
+            refreshAccessToken();
+            return;
+		}
+        // 만료 1분 전부터 갱신
+        if (!refreshToken.isEmpty() && System.currentTimeMillis() > expiresAt - 60_000) {
+            refreshAccessToken();
+		}
+	}
+    private synchronized void refreshAccessToken() throws Exception {
+        if (refreshToken.isEmpty()) return;
+        String body = "grant_type=refresh_token"
+		+ "&client_id="     + URLEncoder.encode(clientId,     "UTF-8")
+		+ "&client_secret=" + URLEncoder.encode(clientSecret, "UTF-8")
+		+ "&refresh_token=" + URLEncoder.encode(refreshToken, "UTF-8");
+        String json = httpPost(TOKEN_URL, body);
+        parseAndStoreToken(json);
+        saveToken();
+        System.out.println("[GCalendar] token refresh done");
+	}
+    // ── 내부: credentials.json 로드 ──────────────────────────────
+    private void loadCredentials(File f) throws Exception {
+        System.out.println("[GCalendar] loadCredentials : " + f.getAbsolutePath() );
+        String json = readFile(f);
+        JSONObject root = (JSONObject) new JSONParser().parse(json);
+        // "installed" 또는 "web" 블록
+        JSONObject block = (JSONObject) root.get("installed");
+        if (block == null) block = (JSONObject) root.get("web");
+        if (block == null) block = root;
+        clientId     = (String) block.get("client_id");
+        clientSecret = (String) block.get("client_secret");
+        if (clientId == null || clientId.isEmpty())
+		throw new Exception("client_id not found in CREDENTIALS_FILE.");
+	}
+    // ── 내부: token.json Save / 로드 ─────────────────────────────
+    private void parseAndStoreToken(String json) {
+        try {
+            JSONObject obj = (JSONObject) new JSONParser().parse(json);
+            String at = (String) obj.get("access_token");
+            String rt = (String) obj.get("refresh_token");
+            Object ei = obj.get("expires_in");
+            if (at != null && !at.isEmpty()) accessToken = at;
+            if (rt != null && !rt.isEmpty()) refreshToken = rt;
+            if (ei != null) {
+                try { expiresAt = System.currentTimeMillis() + Long.parseLong(ei.toString()) * 1000; }
+                catch (NumberFormatException ignored) {}
+			}
+			} catch (Exception e) {
+            System.out.println("[GCalendar] token parsing error: " + e.getMessage());
+		}
+	}
+    private synchronized void saveToken() {
+        try {
+            File tokenFile = resolveFile(TOKEN_FILE);
+            tokenFile.getParentFile().mkdirs();
+            String json = "{\n"
+			+ "  \"access_token\": \""  + accessToken  + "\",\n"
+			+ "  \"refresh_token\": \"" + refreshToken + "\",\n"
+			+ "  \"expires_at\": "      + expiresAt    + "\n"
+			+ "}\n";
+            try (PrintWriter pw = new PrintWriter(
+			new OutputStreamWriter(new FileOutputStream(tokenFile), "UTF-8"))) {
+			pw.print(json);
+            }
+			} catch (Exception e) {
+            System.out.println("[GCalendar] token save failed: " + e.getMessage());
+		}
+	}
+    private synchronized void loadToken(File f) {
+		System.out.println("[GCalendar] loadToken : " + f.getAbsolutePath() );
+        try {
+            String json = readFile(f);
+            JSONObject obj = (JSONObject) new JSONParser().parse(json);
+            String at = (String) obj.get("access_token");
+            String rt = (String) obj.get("refresh_token");
+            Object ea = obj.get("expires_at");
+            if (at != null) accessToken  = at;
+            if (rt != null) refreshToken = rt;
+            if (ea != null) {
+                try { expiresAt = Long.parseLong(ea.toString()); }
+                catch (NumberFormatException ignored) {}
+			}
+			} catch (Exception e) {
+            System.out.println("[GCalendar] token load failed: " + e.getMessage());
+		}
+	}
+    // ── 내부: HTTP 유틸 ───────────────────────────────────────────
+    private String httpGet(String urlStr) throws Exception {
+        URL url = URI.create(urlStr).toURL();
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+        con.setRequestProperty("Authorization", "Bearer " + accessToken);
+        con.setConnectTimeout(10000);
+        con.setReadTimeout(15000);
+        String result = readStream(con);
+        con.disconnect();
+        return result;
+	}
+    private String httpPost(String urlStr, String body) throws Exception {
+        URL url = URI.create(urlStr).toURL();
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("POST");
+        con.setDoOutput(true);
+        con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+        con.setConnectTimeout(10000);
+        con.setReadTimeout(15000);
+        con.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
+        String result = readStream(con);
+        con.disconnect();
+        return result;
+	}
+    private String readStream(HttpURLConnection con) throws Exception {
+        InputStream is;
+        try { is = con.getInputStream(); }
+        catch (IOException e) {
+            is = con.getErrorStream();
+            if (is == null) throw e;
+		}
+        BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line).append("\n");
+        br.close();
+        return sb.toString();
+	}
+    /** RFC3339 → ZonedDateTime (Yes: 2026-03-14T10:00:00+09:00) */
+    private static ZonedDateTime parseRfc3339(String s) {
+        try {
+            return ZonedDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+			} catch (Exception e) {
+            return ZonedDateTime.now();
+		}
+	}
+    // ── File 유틸 ─────────────────────────────────────────────────
+    private static String readFile(File f) throws Exception {
+        BufferedReader br = new BufferedReader(
+		new InputStreamReader(new FileInputStream(f), "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line).append("\n");
+        br.close();
+        return sb.toString();
+	}
+    /**
+		* SETTINGS_DIR 기준으로 File Path 해석.
+		* ★ appDir = KootPanKing.SETTINGS_DIR (%APPDATA%\KootPanKing\settings\) 을 주입받아
+		*   File명만 붙인다. KootPanKing 이 APPDATA 로 우회해도 동한 Folder를 가리킨다.
+		*   fallback: 항상 %APPDATA%\KootPanKing\settings\ 고정
+	*/
+    private File resolveFile(String name) {
+        System.out.println("[GCalendar] resolveFile , name   : [" + name + "]");
+        System.out.println("[GCalendar] resolveFile , SETTINGS_DIR : [" + SETTINGS_DIR + "]");
+        // ① KootPanKing.SETTINGS_DIR 주입값 우선 (File명만 붙임)
+		// AppContext.init();
+		// SETTINGS_DIR = AppContext.SETTINGS_DIR;
+        if (SETTINGS_DIR != null && !SETTINGS_DIR.isEmpty()) return new File(SETTINGS_DIR, name);
+        // ② fallback: 항상 %APPDATA%\KootPanKing\settings\ 고정
+        String appData = System.getenv("APPDATA");
+        if (appData == null) appData = System.getProperty("user.home");
+        File settingsDir = new File(appData + File.separator
+		+ "KootPanKing" + File.separator + "settings");
+        if (!settingsDir.exists()) settingsDir.mkdirs();
+        return new File(settingsDir, name);
+	}
+    // ── 텔레그램 메시지 포맷 (기존 동) ────────────────────────
+    public static String formatEvents(String title, List<CalendarEvent> events) {
+		System.out.println("[GCalendar] formatEvents , title   : [" + title + "]");
+        StringBuilder sb = new StringBuilder();
+        sb.append("📅 ").append(title).append("\n");
+        sb.append("─────────────────\n");
+        if (events.isEmpty()) {
+            sb.append("No schedule found.\n");
+			} else {
+            DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("M/d(E)", Locale.KOREAN);
+            DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+            String lastDate = "";
+            for (CalendarEvent e : events) {
+                String dateStr = e.startTime.format(dateFmt);
+                if (!dateStr.equals(lastDate)) {
+                    if (!lastDate.isEmpty()) sb.append("\n");
+                    sb.append("📆 ").append(dateStr).append("\n");
+                    lastDate = dateStr;
+				}
+                if (e.allDay) {
+                    sb.append("  • ").append(e.title).append(" (all-day)\n");
+					} else {
+                    sb.append("  ⏰ ").append(e.startTime.format(timeFmt))
+					.append(" ").append(e.title).append("\n");
+				}
+			}
+		}
+        sb.append("─────────────────\n");
+        sb.append("Total: ").append(events.size()).append(" schedule");
+        return sb.toString();
+	}
+    // ── CalendarEvent DTO (기존 동) ─────────────────────────────
+    public static class CalendarEvent {
+        public final String        id;
+        public final String        title;
+        public final ZonedDateTime startTime;
+        public final ZonedDateTime endTime;
+        public final boolean       allDay;
+        public CalendarEvent(String id, String title,
+			ZonedDateTime startTime, ZonedDateTime endTime, boolean allDay) {
+            this.id        = id;
+            this.title     = title;
+            this.startTime = startTime;
+            this.endTime   = endTime;
+            this.allDay    = allDay;
+		}
+	}
+}
