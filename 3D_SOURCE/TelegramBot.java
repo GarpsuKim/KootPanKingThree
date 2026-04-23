@@ -73,7 +73,7 @@ public class TelegramBot {
 
 	// ── 카메라 명령 핸들러 (CommandHandler 와 분리 — MainWindow 에서 등록) ──────
 	public interface CameraHandler {
-		/** /cam       — 현재 프레임 1장 전송 */
+		/** /cam       — 10초마다 동영상 전송 (연속 루프 시작) */
 		void sendCameraSnapshot(String chatId);
 		/** /rec N     — N초 단발 클립 녹화 → mp4 전송 (0=중단) */
 		void startCameraRec(String chatId, int seconds);
@@ -645,8 +645,8 @@ public class TelegramBot {
 				break;
 
 			case "/cam":
-				if (cameraHandler != null) cameraHandler.sendCameraSnapshot(chatId);
-				else sendTelegram("❌ 카메라가 연결되지 않았습니다");
+				if (cameraHandler != null) cameraHandler.startContinuousRec(chatId);
+				else autoConnectAndStartContinuousRec(chatId);
 				break;
 
 			case "/rec": {
@@ -802,6 +802,65 @@ public class TelegramBot {
 				tmpCam.stop();
 			}
 		}, "TgCamHello").start();
+	}
+
+	/**
+	 * /cam — 카메라 미연결 상태에서 자동 연결 → TelegramCamRecorder 생성 → 10초 연속 루프 시작.
+	 * 생성된 핸들러를 setCameraHandler() 로 등록하여 /recstop, /cambye 도 정상 동작한다.
+	 */
+	private void autoConnectAndStartContinuousRec(String chatId) {
+		new Thread(() -> {
+			String url = AppContext.getCameraUrl();
+			if (url == null || url.trim().isEmpty()) {
+				sendTelegram("❌ 카메라 URL이 설정되지 않았습니다\n메인창 > Phone Camera > Connect 에서 URL을 먼저 설정하세요");
+				return;
+			}
+			sendTelegram("📷 카메라 연결 중...\n" + url);
+			TOOLS.CaptureManager.Camera tmpCam = new TOOLS.CaptureManager.Camera(frame -> { /* UI 없음 */ });
+			try {
+				tmpCam.start(url);
+				// 첫 프레임 도착 대기 (최대 8초)
+				long deadline = System.currentTimeMillis() + 8_000L;
+				while (tmpCam.getLastFrameAWT() == null && System.currentTimeMillis() < deadline) {
+					Thread.sleep(200);
+				}
+				if (tmpCam.getLastFrameAWT() == null) {
+					sendTelegram("❌ 카메라 연결 실패 (타임아웃 8초)\nURL을 확인하세요: " + url);
+					tmpCam.stop();
+					return;
+				}
+				// TelegramCamRecorder 생성 후 cameraHandler 로 등록
+				java.io.File recWorkDir = new java.io.File(AppContext.getAPP_DIR(), "tg_rec");
+				Multimedia.TelegramCamRecorder rec = new Multimedia.TelegramCamRecorder(tmpCam, this, recWorkDir);
+				setCameraHandler(new CameraHandler() {
+					@Override public void sendCameraSnapshot(String cid) { rec.sendSnapshot(cid); }
+					@Override public void startCameraRec(String cid, int sec) {
+						if (sec == 0) rec.stopRec(cid); else rec.startRec(cid, sec);
+					}
+					@Override public void startContinuousRec(String cid) { rec.startContinuousRec(cid); }
+					@Override public void stopContinuousRec(String cid)   { rec.stopContinuousRec(cid); }
+					@Override public void camBye(String cid) {
+						rec.camBye(cid);
+						// 마지막 클립 완료 후 카메라 해제
+						new Thread(() -> {
+							rec.waitForStop();
+							tmpCam.stop();
+							setCameraHandler(null);
+							System.out.println("[AutoCam] camera stopped & handler cleared");
+						}, "AutoCamByeWaiter").start();
+					}
+				});
+				// 연속 루프 시작
+				rec.startContinuousRec(chatId);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+				tmpCam.stop();
+			} catch (Exception e) {
+				sendTelegram("❌ /cam 자동연결 오류: " + e.getMessage());
+				System.out.println("[AutoCam] error: " + e.getMessage());
+				tmpCam.stop();
+			}
+		}, "TgCamAutoConnect").start();
 	}
 
 	/** /logout_calendar 명령 처리 - Google 캘린더 로그아웃 */
@@ -1145,8 +1204,8 @@ public class TelegramBot {
 	private void showCameraMenu(String chatId) {
 		String text = "📷 Camera Menu\n\n카메라 제어 명령을 선택하세요.";
 		String[][] buttons = new String[][]{
-			{"📸 Snapshot (/cam)",          "cam_snapshot"},
-			{"🔴 Start Loop (/camHello)",   "cam_hello"},
+			{"🔴 Start Loop (/cam)",        "cam_snapshot"},
+			{"📷 Photo (/camHello)",        "cam_hello"},
 			{"⏹ Stop Sending (/recstop)",  "cam_recstop"},
 			{"🛑 Stop Camera (/camBye)",    "cam_bye"},
 			{"⬅ Back",                      "menu_main"}
@@ -1768,8 +1827,8 @@ public class TelegramBot {
 				{"/c2 - Monitor 2",                   "help_c2"},
 				{"/c3 - Monitor 3",                   "help_c3"},
 				{"/c4 - Monitor 4",                   "help_c4"},
-				{"📷 /cam - Camera snapshot",         "cam_snapshot"},
-				{"🔴 /camHello - Start loop (10s)",   "cam_hello"},
+				{"🔴 /cam - 10초 영상 루프",          "cam_snapshot"},
+				{"📷 /camHello - 사진 1장 (자동연결)", "cam_hello"},
 				{"⏹ /recstop - Stop sending",         "cam_recstop"},
 				{"🛑 /camBye - Stop camera",           "cam_bye"},
 				{"💀 /d  - Shutdown PC",               "help_d"},
@@ -1796,8 +1855,8 @@ public class TelegramBot {
 			"/s  — 전체 화면 캡처\n" +
 			"/c1 ~ /c4  — 모니터 1~4 캡처\n\n" +
 			"📷 카메라\n" +
-			"/cam       — 현재 프레임 사진 전송\n" +
-			"/camHello  — 카메라 시작 + 10초마다 영상 전송\n" +
+			"/cam       — 10초마다 동영상 전송 (연속 루프 시작)\n" +
+			"/camHello  — 사진 1장 촬영·전송 (카메라 미연결 시 자동 연결)\n" +
 			"/recstop   — 전송 중단 (카메라 계속 촬영)\n" +
 			"/camBye    — 현재 클립 저장·전송 후 카메라 종료\n\n" +
 			"🖥 시스템\n" +
