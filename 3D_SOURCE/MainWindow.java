@@ -2184,7 +2184,7 @@ public class MainWindow {
     /** /SecureOn 텔레그램 명령에서 호출 — 인증 없이 시작 */
     public void startWebSecurityCamPublic() { startWebSecurityCam(); }
     /** /SecureOff 텔레그램 명령에서 호출 — 인증 없이 종료 */
-    public void stopWebSecurityCamPublic()  { stopWebSecurityCam(); }
+    public void stopWebSecurityCamPublic()  { doStopWebSecurityCam(); }
 
     private void startWebSecurityCam() {
         if (webSecCamMode) {
@@ -2272,13 +2272,17 @@ public class MainWindow {
             return;
         }
         if (!AdminAuth.authenticate(theStage)) return;
+        doStopWebSecurityCam();
+    }
+
+    /** 인증 없이 종료 — 텔레그램 /SecureOff 전용 */
+    private void doStopWebSecurityCam() {
         if (webMotionDetector != null) { webMotionDetector.stop(); webMotionDetector = null; }
         webSecCamMode = false;
         javafx.application.Platform.runLater(() -> {
             hideWebSecAlarm();
             hideWebSecGuard();
         });
-        // 텔레그램 전송 중단
         TelegramBot tgInst = TelegramBot.getInstance();
         if (tgInst != null) tgInst.stopCam();
         System.out.println("[WebSecCam] stopped");

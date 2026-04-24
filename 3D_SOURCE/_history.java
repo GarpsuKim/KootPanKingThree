@@ -1,7 +1,7 @@
 
 git add .
 
-git commit -m "인증기능2-1차"
+git commit -m "인증기능3-1차"
 
 git push -u origin main
 
@@ -28,6 +28,8 @@ git push -u origin main
 
 
 
+/*
+
 "인증기능3차" [적용완료] 2026.4.24.Fri 10:30
 
 
@@ -52,6 +54,7 @@ git push -u origin main
 -  /SecureOn : web cam 감시 카메라 자동 작동 개시 , 작동 시작하면 자동으로 10초마다 동영상 송신
 -  /SecureOff : web cam 감시 카메라 작동 종료
 
+*/
 
 
 /*

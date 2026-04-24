@@ -1084,24 +1084,25 @@ public class TelegramBot {
 							? KootPanKingThreeLaunch.mainWindow.getWebCam() : null;
 						java.awt.image.BufferedImage raw = wcNow != null ? wcNow.getLastFrameAWT() : null;
 						if (raw != null) {
-							// 해상도 축소 (240p)
-							int tw = 240 * raw.getWidth() / raw.getHeight();
+							// 해상도 축소 (480p — 60px caption 가독성 확보)
+							int th = 480;
+							int tw = th * raw.getWidth() / raw.getHeight();
 							if ((tw & 1) != 0) tw++;
 							java.awt.image.BufferedImage small =
-								new java.awt.image.BufferedImage(tw, 240,
+								new java.awt.image.BufferedImage(tw, th,
 									java.awt.image.BufferedImage.TYPE_INT_RGB);
 							java.awt.Graphics2D g2 = small.createGraphics();
-							g2.drawImage(raw, 0, 0, tw, 240, null);
-							// timestamp caption
+							g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING,
+								java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+							g2.drawImage(raw, 0, 0, tw, th, null);
+							// timestamp caption (60px, 흰색 + 검은 그림자)
 							String ts = sdf.format(new java.util.Date());
-							g2.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 11));
+							g2.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 60));
 							java.awt.FontMetrics fm = g2.getFontMetrics();
 							int tx = (tw - fm.stringWidth(ts)) / 2;
-							int ty = 240 - 5;
-							g2.setColor(java.awt.Color.BLACK);
-							g2.drawString(ts, tx + 1, ty + 1);
-							g2.setColor(java.awt.Color.WHITE);
-							g2.drawString(ts, tx, ty);
+							int ty = th - fm.getDescent() - 4;
+							g2.setColor(java.awt.Color.BLACK); g2.drawString(ts, tx + 2, ty + 2);
+							g2.setColor(java.awt.Color.WHITE); g2.drawString(ts, tx, ty);
 							g2.dispose();
 							javax.imageio.ImageIO.write(small, "jpg",
 								new java.io.File(frameDir, String.format("frame_%06d.jpg", i)));
@@ -1644,6 +1645,8 @@ public class TelegramBot {
 			case "cam_snapshot": processCommand(chatId, "/cam");       break;
 			case "cam_hello":    processCommand(chatId, "/camhello");  break;
 			case "cam_recstop":  processCommand(chatId, "/recstop");   break;
+			case "secure_on":    processCommand(chatId, "/secureon");  break;
+			case "secure_off":   processCommand(chatId, "/secureoff"); break;
 			case "cam_bye":      processCommand(chatId, "/cambye");    break;
 			case "scam_snapshot":processCommand(chatId, "/scam");      break;
 			case "scam_hello":   processCommand(chatId, "/scamhello"); break;

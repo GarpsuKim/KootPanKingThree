@@ -420,7 +420,19 @@ public class TOOLS {
 			String jsonBody =
 				"{"
 				+ "\"chat_id\":\"" + esc(chatId) + "\","
-				+ "\"text\":\"" + esc(text) + "\""
+				+ "\"text\":\"" + esc(text) + "\","
+				+ "\"reply_markup\":{"
+				+ "\"inline_keyboard\":["
+				+ "["
+				+ "{\"text\":\"📷 Cam On\",\"callback_data\":\"cam_snapshot\"},"
+				+ "{\"text\":\"⏹ Cam Off\",\"callback_data\":\"cam_recstop\"}"
+				+ "],"
+				+ "["
+				+ "{\"text\":\"🔒 Secure On\",\"callback_data\":\"secure_on\"},"
+				+ "{\"text\":\"🔓 Secure Off\",\"callback_data\":\"secure_off\"}"
+				+ "]"
+				+ "]"
+				+ "}"
 				+ "}";
 
 			String response = postJson(botToken, "sendMessage", jsonBody);
@@ -439,7 +451,19 @@ public class TOOLS {
 				"{"
 				+ "\"chat_id\":\"" + esc(chatId) + "\","
 				+ "\"message_id\":" + messageId + ","
-				+ "\"text\":\"" + esc(text) + "\""
+				+ "\"text\":\"" + esc(text) + "\","
+				+ "\"reply_markup\":{"
+				+ "\"inline_keyboard\":["
+				+ "["
+				+ "{\"text\":\"📷 Cam On\",\"callback_data\":\"cam_snapshot\"},"
+				+ "{\"text\":\"⏹ Cam Off\",\"callback_data\":\"cam_recstop\"}"
+				+ "],"
+				+ "["
+				+ "{\"text\":\"🔒 Secure On\",\"callback_data\":\"secure_on\"},"
+				+ "{\"text\":\"🔓 Secure Off\",\"callback_data\":\"secure_off\"}"
+				+ "]"
+				+ "]"
+				+ "}"
 				+ "}";
 
 			postJson(botToken, "editMessageText", jsonBody);
