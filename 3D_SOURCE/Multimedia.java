@@ -1113,14 +1113,15 @@ public class Multimedia {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  MotionDetector — 연속 프레임 비교로 움직임 감지
+    //  MotionDetector — 연속 프레임 비교로 움직임 감지 (추상 베이스)
     //
     //  사용:
-    //    MotionDetector md = new MotionDetector(camera);
+    //    PhoneMotionDetector md = new PhoneMotionDetector(camera);
+    //    WebMotionDetector   md = new WebMotionDetector(webCam);
     //    md.setListener(new MotionDetector.MotionListener() { ... });
     //    md.start();   /   md.stop();
     // ═══════════════════════════════════════════════════════════════════
-    public static class MotionDetector {
+    public static abstract class MotionDetector {
 
         /** 감지 이벤트 콜백 */
         public interface MotionListener {
@@ -1131,48 +1132,43 @@ public class Multimedia {
         }
 
         // ── 파라미터 (필요 시 외부에서 조정 가능) ───────────────────────
-        /** 비교용 축소 해상도 너비 */
-        public int  compareWidth     = 80;
-        /** 비교용 축소 해상도 높이 */
-        public int  compareHeight    = 60;
-        /** 픽셀 평균 차이 임계값 (0~255, 낮을수록 민감) */
-        public int  diffThreshold    = 20;
-        /** 감지 판정 최소 변화 픽셀 비율 (0.0~1.0) */
-        public double motionRatio    = 0.05; // 5% 이상 변화 시 감지
-        /** 프레임 비교 간격 (ms) */
-        public long intervalMs       = 500;
-        /** 움직임 종료 판정: N회 연속 미감지 시 cleared */
-        public int  clearCount       = 4;
+        public int    compareWidth  = 80;
+        public int    compareHeight = 60;
+        public int    diffThreshold = 20;
+        public double motionRatio   = 0.05;
+        public long   intervalMs    = 500;
+        public int    clearCount    = 4;
 
-        private final TOOLS.CaptureManager.Camera camera;
-        private volatile boolean running         = false;
-        private volatile boolean motionActive    = false;
-        private Thread detectorThread;
-        private MotionListener listener;
+        protected volatile boolean running      = false;
+        protected volatile boolean motionActive = false;
+        private   Thread           detectorThread;
+        private   MotionListener   listener;
 
-        public MotionDetector(TOOLS.CaptureManager.Camera camera) {
-            this.camera = camera;
-        }
+        /** 서브클래스가 구현 — 현재 최신 프레임 반환 */
+        protected abstract java.awt.image.BufferedImage getFrame();
+
+        /** 로그용 이름 */
+        protected abstract String label();
 
         public void setListener(MotionListener l) { this.listener = l; }
-        public boolean isRunning()   { return running; }
-        public boolean isMotion()    { return motionActive; }
+        public boolean isRunning() { return running; }
+        public boolean isMotion()  { return motionActive; }
 
         public void start() {
             if (running) return;
             running = true;
             motionActive = false;
-            detectorThread = new Thread(this::loop, "MotionDetector");
+            detectorThread = new Thread(this::loop, "MotionDetector-" + label());
             detectorThread.setDaemon(true);
             detectorThread.start();
-            System.out.println("[MotionDetector] started");
+            System.out.println("[MotionDetector-" + label() + "] started");
         }
 
         public void stop() {
             running = false;
             if (detectorThread != null) detectorThread.interrupt();
             motionActive = false;
-            System.out.println("[MotionDetector] stopped");
+            System.out.println("[MotionDetector-" + label() + "] stopped");
         }
 
         private void loop() {
@@ -1181,14 +1177,12 @@ public class Multimedia {
             while (running) {
                 try {
                     Thread.sleep(intervalMs);
-                    java.awt.image.BufferedImage frame = camera.getLastFrameAWT();
+                    java.awt.image.BufferedImage frame = getFrame();
                     if (frame == null) continue;
 
-                    // 축소 후 그레이스케일 변환
                     int[] gray = toGray(frame, compareWidth, compareHeight);
                     if (prevGray == null) { prevGray = gray; continue; }
 
-                    // 픽셀 차이 계산
                     int diffPixels = 0;
                     for (int i = 0; i < gray.length; i++) {
                         if (Math.abs(gray[i] - prevGray[i]) > diffThreshold) diffPixels++;
@@ -1202,17 +1196,16 @@ public class Multimedia {
                         noMotionCount = 0;
                         if (!motionActive) {
                             motionActive = true;
-                            System.out.println("[MotionDetector] MOTION DETECTED (ratio=" +
-                                String.format("%.2f", ratio * 100) + "%)");
+                            System.out.println("[MotionDetector-" + label() + "] DETECTED (ratio="
+                                + String.format("%.2f", ratio * 100) + "%)");
                             if (listener != null) listener.onMotionDetected();
                         }
                     } else {
                         if (motionActive) {
-                            noMotionCount++;
-                            if (noMotionCount >= clearCount) {
+                            if (++noMotionCount >= clearCount) {
                                 motionActive = false;
                                 noMotionCount = 0;
-                                System.out.println("[MotionDetector] motion cleared");
+                                System.out.println("[MotionDetector-" + label() + "] cleared");
                                 if (listener != null) listener.onMotionCleared();
                             }
                         }
@@ -1221,13 +1214,13 @@ public class Multimedia {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
-                    System.out.println("[MotionDetector] error: " + e.getMessage());
+                    System.out.println("[MotionDetector-" + label() + "] error: " + e.getMessage());
                 }
             }
         }
 
         /** BufferedImage → 축소 그레이스케일 int[] */
-        private static int[] toGray(java.awt.image.BufferedImage src, int w, int h) {
+        protected static int[] toGray(java.awt.image.BufferedImage src, int w, int h) {
             java.awt.image.BufferedImage small =
                 new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
             java.awt.Graphics2D g = small.createGraphics();
@@ -1245,5 +1238,35 @@ public class Multimedia {
             }
             return gray;
         }
+    }
+
+    // ── Phone Camera 전용 MotionDetector ────────────────────────────────
+    public static class PhoneMotionDetector extends MotionDetector {
+        private final TOOLS.CaptureManager.Camera camera;
+
+        public PhoneMotionDetector(TOOLS.CaptureManager.Camera camera) {
+            this.camera = camera;
+        }
+
+        @Override protected java.awt.image.BufferedImage getFrame() {
+            return camera.getLastFrameAWT();
+        }
+
+        @Override protected String label() { return "Phone"; }
+    }
+
+    // ── Web Camera 전용 MotionDetector ──────────────────────────────────
+    public static class WebMotionDetector extends MotionDetector {
+        private final TOOLS.WebcamCapture webCam;
+
+        public WebMotionDetector(TOOLS.WebcamCapture webCam) {
+            this.webCam = webCam;
+        }
+
+        @Override protected java.awt.image.BufferedImage getFrame() {
+            return webCam.getLastFrameAWT();
+        }
+
+        @Override protected String label() { return "Web"; }
     }
 }

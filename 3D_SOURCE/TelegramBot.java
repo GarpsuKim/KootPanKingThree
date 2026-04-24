@@ -117,7 +117,23 @@ public class TelegramBot {
 
     public String getMyChatId() { return myChatId; }
 
-    /** Security Cam 등 외부에서 /cam 과 동일한 동작을 트리거 (PC 웹캠) */
+    /** Phone Security Cam → /scam 루프 시작 */
+    public void startScam() {
+        if (!myChatId.isEmpty()) {
+            if (cameraHandler != null) {
+                System.out.println("[startScam] already running, skip");
+                return;
+            }
+            processCommand(myChatId, "/scam");
+        }
+    }
+
+    /** Phone Security Cam → /srecstop 중단 */
+    public void stopScam() {
+        if (!myChatId.isEmpty()) processCommand(myChatId, "/srecstop");
+    }
+
+    /** Web Security Cam → /cam 루프 시작 (PC 웹캠) */
     public void startCam() {
         if (!myChatId.isEmpty()) {
             if (webcamRecRunning) {
@@ -128,7 +144,7 @@ public class TelegramBot {
         }
     }
 
-    /** Security Cam 등 외부에서 /recstop 과 동일한 동작을 트리거 (PC 웹캠) */
+    /** Web Security Cam → /recstop 중단 */
     public void stopCam() {
         if (!myChatId.isEmpty()) processCommand(myChatId, "/recstop");
     }
@@ -620,7 +636,7 @@ public class TelegramBot {
 		"/scam", "/scamhello", "/srecstop", "/scambye", "/srec",
 		// ── PC 웹캠 ───────────────────────────────────────────────
 		"/cam", "/camhello", "/recstop", "/cambye", "/rec",
-		"/unpinall", "/allclear"
+		"/unpinall", "/allclear", "/wallclear"
 	));
 	
 	private void processCommand(String chatId, String text) {
@@ -739,13 +755,23 @@ public class TelegramBot {
 				break;
 
 			case "/allclear":
-				// 영상 전송 중단 + 모니터 경고 해제
-				stopCam();
+				// 폰 카메라 보안 해제
+				stopScam();
 				if (KootPanKingThreeLaunch.mainWindow != null) {
 					javafx.application.Platform.runLater(() ->
 						KootPanKingThreeLaunch.mainWindow.doAllClear());
 				}
-				sendTelegram("✅ All Clear — 침입 감지 해제");
+				sendTelegram("✅ All Clear — 폰캠 침입 감지 해제");
+				break;
+
+			case "/wallclear":
+				// 웹캠 보안 해제
+				stopCam();
+				if (KootPanKingThreeLaunch.mainWindow != null) {
+					javafx.application.Platform.runLater(() ->
+						KootPanKingThreeLaunch.mainWindow.doWebAllClear());
+				}
+				sendTelegram("✅ Web All Clear — 웹캠 침입 감지 해제");
 				break;
 			case "/c":
 			case "/capture":

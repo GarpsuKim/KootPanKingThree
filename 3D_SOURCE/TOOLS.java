@@ -2212,6 +2212,19 @@ public class TOOLS {
 					}
 					sarxosWc = wc;
 
+					// ── 최대 해상도 선택 (open() 전에 설정해야 함) ──────
+					java.awt.Dimension[] sizes = wc.getViewSizes();
+					if (sizes != null && sizes.length > 0) {
+						java.awt.Dimension best = sizes[0];
+						for (java.awt.Dimension d : sizes) {
+							if (d.width * d.height > best.width * best.height) best = d;
+						}
+						wc.setViewSize(best);
+						System.out.println("[WebcamCapture] resolution set: "
+							+ best.width + "x" + best.height
+							+ " (from " + sizes.length + " options)");
+					}
+
 					// 웹캠 열기
 					if (!wc.isOpen()) wc.open();
 					System.out.println("[WebcamCapture] opened: " + wc.getName());

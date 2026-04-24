@@ -89,14 +89,22 @@ public class MainWindow {
 
     public TOOLS.WebcamCapture getWebCam() { return webCam; }
     // ── Security Cam ──────────────────────────────────────────────
-    private TOOLS.CaptureManager.Camera   secCamera         = null;
-    private Multimedia.MotionDetector     motionDetector    = null;
-    private javafx.stage.Stage            secAlarmStage     = null;     // 빨간 경고
-    private javafx.stage.Stage            secGuardStage     = null;     // 녹색 감시중
-    private javafx.animation.Timeline     secAlarmTimeline  = null;
-    private javafx.animation.Timeline     secGuardTimeline  = null;
-    private volatile boolean              secCamMode        = false;
-    private Multimedia.CameraTabHandle    secCamTabHandle   = null;
+    // ── Phone Security Cam ────────────────────────────────────────
+    private TOOLS.CaptureManager.Camera      secCamera           = null;
+    private Multimedia.PhoneMotionDetector   motionDetector      = null;
+    private volatile boolean                 secCamMode          = false;
+    private Multimedia.CameraTabHandle       secCamTabHandle     = null;
+    private javafx.stage.Stage               phoneAlarmStage     = null;
+    private javafx.stage.Stage               phoneGuardStage     = null;
+    private javafx.animation.Timeline        phoneAlarmTimeline  = null;
+    private javafx.animation.Timeline        phoneGuardTimeline  = null;
+    // ── Web Security Cam ──────────────────────────────────────────
+    private Multimedia.WebMotionDetector     webMotionDetector   = null;
+    private volatile boolean                 webSecCamMode       = false;
+    private javafx.stage.Stage               webAlarmStage       = null;
+    private javafx.stage.Stage               webGuardStage       = null;
+    private javafx.animation.Timeline        webAlarmTimeline    = null;
+    private javafx.animation.Timeline        webGuardTimeline    = null;
     // ── Telegram 카메라 녹화 (/cam /rec) ────────────────────────
     private Multimedia.TelegramCamRecorder tgCamRec          = null;
     // ── 텔레그램 카메라 상태 오버레이 ────────────────────────────
@@ -1346,37 +1354,7 @@ public class MainWindow {
         // ── 제5서브: Phone Camera (서브메뉴) ───────────────────
         menu.getItems().add(buildPhoneCameraMenu());
 
-        menu.getItems().add(new SeparatorMenuItem());
-
-        // ── 제6서브: Security Cam ────────────────────────────────
-        menu.getItems().add(buildSecurityCamMenu());
-
         return menu;
-    }
-
-    // ── Security Cam 서브메뉴 ────────────────────────────────────
-    private Menu buildSecurityCamMenu() {
-        Menu secMenu = makeMenu("🔒 Security Cam", "Motion detection security camera");
-
-        MenuItem secStart = makeRichMenuItem("▶", "Start",
-            "Start security camera (motion detection)", null, () -> {
-            if (secCamMode) { showAlert("Security Cam is already running.", "Security Cam"); return; }
-            String url = AppContext.getCameraUrl();
-            if (url == null || url.trim().isEmpty()) {
-                showAlert("Camera URL is not set.\nPlease connect via Phone Camera → Connect first.", "Security Cam");
-                return;
-            }
-            startSecurityCam(url);
-        });
-
-        MenuItem secStop = makeRichMenuItem("⏹", "Stop",
-            "Stop security camera", null, () -> {
-            if (!secCamMode) { showAlert("Security Cam is not running.", "Security Cam"); return; }
-            stopSecurityCam();
-        });
-
-        secMenu.getItems().addAll(secStart, secStop);
-        return secMenu;
     }
 
     // ── Security Cam 시작 ────────────────────────────────────────
@@ -1408,30 +1386,30 @@ public class MainWindow {
                 return;
             }
 
-            motionDetector = new Multimedia.MotionDetector(secCamera);
+            motionDetector = new Multimedia.PhoneMotionDetector(secCamera);
             motionDetector.setListener(new Multimedia.MotionDetector.MotionListener() {
                 @Override public void onMotionDetected() {
                     javafx.application.Platform.runLater(() -> {
-                        hideSecurityGuard();
-                        showSecurityAlarm();
+                        hidePhoneSecGuard();
+                        showPhoneSecAlarm();
                         openSecurityCamTab();
                     });
-                    // 기존 /cam 명령과 동일하게 10초 영상 전송 시작
+                    // 스마트폰 카메라 10초 영상 전송 시작
                     TelegramBot tgInst = TelegramBot.getInstance();
-                    if (tgInst != null) tgInst.startCam();
+                    if (tgInst != null) tgInst.startScam();
                 }
                 @Override public void onMotionCleared() {
                     javafx.application.Platform.runLater(() -> {
-                        hideSecurityAlarm();
-                        showSecurityGuard();
+                        hidePhoneSecAlarm();
+                        if (secCamMode) showPhoneSecGuard();
                     });
-                    // 전송은 사용자가 /recstop 또는 /camBye 로 직접 중단
+                    // 전송은 사용자가 /srecstop 또는 /scamBye 로 직접 중단
                 }
             });
             motionDetector.start();
             javafx.application.Platform.runLater(() -> {
-                showSecurityGuard();   // 감시 시작 → 녹색 표시
-                showTheMainWindow();   // MainWindow 활성화
+                showPhoneSecGuard();
+                showTheMainWindow();
             });
         }, "SecCamConnect").start();
     }
@@ -1446,139 +1424,199 @@ public class MainWindow {
         }
         secCamMode = false;
         javafx.application.Platform.runLater(() -> {
-            hideSecurityAlarm();
-            hideSecurityGuard();
+            hidePhoneSecAlarm();
+            hidePhoneSecGuard();
         });
         System.out.println("[SecurityCam] stopped");
     }
 
-    // ── 녹색 "감시 카메라 작동중" 오버레이 (우하단) ───────────────
-    private void showSecurityGuard() {
-        if (secGuardStage != null) return;
-        secGuardStage = new javafx.stage.Stage();
-        secGuardStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
-        secGuardStage.setAlwaysOnTop(true);
-        secGuardStage.setResizable(false);
+    // ══════════════════════════════════════════════════════════════
+    //  Phone Security Cam 오버레이 (우하단 녹색 / 화면 중앙 빨간)
+    // ══════════════════════════════════════════════════════════════
+    private void showPhoneSecGuard() {
+        if (phoneGuardStage != null) return;
+        phoneGuardStage = new javafx.stage.Stage();
+        phoneGuardStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+        phoneGuardStage.setAlwaysOnTop(true);
+        phoneGuardStage.setResizable(false);
 
-        javafx.scene.control.Label lbl = new javafx.scene.control.Label("🔒  감시 카메라 작동중");
-        lbl.setStyle(
-            "-fx-text-fill: white;" +
-            "-fx-font-size: 14px;" +
-            "-fx-font-weight: bold;" +
-            "-fx-font-family: 'Malgun Gothic';");
-
+        javafx.scene.control.Label lbl =
+            new javafx.scene.control.Label("📷  폰 카메라 감시중");
+        lbl.setStyle("-fx-text-fill:white;-fx-font-size:14px;" +
+            "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
-        box.setPadding(new javafx.geometry.Insets(10, 18, 10, 18));
-        box.setStyle(
-            "-fx-background-color: rgba(0,140,0,0.85);" +
-            "-fx-background-radius: 9;");
+        box.setPadding(new javafx.geometry.Insets(10,18,10,18));
+        box.setStyle("-fx-background-color:rgba(0,140,0,0.85);-fx-background-radius:9;");
         box.setAlignment(javafx.geometry.Pos.CENTER);
-
         javafx.scene.Scene scene = new javafx.scene.Scene(box);
         scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
-        secGuardStage.setScene(scene);
-
-        javafx.geometry.Rectangle2D screen =
-            javafx.stage.Screen.getPrimary().getVisualBounds();
-        secGuardStage.show();
-        secGuardStage.setX(screen.getMaxX() - secGuardStage.getWidth() - 20);
-        secGuardStage.setY(screen.getMaxY() - secGuardStage.getHeight() - 20);
-
-        // 1초 깜빡임
-        secGuardTimeline = new javafx.animation.Timeline(
+        phoneGuardStage.setScene(scene);
+        javafx.geometry.Rectangle2D s = javafx.stage.Screen.getPrimary().getVisualBounds();
+        phoneGuardStage.show();
+        phoneGuardStage.setX(s.getMaxX() - phoneGuardStage.getWidth() - 20);
+        phoneGuardStage.setY(s.getMaxY() - phoneGuardStage.getHeight() - 20);
+        phoneGuardTimeline = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1.0), ev ->
                 box.setOpacity(box.getOpacity() > 0.5 ? 0.3 : 1.0)));
-        secGuardTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        secGuardTimeline.play();
-        System.out.println("[SecurityCam] guard overlay shown");
+        phoneGuardTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        phoneGuardTimeline.play();
     }
 
-    private void hideSecurityGuard() {
-        if (secGuardTimeline != null) { secGuardTimeline.stop(); secGuardTimeline = null; }
-        if (secGuardStage    != null) { secGuardStage.close();   secGuardStage    = null; }
+    private void hidePhoneSecGuard() {
+        if (phoneGuardTimeline != null) { phoneGuardTimeline.stop(); phoneGuardTimeline = null; }
+        if (phoneGuardStage    != null) { phoneGuardStage.close();   phoneGuardStage    = null; }
     }
 
-    // ── 빨간 "침입 감지!" 경고 오버레이 (화면 중앙) ──────────────
-    private void showSecurityAlarm() {
-        if (secAlarmStage != null) return;
+    private void showPhoneSecAlarm() {
+        if (phoneAlarmStage != null) return;
+        phoneAlarmStage = new javafx.stage.Stage();
+        phoneAlarmStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+        phoneAlarmStage.setAlwaysOnTop(true);
+        phoneAlarmStage.setResizable(false);
 
-        secAlarmStage = new javafx.stage.Stage();
-        secAlarmStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
-        secAlarmStage.setAlwaysOnTop(true);
-        secAlarmStage.setResizable(false);
-
-        javafx.scene.control.Label lbl = new javafx.scene.control.Label("⚠   침  입  감  지  !");
-        lbl.setStyle(
-            "-fx-text-fill: white;" +
-            "-fx-font-size: 28px;" +
-            "-fx-font-weight: bold;" +
-            "-fx-font-family: 'Malgun Gothic';");
-
-        javafx.scene.control.Button btnClear = new javafx.scene.control.Button("✅  All Clear");
-        btnClear.setStyle(
-            "-fx-background-color: rgba(255,255,255,0.90);" +
-            "-fx-text-fill: #aa0000;" +
-            "-fx-font-size: 15px;" +
-            "-fx-font-weight: bold;" +
-            "-fx-font-family: 'Malgun Gothic';" +
-            "-fx-background-radius: 6;" +
-            "-fx-padding: 6 20 6 20;");
-        btnClear.setOnAction(e -> doAllClear());
-
-        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(12, lbl, btnClear);
-        box.setPadding(new javafx.geometry.Insets(24, 40, 24, 40));
-        box.setStyle(
-            "-fx-background-color: rgba(210,0,0,0.92);" +
-            "-fx-background-radius: 14;");
+        javafx.scene.control.Label lbl =
+            new javafx.scene.control.Label("⚠   폰캠  침입 감지 !");
+        lbl.setStyle("-fx-text-fill:white;-fx-font-size:26px;" +
+            "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
+        javafx.scene.control.Button btn =
+            new javafx.scene.control.Button("✅  All Clear");
+        btn.setStyle("-fx-background-color:rgba(255,255,255,0.90);" +
+            "-fx-text-fill:#aa0000;-fx-font-size:15px;-fx-font-weight:bold;" +
+            "-fx-font-family:'Malgun Gothic';-fx-background-radius:6;-fx-padding:6 20 6 20;");
+        btn.setOnAction(e -> doAllClear());
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(12, lbl, btn);
+        box.setPadding(new javafx.geometry.Insets(24,40,24,40));
+        box.setStyle("-fx-background-color:rgba(210,0,0,0.92);-fx-background-radius:14;");
         box.setAlignment(javafx.geometry.Pos.CENTER);
-
         javafx.scene.Scene scene = new javafx.scene.Scene(box);
         scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
-        secAlarmStage.setScene(scene);
-
-        // 화면 정중앙 배치
-        javafx.geometry.Rectangle2D screen =
-            javafx.stage.Screen.getPrimary().getVisualBounds();
-        secAlarmStage.show();
-        secAlarmStage.setX(screen.getMinX() + (screen.getWidth()  - secAlarmStage.getWidth())  / 2);
-        secAlarmStage.setY(screen.getMinY() + (screen.getHeight() - secAlarmStage.getHeight()) / 2);
-
-        // 0.4초 빠른 깜빡임 (0.6 ~ 1.0 — 항상 보임)
-        secAlarmTimeline = new javafx.animation.Timeline(
+        phoneAlarmStage.setScene(scene);
+        // 화면 정중앙
+        javafx.geometry.Rectangle2D s = javafx.stage.Screen.getPrimary().getVisualBounds();
+        phoneAlarmStage.show();
+        phoneAlarmStage.setX(s.getMinX() + (s.getWidth()  - phoneAlarmStage.getWidth())  / 2);
+        phoneAlarmStage.setY(s.getMinY() + (s.getHeight() - phoneAlarmStage.getHeight()) / 2);
+        phoneAlarmTimeline = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(0.4), ev ->
                 box.setOpacity(box.getOpacity() > 0.8 ? 0.6 : 1.0)));
-        secAlarmTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        secAlarmTimeline.play();
-        System.out.println("[SecurityCam] ALARM shown");
+        phoneAlarmTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        phoneAlarmTimeline.play();
+        System.out.println("[PhoneSecCam] ALARM shown");
     }
 
-    private void hideSecurityAlarm() {
-        if (secAlarmTimeline != null) { secAlarmTimeline.stop(); secAlarmTimeline = null; }
-        if (secAlarmStage    != null) { secAlarmStage.close();   secAlarmStage    = null; }
-        System.out.println("[SecurityCam] alarm hidden");
+    private void hidePhoneSecAlarm() {
+        if (phoneAlarmTimeline != null) { phoneAlarmTimeline.stop(); phoneAlarmTimeline = null; }
+        if (phoneAlarmStage    != null) { phoneAlarmStage.close();   phoneAlarmStage    = null; }
     }
 
-    // ── All Clear — 침입 해제 ─────────────────────────────────────
+    // ── Phone All Clear ──────────────────────────────────────────
     public void doAllClear() {
-        // 영상 전송 중단
         TelegramBot tgInst = TelegramBot.getInstance();
-        if (tgInst != null) tgInst.stopCam();
-        // 경고 해제 + 녹색 복구
-        hideSecurityAlarm();
-        if (secCamMode) showSecurityGuard();
-        System.out.println("[SecurityCam] All Clear");
+        if (tgInst != null) tgInst.stopScam();
+        hidePhoneSecAlarm();
+        if (secCamMode) showPhoneSecGuard();
+        System.out.println("[PhoneSecCam] All Clear");
     }
 
-    // ── 침입 감지 시 카메라 탭 열기 ──────────────────────────────
+    // ── Phone 침입 감지 시 카메라 탭 열기 ────────────────────────
     private void openSecurityCamTab() {
-        if (secCamTabHandle != null) return;  // 이미 열려있음
+        if (secCamTabHandle != null) return;
         secCamTabHandle = Multimedia.openCameraTab(
             centerTabs, theStage,
             Boolean.parseBoolean(AppContext.get("camera.flipH", "false")),
             Boolean.parseBoolean(AppContext.get("camera.flipV", "false")));
         secCamTabHandle.setOnStopCallback(() -> secCamTabHandle = null);
         showTheMainWindow();
-        System.out.println("[SecurityCam] camera tab opened");
+        System.out.println("[PhoneSecCam] camera tab opened");
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Web Security Cam 오버레이 (좌하단 녹색 / 화면 상단 중앙 빨간)
+    // ══════════════════════════════════════════════════════════════
+    private void showWebSecGuard() {
+        if (webGuardStage != null) return;
+        webGuardStage = new javafx.stage.Stage();
+        webGuardStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+        webGuardStage.setAlwaysOnTop(true);
+        webGuardStage.setResizable(false);
+
+        javafx.scene.control.Label lbl =
+            new javafx.scene.control.Label("🌐  웹캠 감시중");
+        lbl.setStyle("-fx-text-fill:white;-fx-font-size:14px;" +
+            "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
+        box.setPadding(new javafx.geometry.Insets(10,18,10,18));
+        box.setStyle("-fx-background-color:rgba(0,100,180,0.85);-fx-background-radius:9;");
+        box.setAlignment(javafx.geometry.Pos.CENTER);
+        javafx.scene.Scene scene = new javafx.scene.Scene(box);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        webGuardStage.setScene(scene);
+        // 좌하단 배치
+        javafx.geometry.Rectangle2D s = javafx.stage.Screen.getPrimary().getVisualBounds();
+        webGuardStage.show();
+        webGuardStage.setX(s.getMinX() + 20);
+        webGuardStage.setY(s.getMaxY() - webGuardStage.getHeight() - 20);
+        webGuardTimeline = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1.0), ev ->
+                box.setOpacity(box.getOpacity() > 0.5 ? 0.3 : 1.0)));
+        webGuardTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        webGuardTimeline.play();
+    }
+
+    private void hideWebSecGuard() {
+        if (webGuardTimeline != null) { webGuardTimeline.stop(); webGuardTimeline = null; }
+        if (webGuardStage    != null) { webGuardStage.close();   webGuardStage    = null; }
+    }
+
+    private void showWebSecAlarm() {
+        if (webAlarmStage != null) return;
+        webAlarmStage = new javafx.stage.Stage();
+        webAlarmStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+        webAlarmStage.setAlwaysOnTop(true);
+        webAlarmStage.setResizable(false);
+
+        javafx.scene.control.Label lbl =
+            new javafx.scene.control.Label("⚠   웹캠  침입 감지 !");
+        lbl.setStyle("-fx-text-fill:white;-fx-font-size:26px;" +
+            "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
+        javafx.scene.control.Button btn =
+            new javafx.scene.control.Button("✅  All Clear");
+        btn.setStyle("-fx-background-color:rgba(255,255,255,0.90);" +
+            "-fx-text-fill:#880000;-fx-font-size:15px;-fx-font-weight:bold;" +
+            "-fx-font-family:'Malgun Gothic';-fx-background-radius:6;-fx-padding:6 20 6 20;");
+        btn.setOnAction(e -> doWebAllClear());
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(12, lbl, btn);
+        box.setPadding(new javafx.geometry.Insets(24,40,24,40));
+        box.setStyle("-fx-background-color:rgba(180,0,0,0.92);-fx-background-radius:14;");
+        box.setAlignment(javafx.geometry.Pos.CENTER);
+        javafx.scene.Scene scene = new javafx.scene.Scene(box);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        webAlarmStage.setScene(scene);
+        // 상단 중앙 배치 (폰캠 알람과 겹치지 않도록)
+        javafx.geometry.Rectangle2D s = javafx.stage.Screen.getPrimary().getVisualBounds();
+        webAlarmStage.show();
+        webAlarmStage.setX(s.getMinX() + (s.getWidth() - webAlarmStage.getWidth()) / 2);
+        webAlarmStage.setY(s.getMinY() + 40);
+        webAlarmTimeline = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(0.4), ev ->
+                box.setOpacity(box.getOpacity() > 0.8 ? 0.6 : 1.0)));
+        webAlarmTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        webAlarmTimeline.play();
+        System.out.println("[WebSecCam] ALARM shown");
+    }
+
+    private void hideWebSecAlarm() {
+        if (webAlarmTimeline != null) { webAlarmTimeline.stop(); webAlarmTimeline = null; }
+        if (webAlarmStage    != null) { webAlarmStage.close();   webAlarmStage    = null; }
+    }
+
+    // ── Web All Clear ────────────────────────────────────────────
+    public void doWebAllClear() {
+        TelegramBot tgInst = TelegramBot.getInstance();
+        if (tgInst != null) tgInst.stopCam();
+        hideWebSecAlarm();
+        if (webSecCamMode) showWebSecGuard();
+        System.out.println("[WebSecCam] All Clear");
     }
 
     // ── Web Camera 서브메뉴 ──────────────────────────────────────
@@ -1604,6 +1642,18 @@ public class MainWindow {
         menu.getItems().add(makeRichMenuItem("⏹", "Stop",
             "Stop webcam and recording", null,
             this::stopWebCam));
+
+        menu.getItems().add(new SeparatorMenuItem());
+
+        // 5) Secure Start
+        menu.getItems().add(makeRichMenuItem("🔒", "Secure Start",
+            "Start motion detection security (Web Camera)", null,
+            this::startWebSecurityCam));
+
+        // 6) Secure Stop
+        menu.getItems().add(makeRichMenuItem("🔓", "Secure Stop",
+            "Stop motion detection security (Web Camera)", null,
+            this::stopWebSecurityCam));
 
         menu.getItems().add(new SeparatorMenuItem());
 
@@ -1743,6 +1793,85 @@ public class MainWindow {
         }
         webCamDeviceIndex = 0;
         System.out.println("[WebCam] stopped");
+    }
+
+    // ── Web Security Cam 시작 ────────────────────────────────────
+    private void startWebSecurityCam() {
+        if (webSecCamMode) {
+            showAlert("Web Security Cam is already running.", "Web Security Cam");
+            return;
+        }
+        // 웹캠이 연결 안 되어 있으면 먼저 자동 연결
+        if (webCam == null || !webCam.isRunning()) {
+            showAlert("웹캠이 연결되지 않았습니다.\n먼저 [Connect] 를 실행하세요.", "Web Security Cam");
+            return;
+        }
+        webSecCamMode = true;
+        System.out.println("[WebSecCam] starting motion detection...");
+
+        // 첫 프레임 대기 후 MotionDetector 시작
+        new Thread(() -> {
+            long deadline = System.currentTimeMillis() + 8_000L;
+            try {
+                while (webCam.getLastFrameAWT() == null
+                        && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(200);
+                }
+            } catch (InterruptedException ignored) {}
+
+            if (webCam.getLastFrameAWT() == null) {
+                javafx.application.Platform.runLater(() -> {
+                    showAlert("웹캠 프레임을 받지 못했습니다. 연결을 확인하세요.", "Web Security Cam");
+                    webSecCamMode = false;
+                });
+                return;
+            }
+
+            // WebMotionDetector — webCam 을 직접 사용 (어댑터 불필요)
+            webMotionDetector = new Multimedia.WebMotionDetector(webCam);
+            webMotionDetector.setListener(new Multimedia.MotionDetector.MotionListener() {
+                @Override public void onMotionDetected() {
+                    javafx.application.Platform.runLater(() -> {
+                        hideWebSecGuard();
+                        showWebSecAlarm();
+                        // 웹캠 탭이 없으면 열기
+                        if (webCamTabHandle == null) connectWebCam();
+                    });
+                    // 웹캠 10초 영상 전송 시작
+                    TelegramBot tgInst = TelegramBot.getInstance();
+                    if (tgInst != null) tgInst.startCam();
+                }
+                @Override public void onMotionCleared() {
+                    javafx.application.Platform.runLater(() -> {
+                        hideWebSecAlarm();
+                        if (webSecCamMode) showWebSecGuard();
+                    });
+                }
+            });
+            webMotionDetector.start();
+            javafx.application.Platform.runLater(() -> {
+                showWebSecGuard();
+                System.out.println("[WebSecCam] motion detection active");
+            });
+        }, "WebSecCamConnect").start();
+    }
+
+    // ── Web Security Cam 정지 ────────────────────────────────────
+    private void stopWebSecurityCam() {
+        if (!webSecCamMode) {
+            showAlert("Web Security Cam is not running.", "Web Security Cam");
+            return;
+        }
+        if (webMotionDetector != null) { webMotionDetector.stop(); webMotionDetector = null; }
+        webSecCamMode = false;
+        javafx.application.Platform.runLater(() -> {
+            hideWebSecAlarm();
+            hideWebSecGuard();
+        });
+        // 텔레그램 전송 중단
+        TelegramBot tgInst = TelegramBot.getInstance();
+        if (tgInst != null) tgInst.stopCam();
+        System.out.println("[WebSecCam] stopped");
     }
 
     // ── Phone Camera 서브메뉴 ────────────────────────────────────
@@ -1911,8 +2040,28 @@ public class MainWindow {
             }, "CameraGuide").start();
         });
 
+        // ── Security Cam (Phone Camera 기반) ─────────────────────
+        MenuItem phoneSecStart = makeRichMenuItem("🔒", "Secure Start",
+            "Start motion detection security (Phone Camera)", null, () -> {
+            if (secCamMode) { showAlert("Security Cam is already running.", "Security Cam"); return; }
+            String url = AppContext.getCameraUrl();
+            if (url == null || url.trim().isEmpty()) {
+                showAlert("Camera URL is not set.\nPlease [Connect] first.", "Security Cam");
+                return;
+            }
+            startSecurityCam(url);
+        });
+
+        MenuItem phoneSecStop = makeRichMenuItem("🔓", "Secure Stop",
+            "Stop motion detection security (Phone Camera)", null, () -> {
+            if (!secCamMode) { showAlert("Security Cam is not running.", "Security Cam"); return; }
+            stopSecurityCam();
+        });
+
         phoneCam.getItems().addAll(
             camConnect, camSnapshot, mwCamVideoItem, camStop,
+            new SeparatorMenuItem(),
+            phoneSecStart, phoneSecStop,
             new SeparatorMenuItem(),
             camInstall,
             new SeparatorMenuItem(),
