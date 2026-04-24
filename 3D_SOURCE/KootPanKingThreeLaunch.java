@@ -331,6 +331,11 @@ public class KootPanKingThreeLaunch extends Application {
 	public static void main(String[] args) {
 		AppLogger.init();
 		AppContext.init();
+		// arg[0] == "1" → 한국 모드
+		if (args.length > 0 && "1".equals(args[0].trim())) {
+			AppContext.NationCode = "KR";
+			System.out.println("[Launcher] NationCode forced to KR by arg[0]=1");
+		}
 		/*
 			firstFinalGmail();
 			telegramSetup();

@@ -37,6 +37,9 @@ public final class AppContext {
     public static String theExePath;
 	public static File theExeFile;
     public static String SETTINGS_DIR;
+
+    /** 국가 코드: "KR" | "EN" (기본 "EN"). main 인자 또는 ini에서 설정됨 */
+    public static String NationCode = "";
     // ── 인스턴스별 Settings File Path 및 자식 여부 ─────────────────────
     // 기본 인스턴스 : clock_settings.ini  (CONFIG_FILE 과 동)
     // 자식 인스턴스 : clock_settings_<CityName>.ini
@@ -304,6 +307,12 @@ public final class AppContext {
 			} catch (IOException ignored) {
 			System.out.println("[ERROR] NOT EXIST (config.ini)");
 		}
+        // NationCode: 이미 main 인자로 설정된 경우 ini를 덮어쓰지 않음
+        if (NationCode.isEmpty()) {
+            String v = CONFIG.getProperty("App.NationCode", "").trim();
+            NationCode = v.isEmpty() ? "EN" : v;
+        }
+        System.out.println("[AppContext] NationCode = " + NationCode);
 	}
     // =========================================================
     // [11] ini read

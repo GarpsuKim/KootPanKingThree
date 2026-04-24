@@ -32,7 +32,7 @@ start " " javaw -Dapplogger.callerTracking=true ^
      -Dprism.verbose=true ^
      --enable-native-access=javafx.graphics ^
      -cp "%CLASS_DIR%;%LIB_PATH%\*" ^
-     %CLASS_NAME% AAAAA "%CURRENT_DIR%" %CLASS_NAME% > "%ERROR_DIR%\run_%CLASS_NAME%.txt" 2>&1
+     %CLASS_NAME% aaaaaaaaa "%CURRENT_DIR%" %CLASS_NAME% > "%ERROR_DIR%\run_%CLASS_NAME%.txt" 2>&1
 
 echo.
 echo [RUN] 종료 코드: %ERRORLEVEL%
