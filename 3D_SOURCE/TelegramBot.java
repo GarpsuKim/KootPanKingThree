@@ -1018,91 +1018,139 @@ public class TelegramBot {
 		if (webcamRecRunning) { sendTelegram("⚠️ 이미 웹캠 전송 중입니다\n중단: /recstop"); return; }
 		String ffExe = AppContext.getFfmpegPath();
 		if (ffExe == null || ffExe.isEmpty()) { sendTelegram("❌ ffmpeg 경로 미설정"); return; }
-		// 웹캠 장치 확인
-		TOOLS.WebcamCapture existWc = KootPanKingThreeLaunch.mainWindow != null
+		// sarxos WebcamCapture 에서 프레임 획득 (장치 충돌 없음)
+		TOOLS.WebcamCapture wc = KootPanKingThreeLaunch.mainWindow != null
 			? KootPanKingThreeLaunch.mainWindow.getWebCam() : null;
-		int deviceIdx = (existWc != null && existWc.isRunning())
-			? existWc.getDeviceIndex()
-			: -1;
-		if (deviceIdx < 0) {
-			java.util.List<String> devs = TOOLS.WebcamCapture.listDevices(ffExe);
-			if (devs.isEmpty()) { sendTelegram("❌ PC 웹캠을 찾을 수 없습니다"); return; }
-			deviceIdx = 0; // 인덱스 0 = 시스템 기본 카메라
+		if (wc == null || !wc.isRunning() || wc.getLastFrameAWT() == null) {
+			sendTelegram("❌ 웹캠이 연결되지 않았습니다\n먼저 Web Camera → Connect 를 실행하세요");
+			return;
 		}
-		final int finalDeviceIdx = deviceIdx;
 		webcamRecRunning = true;
-		long prevMsgId = -1;
 		webcamRecThread = new Thread(() -> {
 			java.io.File recDir = new java.io.File(AppContext.getAPP_DIR(), "tg_rec/webcam");
 			recDir.mkdirs();
 			int clipIdx = 0;
-			long[] msgIdHolder = {-1};
-			while (webcamRecRunning) {
-				try {
-					// ffmpeg -f dshow -i video="X" -t 10 -vf scale=320:-2 -crf 35 -preset ultrafast clip.mp4
+			long prevMsgId = -1L;
+			try {
+				while (webcamRecRunning) {
+					// ── 10초간 프레임 수집 (10fps) ──────────────────────
+					java.io.File frameDir = new java.io.File(recDir, "frames_" + System.currentTimeMillis());
+					frameDir.mkdirs();
+					int fps = 10;
+					int frames = fps * 10; // 10초 분량
+					for (int i = 0; i < frames && webcamRecRunning; i++) {
+						java.awt.image.BufferedImage frame =
+							KootPanKingThreeLaunch.mainWindow.getWebCam() != null
+								? KootPanKingThreeLaunch.mainWindow.getWebCam().getLastFrameAWT()
+								: null;
+						if (frame != null) {
+							java.io.File f = new java.io.File(frameDir,
+								String.format("frame_%06d.jpg", i));
+							javax.imageio.ImageIO.write(frame, "jpg", f);
+						}
+						Thread.sleep(1000L / fps);
+					}
+					if (!webcamRecRunning) { deleteFrameDir(frameDir); break; }
+
+					// ── ffmpeg image2 → mp4 인코딩 ──────────────────────
 					java.io.File out = new java.io.File(recDir,
 						"wc_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss")
 							.format(new java.util.Date()) + ".mp4");
 					ProcessBuilder pb = new ProcessBuilder(
 						ffExe, "-y",
-						"-f", "mediafoundation", "-i", String.valueOf(finalDeviceIdx),
-						"-t", "10",
+						"-framerate", String.valueOf(fps),
+						"-i", new java.io.File(frameDir, "frame_%06d.jpg").getAbsolutePath(),
 						"-vf", "scale=320:-2",
 						"-c:v", "libx264", "-preset", "ultrafast", "-crf", "35",
 						"-pix_fmt", "yuv420p", "-movflags", "+faststart",
 						out.getAbsolutePath()
 					);
-					pb.redirectErrorStream(false);
+					pb.redirectErrorStream(true);
 					Process proc = pb.start();
-					proc.getErrorStream().transferTo(java.io.OutputStream.nullOutputStream());
-					proc.waitFor(15, java.util.concurrent.TimeUnit.SECONDS);
+					proc.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
+					proc.waitFor(20, java.util.concurrent.TimeUnit.SECONDS);
 					proc.destroyForcibly();
+					deleteFrameDir(frameDir);
 
 					if (out.exists() && out.length() > 0 && webcamRecRunning) {
-						if (msgIdHolder[0] > 0) deleteMessage(chatId, msgIdHolder[0]);
-						msgIdHolder[0] = sendVideoReturnId(chatId, out);
-						System.out.println("[TgWebcam] clip " + (++clipIdx) + " sent");
+						if (prevMsgId > 0) deleteMessage(chatId, prevMsgId);
+						prevMsgId = sendVideoReturnId(chatId, out);
+						System.out.println("[TgWebcam] clip " + (++clipIdx) + " sent msgId=" + prevMsgId);
 					}
-				} catch (Exception e) {
-					System.out.println("[TgWebcam] error: " + e.getMessage());
 				}
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			} catch (Exception e) {
+				System.out.println("[TgWebcam] error: " + e.getMessage());
+			} finally {
+				webcamRecRunning = false; // ← 반드시 복원
+				System.out.println("[TgWebcam] loop ended");
 			}
 		}, "TgWebcamLoop");
 		webcamRecThread.setDaemon(true);
 		webcamRecThread.start();
 	}
 
+	/** 프레임 임시 디렉토리 삭제 */
+	private void deleteFrameDir(java.io.File dir) {
+		if (dir == null || !dir.exists()) return;
+		java.io.File[] files = dir.listFiles();
+		if (files != null) for (java.io.File f : files) f.delete();
+		dir.delete();
+	}
+
 	private void startWebcamSingleRec(String chatId, int sec) {
+		String ffExe = AppContext.getFfmpegPath();
+		if (ffExe == null || ffExe.isEmpty()) { sendTelegram("❌ ffmpeg 경로 미설정"); return; }
+		TOOLS.WebcamCapture wc = KootPanKingThreeLaunch.mainWindow != null
+			? KootPanKingThreeLaunch.mainWindow.getWebCam() : null;
+		if (wc == null || !wc.isRunning() || wc.getLastFrameAWT() == null) {
+			sendTelegram("❌ 웹캠 미연결"); return;
+		}
 		sendTelegram("🎥 웹캠 " + sec + "초 녹화 시작...");
 		new Thread(() -> {
-			String ffExe = AppContext.getFfmpegPath();
-			if (ffExe == null) { sendTelegram("❌ ffmpeg 경로 미설정"); return; }
-			java.util.List<String> devs = TOOLS.WebcamCapture.listDevices(ffExe);
-			if (devs.isEmpty()) { sendTelegram("❌ 웹캠 없음"); return; }
 			java.io.File recDir = new java.io.File(AppContext.getAPP_DIR(), "tg_rec/webcam");
 			recDir.mkdirs();
-			java.io.File out = new java.io.File(recDir,
-				"wc_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss")
-					.format(new java.util.Date()) + ".mp4");
+			java.io.File frameDir = new java.io.File(recDir, "single_" + System.currentTimeMillis());
+			frameDir.mkdirs();
 			try {
+				int fps = 10;
+				int frames = fps * sec;
+				for (int i = 0; i < frames; i++) {
+					java.awt.image.BufferedImage frame =
+						KootPanKingThreeLaunch.mainWindow.getWebCam() != null
+							? KootPanKingThreeLaunch.mainWindow.getWebCam().getLastFrameAWT()
+							: null;
+					if (frame != null) {
+						java.io.File f = new java.io.File(frameDir,
+							String.format("frame_%06d.jpg", i));
+						javax.imageio.ImageIO.write(frame, "jpg", f);
+					}
+					Thread.sleep(1000L / fps);
+				}
+				java.io.File out = new java.io.File(recDir,
+					"wc_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss")
+						.format(new java.util.Date()) + ".mp4");
 				ProcessBuilder pb = new ProcessBuilder(
 					ffExe, "-y",
-					"-f", "dshow", "-i", "video=" + devs.get(0),
-					"-t", String.valueOf(sec),
+					"-framerate", String.valueOf(fps),
+					"-i", new java.io.File(frameDir, "frame_%06d.jpg").getAbsolutePath(),
 					"-vf", "scale=320:-2",
 					"-c:v", "libx264", "-preset", "ultrafast", "-crf", "35",
 					"-pix_fmt", "yuv420p", "-movflags", "+faststart",
 					out.getAbsolutePath()
 				);
-				pb.redirectErrorStream(false);
+				pb.redirectErrorStream(true);
 				Process proc = pb.start();
-				proc.getErrorStream().transferTo(java.io.OutputStream.nullOutputStream());
-				proc.waitFor(sec + 10L, java.util.concurrent.TimeUnit.SECONDS);
+				proc.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
+				proc.waitFor(sec + 15L, java.util.concurrent.TimeUnit.SECONDS);
 				proc.destroyForcibly();
 				if (out.exists() && out.length() > 0) sendVideo(chatId, out);
 				else sendTelegram("❌ 녹화 실패");
 			} catch (Exception e) {
 				sendTelegram("❌ 녹화 오류: " + e.getMessage());
+			} finally {
+				deleteFrameDir(frameDir);
 			}
 		}, "TgWebcamSingle").start();
 	}
