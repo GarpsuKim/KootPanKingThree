@@ -82,6 +82,12 @@ public class MainWindow {
     private static  ChimeController    chimeController; // lazy-init
     // ── Phone Camera (MainWindow 전용) ───────────────────────────
     private TOOLS.CaptureManager.Camera   mwCamera          = null;
+    // ── Web Camera (PC 내장/USB 웹캠) ────────────────────────────
+    private TOOLS.WebcamCapture           webCam            = null;
+    private Multimedia.CameraTabHandle    webCamTabHandle   = null;
+    private int                           webCamDeviceIndex = 0;
+
+    public TOOLS.WebcamCapture getWebCam() { return webCam; }
     // ── Security Cam ──────────────────────────────────────────────
     private TOOLS.CaptureManager.Camera   secCamera         = null;
     private Multimedia.MotionDetector     motionDetector    = null;
@@ -1328,11 +1334,8 @@ public class MainWindow {
 
         menu.getItems().add(new SeparatorMenuItem());
 
-        // ── 제3서브: Web Camera (disabled) ──────────────────────
-        MenuItem webCam = makeRichMenuItem("🌐", "Web Camera",
-            "Not available yet", null, null);
-        webCam.setDisable(true);
-        menu.getItems().add(webCam);
+        // ── 제3서브: Web Camera (서브메뉴) ──────────────────────
+        menu.getItems().add(buildWebCameraMenu());
 
         // ── 제4서브: IP Camera (disabled) ──────────────────────
         MenuItem ipCam = makeRichMenuItem("📡", "IP Camera",
@@ -1511,7 +1514,18 @@ public class MainWindow {
             "-fx-font-weight: bold;" +
             "-fx-font-family: 'Malgun Gothic';");
 
-        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
+        javafx.scene.control.Button btnClear = new javafx.scene.control.Button("✅  All Clear");
+        btnClear.setStyle(
+            "-fx-background-color: rgba(255,255,255,0.90);" +
+            "-fx-text-fill: #aa0000;" +
+            "-fx-font-size: 15px;" +
+            "-fx-font-weight: bold;" +
+            "-fx-font-family: 'Malgun Gothic';" +
+            "-fx-background-radius: 6;" +
+            "-fx-padding: 6 20 6 20;");
+        btnClear.setOnAction(e -> doAllClear());
+
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(12, lbl, btnClear);
         box.setPadding(new javafx.geometry.Insets(24, 40, 24, 40));
         box.setStyle(
             "-fx-background-color: rgba(210,0,0,0.92);" +
@@ -1529,10 +1543,10 @@ public class MainWindow {
         secAlarmStage.setX(screen.getMinX() + (screen.getWidth()  - secAlarmStage.getWidth())  / 2);
         secAlarmStage.setY(screen.getMinY() + (screen.getHeight() - secAlarmStage.getHeight()) / 2);
 
-        // 0.4초 빠른 깜빡임
+        // 0.4초 빠른 깜빡임 (0.6 ~ 1.0 — 항상 보임)
         secAlarmTimeline = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(0.4), ev ->
-                box.setOpacity(box.getOpacity() > 0.5 ? 0.1 : 1.0)));
+                box.setOpacity(box.getOpacity() > 0.8 ? 0.6 : 1.0)));
         secAlarmTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
         secAlarmTimeline.play();
         System.out.println("[SecurityCam] ALARM shown");
@@ -1542,6 +1556,17 @@ public class MainWindow {
         if (secAlarmTimeline != null) { secAlarmTimeline.stop(); secAlarmTimeline = null; }
         if (secAlarmStage    != null) { secAlarmStage.close();   secAlarmStage    = null; }
         System.out.println("[SecurityCam] alarm hidden");
+    }
+
+    // ── All Clear — 침입 해제 ─────────────────────────────────────
+    public void doAllClear() {
+        // 영상 전송 중단
+        TelegramBot tgInst = TelegramBot.getInstance();
+        if (tgInst != null) tgInst.stopCam();
+        // 경고 해제 + 녹색 복구
+        hideSecurityAlarm();
+        if (secCamMode) showSecurityGuard();
+        System.out.println("[SecurityCam] All Clear");
     }
 
     // ── 침입 감지 시 카메라 탭 열기 ──────────────────────────────
@@ -1554,6 +1579,170 @@ public class MainWindow {
         secCamTabHandle.setOnStopCallback(() -> secCamTabHandle = null);
         showTheMainWindow();
         System.out.println("[SecurityCam] camera tab opened");
+    }
+
+    // ── Web Camera 서브메뉴 ──────────────────────────────────────
+    private Menu buildWebCameraMenu() {
+        Menu menu = makeMenu("🌐 Web Camera", "PC built-in / USB webcam");
+
+        // 1) Connect
+        menu.getItems().add(makeRichMenuItem("🔌", "Connect",
+            "Connect to PC webcam and show live feed in tab", null,
+            this::connectWebCam));
+
+        // 2) Save
+        menu.getItems().add(makeRichMenuItem("💾", "Save",
+            "Save current webcam frame as image file", null,
+            this::saveWebCamSnapshot));
+
+        // 3) Start Video Recording
+        menu.getItems().add(makeRichMenuItem("🔴", "Start Video Recording",
+            "Record webcam video to file", null,
+            this::startWebCamRecording));
+
+        // 4) Stop
+        menu.getItems().add(makeRichMenuItem("⏹", "Stop",
+            "Stop webcam and recording", null,
+            this::stopWebCam));
+
+        menu.getItems().add(new SeparatorMenuItem());
+
+        // 5) Install — Windows 카메라 설정 열기
+        menu.getItems().add(makeRichMenuItem("⚙", "Install",
+            "Open Windows Camera settings", null, () -> {
+            try {
+                Runtime.getRuntime().exec("ms-settings:camera");
+            } catch (Exception e) {
+                try {
+                    Runtime.getRuntime().exec(
+                        new String[]{"cmd", "/c", "start", "ms-settings:camera"});
+                } catch (Exception e2) {
+                    showAlert("Cannot open camera settings:\n" + e2.getMessage(), "Web Camera");
+                }
+            }
+        }));
+
+        // 6) Guide
+        menu.getItems().add(makeRichMenuItem("📖", "Guide",
+            "How to use webcam", null, () ->
+            showAlert(
+                "PC 웹캠 사용 방법\n\n" +
+                "1. [Install] 클릭 → Windows 카메라 설정 열기\n" +
+                "2. 카메라 권한 허용 확인\n" +
+                "3. [Connect] 클릭 → 장치 선택 후 라이브 피드 시작\n\n" +
+                "Windows 카메라 설정 화면 하단의 도움말 링크를 참조하세요.\n\n" +
+                "문제가 있으면:\n" +
+                "설정 → 개인 정보 보호 → 카메라 → 앱 접근 허용",
+                "Web Camera Guide")));
+
+        return menu;
+    }
+
+    // ── Web Camera: Connect ──────────────────────────────────────
+    private void connectWebCam() {
+        // sarxos webcam-capture 방식: ffmpeg 불필요
+        // 장치 목록 조회 (별도 스레드 — Webcam.getWebcams() 가 블로킹)
+        new Thread(() -> {
+            java.util.List<String> devices = TOOLS.WebcamCapture.listDevices(null);
+            javafx.application.Platform.runLater(() -> {
+                if (devices.isEmpty()) {
+                    showAlert("웹캠 장치를 찾을 수 없습니다.\n카메라가 연결되어 있는지 확인하세요.", "Web Camera");
+                    return;
+                }
+                if (devices.size() == 1) {
+                    startWebCamFeed(0, devices.get(0));
+                    return;
+                }
+                // 장치 2개 이상 → 선택 다이얼로그
+                javafx.scene.control.ChoiceDialog<String> dlg =
+                    new javafx.scene.control.ChoiceDialog<>(devices.get(0), devices);
+                dlg.setTitle("Web Camera");
+                dlg.setHeaderText("웹캠 장치를 선택하세요");
+                dlg.setContentText("Camera:");
+                dlg.showAndWait().ifPresent(selected -> {
+                    int idx = devices.indexOf(selected);
+                    startWebCamFeed(idx, selected);
+                });
+            });
+        }, "WebCamListDevices").start();
+    }
+
+    private void startWebCamFeed(int deviceIndex, String deviceName) {
+        if (webCam != null) { webCam.stop(); webCam = null; }
+        webCamDeviceIndex = deviceIndex;
+        // 탭 열기 — AppContext 저장 flip 설정 반영
+        boolean flipH = Boolean.parseBoolean(AppContext.get("camera.flipH", "false"));
+        boolean flipV = Boolean.parseBoolean(AppContext.get("camera.flipV", "false"));
+        if (webCamTabHandle == null) {
+            webCamTabHandle = Multimedia.openCameraTab(centerTabs, theStage, flipH, flipV);
+            webCamTabHandle.setOnStopCallback(() -> {
+                if (webCam != null) { webCam.stop(); webCam = null; }
+                webCamTabHandle = null;
+            });
+        } else {
+            // 탭 재활용 시 flip만 갱신 (OnStopCallback 중복 등록 방지)
+            webCamTabHandle.setFlipH(flipH);
+            webCamTabHandle.setFlipV(flipV);
+        }
+        // sarxos WebcamCapture 시작 — ffExe=null (사용 안 함)
+        webCam = new TOOLS.WebcamCapture(null, deviceIndex, deviceName, frame -> {
+            Multimedia.CameraTabHandle h = webCamTabHandle;
+            if (h != null) {
+                javafx.scene.image.WritableImage fxImg =
+                    javafx.embed.swing.SwingFXUtils.toFXImage(frame, null);
+                javafx.application.Platform.runLater(() -> h.onFrame(fxImg));
+            }
+        });
+        webCam.start();
+        showTheMainWindow();
+        System.out.println("[WebCam] connected: index=" + deviceIndex + " name=" + deviceName);
+    }
+
+    // ── Web Camera: Save snapshot ────────────────────────────────
+    private void saveWebCamSnapshot() {
+        if (webCam == null || !webCam.isRunning()) {
+            showAlert("웹캠이 연결되지 않았습니다.\n먼저 [Connect] 를 실행하세요.", "Web Camera");
+            return;
+        }
+        java.awt.image.BufferedImage frame = webCam.getLastFrameAWT();
+        if (frame == null) { showAlert("캡처된 프레임이 없습니다.", "Web Camera"); return; }
+        javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+        fc.setTitle("Save Webcam Image");
+        fc.getExtensionFilters().add(
+            new javafx.stage.FileChooser.ExtensionFilter("JPEG Image", "*.jpg"));
+        fc.setInitialFileName("webcam_" +
+            new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date()) + ".jpg");
+        java.io.File dest = fc.showSaveDialog(theStage);
+        if (dest == null) return;
+        try {
+            javax.imageio.ImageIO.write(frame, "jpg", dest);
+            showAlert("저장 완료: " + dest.getName(), "Web Camera");
+        } catch (Exception e) {
+            showAlert("저장 실패: " + e.getMessage(), "Web Camera");
+        }
+    }
+
+    // ── Web Camera: Start Video Recording ───────────────────────
+    private void startWebCamRecording() {
+        if (webCam == null || !webCam.isRunning()) {
+            showAlert("웹캠이 연결되지 않았습니다.\n먼저 [Connect] 를 실행하세요.", "Web Camera");
+            return;
+        }
+        // 스마트폰 카메라의 startMwCamera 녹화와 동일하게 mwCamera 패턴 재사용
+        showAlert("녹화는 Phone Camera의 [Start Video Recording] 과 동일하게 동작합니다.\n" +
+                  "현재 웹캠 피드가 탭에 표시되고 있습니다.", "Web Camera");
+        // TODO: TelegramCamRecorder 연동 (다음 단계)
+    }
+
+    // ── Web Camera: Stop ─────────────────────────────────────────
+    private void stopWebCam() {
+        if (webCam != null) { webCam.stop(); webCam = null; }
+        if (webCamTabHandle != null) {
+            webCamTabHandle.closeTab();
+            webCamTabHandle = null;
+        }
+        webCamDeviceIndex = 0;
+        System.out.println("[WebCam] stopped");
     }
 
     // ── Phone Camera 서브메뉴 ────────────────────────────────────

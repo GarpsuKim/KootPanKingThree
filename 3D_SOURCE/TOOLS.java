@@ -2111,4 +2111,195 @@ public class TOOLS {
 			}
 		}
 	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// ═══════════════════════════════════════════════════════════════════
+	// ═══════════════════════════════════════════════════════════════════
+	//  WebcamCapture — sarxos/webcam-capture 라이브러리 기반 PC 웹캠 캡처
+	//
+	//  ffmpeg 파이프 방식 대신 OS 카메라 API(MediaFoundation/V4L2 등)를
+	//  JNA 로 직접 호출하므로, 윈도우 카메라 앱과 동일한 방식으로 웹캠에 접근.
+	//
+	//  필요 JAR (빌드패스에 추가):
+	//    webcam-capture-0.3.12.jar   — https://github.com/sarxos/webcam-capture
+	//    bridj-0.7.0.jar             — JNA 백엔드 (webcam-capture 에 번들)
+	//    slf4j-api-*.jar             — 로깅 인터페이스
+	//    slf4j-simple-*.jar          — 로깅 구현체 (없으면 경고만 뜸)
+	//
+	//  사용:
+	//    List<String> names = WebcamCapture.listDevices(null); // ffExe 무시
+	//    WebcamCapture wc = new WebcamCapture(null, 0, names.get(0), callback);
+	//    wc.start();  /  wc.stop();
+	// ═══════════════════════════════════════════════════════════════════
+	public static class WebcamCapture {
+
+		public interface FrameCallback {
+			void onFrame(java.awt.image.BufferedImage frame);
+		}
+
+		// ── 필드 ─────────────────────────────────────────────────────
+		// ffExe: 하위 호환용 — sarxos 방식에서는 사용하지 않음
+		@SuppressWarnings("unused")
+		private final String        ffExe;
+		private final int           deviceIndex;
+		private final String        deviceName;
+		private final FrameCallback callback;
+
+		public int targetFps = 15; // 목표 FPS (sarxos Webcam.setViewSize 힌트용)
+
+		private volatile boolean    running      = false;
+		private volatile com.github.sarxos.webcam.Webcam sarxosWc = null;
+		private volatile java.awt.image.BufferedImage    lastFrame = null;
+		private Thread captureThread;
+
+		// ── 생성자 ───────────────────────────────────────────────────
+		public WebcamCapture(String ffExe, int deviceIndex, String deviceName,
+				FrameCallback callback) {
+			this.ffExe       = ffExe;
+			this.deviceIndex = deviceIndex;
+			this.deviceName  = (deviceName != null && !deviceName.isEmpty())
+								? deviceName : String.valueOf(deviceIndex);
+			this.callback    = callback;
+		}
+
+		/** 하위 호환용 — deviceName 생략 */
+		public WebcamCapture(String ffExe, int deviceIndex, FrameCallback callback) {
+			this(ffExe, deviceIndex, String.valueOf(deviceIndex), callback);
+		}
+
+		// ── 공개 API ─────────────────────────────────────────────────
+		public java.awt.image.BufferedImage getLastFrameAWT() { return lastFrame; }
+		public boolean isRunning()    { return running; }
+		public int     getDeviceIndex() { return deviceIndex; }
+
+		public void start() {
+			if (running) return;
+			running = true;
+			captureThread = new Thread(this::captureLoop, "WebcamCapture");
+			captureThread.setDaemon(true);
+			captureThread.start();
+			System.out.println("[WebcamCapture] start: index=" + deviceIndex
+				+ " name=" + deviceName);
+		}
+
+		public void stop() {
+			running = false;
+			com.github.sarxos.webcam.Webcam wc = sarxosWc;
+			if (wc != null) {
+				try { wc.close(); } catch (Exception ignored) {}
+				sarxosWc = null;
+			}
+			if (captureThread != null) {
+				captureThread.interrupt();
+				captureThread = null;
+			}
+			System.out.println("[WebcamCapture] stopped");
+		}
+
+		// ── 캡처 루프 ────────────────────────────────────────────────
+		private void captureLoop() {
+			final int MAX_FAIL = 5;
+			int failCount = 0;
+
+			while (running) {
+				com.github.sarxos.webcam.Webcam wc = null;
+				try {
+					wc = resolveDevice();
+					if (wc == null) {
+						System.out.println("[WebcamCapture] device not found: " + deviceName);
+						Thread.sleep(3000);
+						continue;
+					}
+					sarxosWc = wc;
+
+					// 웹캠 열기
+					if (!wc.isOpen()) wc.open();
+					System.out.println("[WebcamCapture] opened: " + wc.getName());
+					failCount = 0;
+
+					// 프레임 루프
+					int frameCount = 0;
+					while (running) {
+						java.awt.image.BufferedImage img = wc.getImage();
+						if (img == null) {
+							// 일시적 null — 몇 ms 대기 후 재시도
+							Thread.sleep(50);
+							continue;
+						}
+						lastFrame = img;
+						if (callback != null) callback.onFrame(img);
+						if (++frameCount == 1)
+							System.out.println("[WebcamCapture] ✅ first frame "
+								+ img.getWidth() + "x" + img.getHeight());
+
+						// FPS 제어 — targetFps 에 맞게 대기
+						long sleepMs = 1000L / Math.max(1, targetFps);
+						Thread.sleep(sleepMs);
+					}
+
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					break;
+				} catch (Exception e) {
+					if (!running) break;
+					failCount++;
+					System.out.println("[WebcamCapture] error (" + failCount + "/"
+						+ MAX_FAIL + "): " + e.getMessage());
+					if (failCount >= MAX_FAIL) {
+						System.out.println("[WebcamCapture] giving up after " + MAX_FAIL + " failures");
+						break;
+					}
+					try { Thread.sleep(2000); } catch (InterruptedException ie2) { break; }
+				} finally {
+					if (wc != null && wc.isOpen()) {
+						try { wc.close(); } catch (Exception ignored) {}
+					}
+					sarxosWc = null;
+				}
+			}
+		}
+
+		// ── 장치 선택 ────────────────────────────────────────────────
+		/**
+		 * deviceName 이 있으면 이름으로 장치를 찾고,
+		 * 없으면 deviceIndex 번째 장치를 반환.
+		 */
+		private com.github.sarxos.webcam.Webcam resolveDevice() {
+			java.util.List<com.github.sarxos.webcam.Webcam> all =
+				com.github.sarxos.webcam.Webcam.getWebcams();
+			if (all == null || all.isEmpty()) return null;
+
+			// 이름으로 먼저 탐색
+			if (deviceName != null && !deviceName.isEmpty()
+					&& !deviceName.equals(String.valueOf(deviceIndex))) {
+				for (com.github.sarxos.webcam.Webcam w : all) {
+					if (w.getName().contains(deviceName)) return w;
+				}
+			}
+			// 인덱스로 fallback
+			int idx = Math.max(0, Math.min(deviceIndex, all.size() - 1));
+			return all.get(idx);
+		}
+
+		// ── 장치 목록 ────────────────────────────────────────────────
+		/**
+		 * 시스템에 연결된 웹캠 이름 목록 반환.
+		 * ffExe 파라미터는 하위 호환용 — 무시됨.
+		 */
+		public static java.util.List<String> listDevices(String ffExe) {
+			java.util.List<String> names = new java.util.ArrayList<>();
+			try {
+				java.util.List<com.github.sarxos.webcam.Webcam> all =
+					com.github.sarxos.webcam.Webcam.getWebcams();
+				if (all != null) {
+					for (com.github.sarxos.webcam.Webcam w : all)
+						names.add(w.getName());
+				}
+			} catch (Exception e) {
+				System.out.println("[WebcamCapture] listDevices error: " + e.getMessage());
+			}
+			System.out.println("[WebcamCapture] devices: " + names);
+			return names;
+		}
+	}
 }
