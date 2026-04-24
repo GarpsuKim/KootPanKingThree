@@ -1106,4 +1106,139 @@ public class Multimedia {
             dir.delete();
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  MotionDetector — 연속 프레임 비교로 움직임 감지
+    //
+    //  사용:
+    //    MotionDetector md = new MotionDetector(camera);
+    //    md.setListener(new MotionDetector.MotionListener() { ... });
+    //    md.start();   /   md.stop();
+    // ═══════════════════════════════════════════════════════════════════
+    public static class MotionDetector {
+
+        /** 감지 이벤트 콜백 */
+        public interface MotionListener {
+            /** 움직임 감지 시 호출 (FX 스레드 아님 — runLater 필요) */
+            void onMotionDetected();
+            /** 움직임이 사라졌을 때 호출 */
+            void onMotionCleared();
+        }
+
+        // ── 파라미터 (필요 시 외부에서 조정 가능) ───────────────────────
+        /** 비교용 축소 해상도 너비 */
+        public int  compareWidth     = 80;
+        /** 비교용 축소 해상도 높이 */
+        public int  compareHeight    = 60;
+        /** 픽셀 평균 차이 임계값 (0~255, 낮을수록 민감) */
+        public int  diffThreshold    = 20;
+        /** 감지 판정 최소 변화 픽셀 비율 (0.0~1.0) */
+        public double motionRatio    = 0.05; // 5% 이상 변화 시 감지
+        /** 프레임 비교 간격 (ms) */
+        public long intervalMs       = 500;
+        /** 움직임 종료 판정: N회 연속 미감지 시 cleared */
+        public int  clearCount       = 4;
+
+        private final TOOLS.CaptureManager.Camera camera;
+        private volatile boolean running         = false;
+        private volatile boolean motionActive    = false;
+        private Thread detectorThread;
+        private MotionListener listener;
+
+        public MotionDetector(TOOLS.CaptureManager.Camera camera) {
+            this.camera = camera;
+        }
+
+        public void setListener(MotionListener l) { this.listener = l; }
+        public boolean isRunning()   { return running; }
+        public boolean isMotion()    { return motionActive; }
+
+        public void start() {
+            if (running) return;
+            running = true;
+            motionActive = false;
+            detectorThread = new Thread(this::loop, "MotionDetector");
+            detectorThread.setDaemon(true);
+            detectorThread.start();
+            System.out.println("[MotionDetector] started");
+        }
+
+        public void stop() {
+            running = false;
+            if (detectorThread != null) detectorThread.interrupt();
+            motionActive = false;
+            System.out.println("[MotionDetector] stopped");
+        }
+
+        private void loop() {
+            int[] prevGray = null;
+            int noMotionCount = 0;
+            while (running) {
+                try {
+                    Thread.sleep(intervalMs);
+                    java.awt.image.BufferedImage frame = camera.getLastFrameAWT();
+                    if (frame == null) continue;
+
+                    // 축소 후 그레이스케일 변환
+                    int[] gray = toGray(frame, compareWidth, compareHeight);
+                    if (prevGray == null) { prevGray = gray; continue; }
+
+                    // 픽셀 차이 계산
+                    int diffPixels = 0;
+                    for (int i = 0; i < gray.length; i++) {
+                        if (Math.abs(gray[i] - prevGray[i]) > diffThreshold) diffPixels++;
+                    }
+                    prevGray = gray;
+
+                    double ratio = (double) diffPixels / gray.length;
+                    boolean detected = ratio >= motionRatio;
+
+                    if (detected) {
+                        noMotionCount = 0;
+                        if (!motionActive) {
+                            motionActive = true;
+                            System.out.println("[MotionDetector] MOTION DETECTED (ratio=" +
+                                String.format("%.2f", ratio * 100) + "%)");
+                            if (listener != null) listener.onMotionDetected();
+                        }
+                    } else {
+                        if (motionActive) {
+                            noMotionCount++;
+                            if (noMotionCount >= clearCount) {
+                                motionActive = false;
+                                noMotionCount = 0;
+                                System.out.println("[MotionDetector] motion cleared");
+                                if (listener != null) listener.onMotionCleared();
+                            }
+                        }
+                    }
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.out.println("[MotionDetector] error: " + e.getMessage());
+                }
+            }
+        }
+
+        /** BufferedImage → 축소 그레이스케일 int[] */
+        private static int[] toGray(java.awt.image.BufferedImage src, int w, int h) {
+            java.awt.image.BufferedImage small =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g = small.createGraphics();
+            g.drawImage(src, 0, 0, w, h, null);
+            g.dispose();
+            int[] gray = new int[w * h];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int rgb = small.getRGB(x, y);
+                    int r = (rgb >> 16) & 0xff;
+                    int gv= (rgb >>  8) & 0xff;
+                    int b =  rgb        & 0xff;
+                    gray[y * w + x] = (r * 77 + gv * 150 + b * 29) >> 8;
+                }
+            }
+            return gray;
+        }
+    }
 }
