@@ -114,6 +114,18 @@ public class TelegramBot {
 	
 	private static String  botToken  = "";  // BotFather 에서 발급받은 Bot Token
     private static String  myChatId  = "";  // 허용된 Chat ID (보안) - 비어있으면 All 허용
+
+    public String getMyChatId() { return myChatId; }
+
+    /** Security Cam 등 외부에서 /cam 과 동일한 동작을 트리거 */
+    public void startCam() {
+        if (!myChatId.isEmpty()) processCommand(myChatId, "/cam");
+    }
+
+    /** Security Cam 등 외부에서 /recstop 과 동일한 동작을 트리거 */
+    public void stopCam() {
+        if (!myChatId.isEmpty()) processCommand(myChatId, "/recstop");
+    }
     public volatile boolean polling = false; // 폴링 activation 여부
     public static String  appDir    = AppContext.theExeFile.getParent();
     // ── 내부 상태 ─────────────────────────────────────────────────

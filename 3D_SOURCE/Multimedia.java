@@ -565,6 +565,11 @@ public class Multimedia {
         }
         public void setOnStopCallback(Runnable cb) { this.onStopCallback = cb; }
 
+        /** 탭을 프로그래밍 방식으로 닫는다 (FX 스레드에서 호출) */
+        public void closeTab() {
+            if (ownerTabs != null) ownerTabs.getTabs().remove(tab);
+        }
+
         private void fitToViewport() {
             double vpW = scrollPane.getViewportBounds().getWidth();
             double vpH = scrollPane.getViewportBounds().getHeight();

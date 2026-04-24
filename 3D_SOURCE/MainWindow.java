@@ -85,9 +85,12 @@ public class MainWindow {
     // ── Security Cam ──────────────────────────────────────────────
     private TOOLS.CaptureManager.Camera   secCamera         = null;
     private Multimedia.MotionDetector     motionDetector    = null;
-    private javafx.stage.Stage            secAlarmStage     = null;
+    private javafx.stage.Stage            secAlarmStage     = null;     // 빨간 경고
+    private javafx.stage.Stage            secGuardStage     = null;     // 녹색 감시중
     private javafx.animation.Timeline     secAlarmTimeline  = null;
+    private javafx.animation.Timeline     secGuardTimeline  = null;
     private volatile boolean              secCamMode        = false;
+    private Multimedia.CameraTabHandle    secCamTabHandle   = null;
     // ── Telegram 카메라 녹화 (/cam /rec) ────────────────────────
     private Multimedia.TelegramCamRecorder tgCamRec          = null;
     // ── 텔레그램 카메라 상태 오버레이 ────────────────────────────
@@ -1376,7 +1379,10 @@ public class MainWindow {
     // ── Security Cam 시작 ────────────────────────────────────────
     private void startSecurityCam(String streamUrl) {
         if (secCamera != null) secCamera.stop();
-        secCamera = new TOOLS.CaptureManager.Camera(frame -> { /* UI 없음 */ });
+        secCamera = new TOOLS.CaptureManager.Camera(frame -> {
+            Multimedia.CameraTabHandle h = secCamTabHandle;
+            if (h != null) javafx.application.Platform.runLater(() -> h.onFrame(frame));
+        });
         secCamera.start(streamUrl);
         secCamMode = true;
         System.out.println("[SecurityCam] started: " + streamUrl);
@@ -1402,15 +1408,30 @@ public class MainWindow {
             motionDetector = new Multimedia.MotionDetector(secCamera);
             motionDetector.setListener(new Multimedia.MotionDetector.MotionListener() {
                 @Override public void onMotionDetected() {
-                    javafx.application.Platform.runLater(() -> showSecurityAlarm());
+                    javafx.application.Platform.runLater(() -> {
+                        hideSecurityGuard();
+                        showSecurityAlarm();
+                        openSecurityCamTab();
+                    });
+                    // 기존 /cam 명령과 동일하게 10초 영상 전송 시작
+                    TelegramBot tgInst = TelegramBot.getInstance();
+                    if (tgInst != null) tgInst.startCam();
                 }
                 @Override public void onMotionCleared() {
-                    javafx.application.Platform.runLater(() -> hideSecurityAlarm());
+                    javafx.application.Platform.runLater(() -> {
+                        hideSecurityAlarm();
+                        showSecurityGuard();
+                    });
+                    // 전송 중단
+                    TelegramBot tgInst = TelegramBot.getInstance();
+                    if (tgInst != null) tgInst.stopCam();
                 }
             });
             motionDetector.start();
-            javafx.application.Platform.runLater(() ->
-                showAlert("🔒 Security Cam started.\nMotion detection is active.", "Security Cam"));
+            javafx.application.Platform.runLater(() -> {
+                showSecurityGuard();   // 감시 시작 → 녹색 표시
+                showTheMainWindow();   // MainWindow 활성화
+            });
         }, "SecCamConnect").start();
     }
 
@@ -1418,52 +1439,104 @@ public class MainWindow {
     private void stopSecurityCam() {
         if (motionDetector != null) { motionDetector.stop(); motionDetector = null; }
         if (secCamera != null)      { secCamera.stop();      secCamera = null; }
+        if (secCamTabHandle != null) {
+            secCamTabHandle.closeTab();
+            secCamTabHandle = null;
+        }
         secCamMode = false;
-        javafx.application.Platform.runLater(this::hideSecurityAlarm);
+        javafx.application.Platform.runLater(() -> {
+            hideSecurityAlarm();
+            hideSecurityGuard();
+        });
         System.out.println("[SecurityCam] stopped");
     }
 
-    // ── 침입 감지 알람 오버레이 ──────────────────────────────────
+    // ── 녹색 "감시 카메라 작동중" 오버레이 (우하단) ───────────────
+    private void showSecurityGuard() {
+        if (secGuardStage != null) return;
+        secGuardStage = new javafx.stage.Stage();
+        secGuardStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+        secGuardStage.setAlwaysOnTop(true);
+        secGuardStage.setResizable(false);
+
+        javafx.scene.control.Label lbl = new javafx.scene.control.Label("🔒  감시 카메라 작동중");
+        lbl.setStyle(
+            "-fx-text-fill: white;" +
+            "-fx-font-size: 14px;" +
+            "-fx-font-weight: bold;" +
+            "-fx-font-family: 'Malgun Gothic';");
+
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
+        box.setPadding(new javafx.geometry.Insets(10, 18, 10, 18));
+        box.setStyle(
+            "-fx-background-color: rgba(0,140,0,0.85);" +
+            "-fx-background-radius: 9;");
+        box.setAlignment(javafx.geometry.Pos.CENTER);
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(box);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        secGuardStage.setScene(scene);
+
+        javafx.geometry.Rectangle2D screen =
+            javafx.stage.Screen.getPrimary().getVisualBounds();
+        secGuardStage.show();
+        secGuardStage.setX(screen.getMaxX() - secGuardStage.getWidth() - 20);
+        secGuardStage.setY(screen.getMaxY() - secGuardStage.getHeight() - 20);
+
+        // 1초 깜빡임
+        secGuardTimeline = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1.0), ev ->
+                box.setOpacity(box.getOpacity() > 0.5 ? 0.3 : 1.0)));
+        secGuardTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        secGuardTimeline.play();
+        System.out.println("[SecurityCam] guard overlay shown");
+    }
+
+    private void hideSecurityGuard() {
+        if (secGuardTimeline != null) { secGuardTimeline.stop(); secGuardTimeline = null; }
+        if (secGuardStage    != null) { secGuardStage.close();   secGuardStage    = null; }
+    }
+
+    // ── 빨간 "침입 감지!" 경고 오버레이 (화면 중앙) ──────────────
     private void showSecurityAlarm() {
-        if (secAlarmStage != null) return; // 이미 표시 중
+        if (secAlarmStage != null) return;
 
         secAlarmStage = new javafx.stage.Stage();
         secAlarmStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
         secAlarmStage.setAlwaysOnTop(true);
         secAlarmStage.setResizable(false);
 
-        javafx.scene.control.Label lbl = new javafx.scene.control.Label("⚠  침입 감지 !");
+        javafx.scene.control.Label lbl = new javafx.scene.control.Label("⚠   침  입  감  지  !");
         lbl.setStyle(
             "-fx-text-fill: white;" +
-            "-fx-font-size: 20px;" +
+            "-fx-font-size: 28px;" +
             "-fx-font-weight: bold;" +
             "-fx-font-family: 'Malgun Gothic';");
 
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
-        box.setPadding(new javafx.geometry.Insets(14, 24, 14, 24));
+        box.setPadding(new javafx.geometry.Insets(24, 40, 24, 40));
         box.setStyle(
-            "-fx-background-color: rgba(200,0,0,0.90);" +
-            "-fx-background-radius: 10;");
+            "-fx-background-color: rgba(210,0,0,0.92);" +
+            "-fx-background-radius: 14;");
         box.setAlignment(javafx.geometry.Pos.CENTER);
 
         javafx.scene.Scene scene = new javafx.scene.Scene(box);
         scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
         secAlarmStage.setScene(scene);
 
-        // 화면 우상단 배치
+        // 화면 정중앙 배치
         javafx.geometry.Rectangle2D screen =
             javafx.stage.Screen.getPrimary().getVisualBounds();
         secAlarmStage.show();
-        secAlarmStage.setX(screen.getMaxX() - secAlarmStage.getWidth() - 20);
-        secAlarmStage.setY(screen.getMinY() + 20);
+        secAlarmStage.setX(screen.getMinX() + (screen.getWidth()  - secAlarmStage.getWidth())  / 2);
+        secAlarmStage.setY(screen.getMinY() + (screen.getHeight() - secAlarmStage.getHeight()) / 2);
 
-        // 0.5초 깜빡임
+        // 0.4초 빠른 깜빡임
         secAlarmTimeline = new javafx.animation.Timeline(
-            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(0.5), ev ->
-                box.setOpacity(box.getOpacity() > 0.5 ? 0.2 : 1.0)));
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(0.4), ev ->
+                box.setOpacity(box.getOpacity() > 0.5 ? 0.1 : 1.0)));
         secAlarmTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
         secAlarmTimeline.play();
-
         System.out.println("[SecurityCam] ALARM shown");
     }
 
@@ -1471,6 +1544,18 @@ public class MainWindow {
         if (secAlarmTimeline != null) { secAlarmTimeline.stop(); secAlarmTimeline = null; }
         if (secAlarmStage    != null) { secAlarmStage.close();   secAlarmStage    = null; }
         System.out.println("[SecurityCam] alarm hidden");
+    }
+
+    // ── 침입 감지 시 카메라 탭 열기 ──────────────────────────────
+    private void openSecurityCamTab() {
+        if (secCamTabHandle != null) return;  // 이미 열려있음
+        secCamTabHandle = Multimedia.openCameraTab(
+            centerTabs, theStage,
+            Boolean.parseBoolean(AppContext.get("camera.flipH", "false")),
+            Boolean.parseBoolean(AppContext.get("camera.flipV", "false")));
+        secCamTabHandle.setOnStopCallback(() -> secCamTabHandle = null);
+        showTheMainWindow();
+        System.out.println("[SecurityCam] camera tab opened");
     }
 
     // ── Phone Camera 서브메뉴 ────────────────────────────────────
