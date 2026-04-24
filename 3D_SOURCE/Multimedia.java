@@ -529,6 +529,12 @@ public class Multimedia {
             this.scrollPane = sp;
             this.tab        = t;
             this.ownerTabs  = tabs;
+
+            // tab 크기 변경 시 항상 fit (해상도 변경 없음)
+            sp.widthProperty().addListener((obs, ov, nv) ->
+                javafx.application.Platform.runLater(this::fitToViewport));
+            sp.heightProperty().addListener((obs, ov, nv) ->
+                javafx.application.Platform.runLater(this::fitToViewport));
         }
 
         /** 새 프레임 반영 (FX 스레드에서 호출) */
@@ -640,6 +646,25 @@ public class Multimedia {
         StackPane imagePane = new StackPane(imageView);
         imagePane.setAlignment(Pos.CENTER);
         imagePane.setStyle("-fx-background-color: #111111;");
+
+        // ── timestamp caption (하단 중앙 오버레이) ───────────────
+        javafx.scene.control.Label captionLbl = new javafx.scene.control.Label();
+        captionLbl.setStyle(
+            "-fx-text-fill:white;-fx-font-size:11px;-fx-font-family:'Monospaced';" +
+            "-fx-background-color:rgba(0,0,0,0.45);-fx-padding:1 6 1 6;" +
+            "-fx-background-radius:3;");
+        StackPane.setAlignment(captionLbl, Pos.BOTTOM_CENTER);
+        StackPane.setMargin(captionLbl, new Insets(0, 0, 6, 0));
+        imagePane.getChildren().add(captionLbl);
+
+        // 1초마다 caption 갱신
+        java.text.SimpleDateFormat captionSdf =
+            new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+        javafx.animation.Timeline captionTimer = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev ->
+                captionLbl.setText(captionSdf.format(new java.util.Date()))));
+        captionTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        captionTimer.play();
 
         ScrollPane scrollPane = new ScrollPane(imagePane);
         scrollPane.setFitToWidth(true);
@@ -754,6 +779,7 @@ public class Multimedia {
 
         // 탭 닫힐 때 stop 콜백 호출
         tab.setOnClosed(e -> {
+            captionTimer.stop();
             if (handle.onStopCallback != null) handle.onStopCallback.run();
         });
 

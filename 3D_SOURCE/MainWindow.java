@@ -2056,7 +2056,7 @@ public class MainWindow {
     }
 
     // ── Web Camera: Connect ──────────────────────────────────────
-    private void connectWebCam() {
+    public void connectWebCam() {
         // sarxos webcam-capture 방식: ffmpeg 불필요
         // 장치 목록 조회 (별도 스레드 — Webcam.getWebcams() 가 블로킹)
         new Thread(() -> {
@@ -2127,12 +2127,26 @@ public class MainWindow {
         fc.setTitle("Save Webcam Image");
         fc.getExtensionFilters().add(
             new javafx.stage.FileChooser.ExtensionFilter("JPEG Image", "*.jpg"));
-        fc.setInitialFileName("webcam_" +
-            new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date()) + ".jpg");
+        String ts = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+        fc.setInitialFileName("webcam_" + ts + ".jpg");
         java.io.File dest = fc.showSaveDialog(theStage);
         if (dest == null) return;
         try {
-            javax.imageio.ImageIO.write(frame, "jpg", dest);
+            // caption 추가
+            java.awt.image.BufferedImage out =
+                new java.awt.image.BufferedImage(frame.getWidth(), frame.getHeight(),
+                    java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g2 = out.createGraphics();
+            g2.drawImage(frame, 0, 0, null);
+            String caption = new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new java.util.Date());
+            g2.setFont(new java.awt.Font("Monospaced", java.awt.Font.BOLD, 14));
+            java.awt.FontMetrics fm = g2.getFontMetrics();
+            int cx = (frame.getWidth() - fm.stringWidth(caption)) / 2;
+            int cy = frame.getHeight() - 8;
+            g2.setColor(java.awt.Color.BLACK); g2.drawString(caption, cx + 1, cy + 1);
+            g2.setColor(java.awt.Color.WHITE); g2.drawString(caption, cx, cy);
+            g2.dispose();
+            javax.imageio.ImageIO.write(out, "jpg", dest);
             showAlert("저장 완료: " + dest.getName(), "Web Camera");
         } catch (Exception e) {
             showAlert("저장 실패: " + e.getMessage(), "Web Camera");
@@ -2167,6 +2181,11 @@ public class MainWindow {
     }
 
     // ── Web Security Cam 시작 ────────────────────────────────────
+    /** /SecureOn 텔레그램 명령에서 호출 — 인증 없이 시작 */
+    public void startWebSecurityCamPublic() { startWebSecurityCam(); }
+    /** /SecureOff 텔레그램 명령에서 호출 — 인증 없이 종료 */
+    public void stopWebSecurityCamPublic()  { stopWebSecurityCam(); }
+
     private void startWebSecurityCam() {
         if (webSecCamMode) {
             showAlert("Web Security Cam is already running.", "Web Security Cam");

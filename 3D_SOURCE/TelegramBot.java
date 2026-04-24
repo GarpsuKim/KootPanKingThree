@@ -636,7 +636,8 @@ public class TelegramBot {
 		"/scam", "/scamhello", "/srecstop", "/scambye", "/srec",
 		// ── PC 웹캠 ───────────────────────────────────────────────
 		"/cam", "/camhello", "/recstop", "/cambye", "/rec",
-		"/unpinall", "/allclear", "/wallclear"
+		"/unpinall", "/allclear", "/wallclear",
+		"/secureon", "/secureoff"
 	));
 	
 	private void processCommand(String chatId, String text) {
@@ -772,6 +773,25 @@ public class TelegramBot {
 						KootPanKingThreeLaunch.mainWindow.doWebAllClear());
 				}
 				sendTelegram("✅ Web All Clear — 웹캠 침입 감지 해제");
+				break;
+
+			case "/secureon":
+				// 웹캠 보안 감시 시작 + 자동 10초 영상 전송
+				if (KootPanKingThreeLaunch.mainWindow != null) {
+					javafx.application.Platform.runLater(() ->
+						KootPanKingThreeLaunch.mainWindow.startWebSecurityCamPublic());
+				}
+				sendTelegram("🔒 Web Security Cam 시작 중...");
+				break;
+
+			case "/secureoff":
+				// 웹캠 보안 감시 종료
+				stopCam();
+				if (KootPanKingThreeLaunch.mainWindow != null) {
+					javafx.application.Platform.runLater(() ->
+						KootPanKingThreeLaunch.mainWindow.stopWebSecurityCamPublic());
+				}
+				sendTelegram("🔓 Web Security Cam 종료");
 				break;
 			case "/c":
 			case "/capture":
@@ -1018,41 +1038,79 @@ public class TelegramBot {
 		if (webcamRecRunning) { sendTelegram("⚠️ 이미 웹캠 전송 중입니다\n중단: /recstop"); return; }
 		String ffExe = AppContext.getFfmpegPath();
 		if (ffExe == null || ffExe.isEmpty()) { sendTelegram("❌ ffmpeg 경로 미설정"); return; }
-		// sarxos WebcamCapture 에서 프레임 획득 (장치 충돌 없음)
+
+		// 웹캠 미연결 시 자동 connect
 		TOOLS.WebcamCapture wc = KootPanKingThreeLaunch.mainWindow != null
 			? KootPanKingThreeLaunch.mainWindow.getWebCam() : null;
 		if (wc == null || !wc.isRunning() || wc.getLastFrameAWT() == null) {
-			sendTelegram("❌ 웹캠이 연결되지 않았습니다\n먼저 Web Camera → Connect 를 실행하세요");
-			return;
+			sendTelegram("📷 웹캠 자동 연결 중...");
+			if (KootPanKingThreeLaunch.mainWindow != null) {
+				javafx.application.Platform.runLater(() ->
+					KootPanKingThreeLaunch.mainWindow.connectWebCam());
+			}
+			// 최대 10초 대기
+			long deadline = System.currentTimeMillis() + 10_000L;
+			while (System.currentTimeMillis() < deadline) {
+				try { Thread.sleep(300); } catch (InterruptedException ie) { return; }
+				TOOLS.WebcamCapture wc2 = KootPanKingThreeLaunch.mainWindow != null
+					? KootPanKingThreeLaunch.mainWindow.getWebCam() : null;
+				if (wc2 != null && wc2.isRunning() && wc2.getLastFrameAWT() != null) {
+					wc = wc2; break;
+				}
+			}
+			if (wc == null || wc.getLastFrameAWT() == null) {
+				sendTelegram("❌ 웹캠 자동 연결 실패");
+				return;
+			}
 		}
+
 		webcamRecRunning = true;
 		webcamRecThread = new Thread(() -> {
 			java.io.File recDir = new java.io.File(AppContext.getAPP_DIR(), "tg_rec/webcam");
 			recDir.mkdirs();
 			int clipIdx = 0;
-			long prevMsgId = -1L;
 			try {
 				while (webcamRecRunning) {
-					// ── 10초간 프레임 수집 (10fps) ──────────────────────
+					// ── 10초간 프레임 수집 (5fps, 240p) ────────────────
 					java.io.File frameDir = new java.io.File(recDir, "frames_" + System.currentTimeMillis());
 					frameDir.mkdirs();
-					int fps = 10;
-					int frames = fps * 10; // 10초 분량
+					int fps    = 5;   // 낮은 fps → 빠른 전송
+					int frames = fps * 10;
+					java.text.SimpleDateFormat sdf =
+						new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+
 					for (int i = 0; i < frames && webcamRecRunning; i++) {
-						java.awt.image.BufferedImage frame =
-							KootPanKingThreeLaunch.mainWindow.getWebCam() != null
-								? KootPanKingThreeLaunch.mainWindow.getWebCam().getLastFrameAWT()
-								: null;
-						if (frame != null) {
-							java.io.File f = new java.io.File(frameDir,
-								String.format("frame_%06d.jpg", i));
-							javax.imageio.ImageIO.write(frame, "jpg", f);
+						TOOLS.WebcamCapture wcNow = KootPanKingThreeLaunch.mainWindow != null
+							? KootPanKingThreeLaunch.mainWindow.getWebCam() : null;
+						java.awt.image.BufferedImage raw = wcNow != null ? wcNow.getLastFrameAWT() : null;
+						if (raw != null) {
+							// 해상도 축소 (240p)
+							int tw = 240 * raw.getWidth() / raw.getHeight();
+							if ((tw & 1) != 0) tw++;
+							java.awt.image.BufferedImage small =
+								new java.awt.image.BufferedImage(tw, 240,
+									java.awt.image.BufferedImage.TYPE_INT_RGB);
+							java.awt.Graphics2D g2 = small.createGraphics();
+							g2.drawImage(raw, 0, 0, tw, 240, null);
+							// timestamp caption
+							String ts = sdf.format(new java.util.Date());
+							g2.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 11));
+							java.awt.FontMetrics fm = g2.getFontMetrics();
+							int tx = (tw - fm.stringWidth(ts)) / 2;
+							int ty = 240 - 5;
+							g2.setColor(java.awt.Color.BLACK);
+							g2.drawString(ts, tx + 1, ty + 1);
+							g2.setColor(java.awt.Color.WHITE);
+							g2.drawString(ts, tx, ty);
+							g2.dispose();
+							javax.imageio.ImageIO.write(small, "jpg",
+								new java.io.File(frameDir, String.format("frame_%06d.jpg", i)));
 						}
 						Thread.sleep(1000L / fps);
 					}
 					if (!webcamRecRunning) { deleteFrameDir(frameDir); break; }
 
-					// ── ffmpeg image2 → mp4 인코딩 ──────────────────────
+					// ── ffmpeg image2 → mp4 ────────────────────────────
 					java.io.File out = new java.io.File(recDir,
 						"wc_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss")
 							.format(new java.util.Date()) + ".mp4");
@@ -1060,8 +1118,7 @@ public class TelegramBot {
 						ffExe, "-y",
 						"-framerate", String.valueOf(fps),
 						"-i", new java.io.File(frameDir, "frame_%06d.jpg").getAbsolutePath(),
-						"-vf", "scale=320:-2",
-						"-c:v", "libx264", "-preset", "ultrafast", "-crf", "35",
+						"-c:v", "libx264", "-preset", "ultrafast", "-crf", "38",
 						"-pix_fmt", "yuv420p", "-movflags", "+faststart",
 						out.getAbsolutePath()
 					);
@@ -1072,10 +1129,10 @@ public class TelegramBot {
 					proc.destroyForcibly();
 					deleteFrameDir(frameDir);
 
+					// 이전 메시지 삭제하지 않음 — 영증 보존
 					if (out.exists() && out.length() > 0 && webcamRecRunning) {
-						if (prevMsgId > 0) deleteMessage(chatId, prevMsgId);
-						prevMsgId = sendVideoReturnId(chatId, out);
-						System.out.println("[TgWebcam] clip " + (++clipIdx) + " sent msgId=" + prevMsgId);
+						sendVideo(chatId, out);
+						System.out.println("[TgWebcam] clip " + (++clipIdx) + " sent");
 					}
 				}
 			} catch (InterruptedException ie) {
@@ -1083,7 +1140,7 @@ public class TelegramBot {
 			} catch (Exception e) {
 				System.out.println("[TgWebcam] error: " + e.getMessage());
 			} finally {
-				webcamRecRunning = false; // ← 반드시 복원
+				webcamRecRunning = false;
 				System.out.println("[TgWebcam] loop ended");
 			}
 		}, "TgWebcamLoop");
@@ -2165,7 +2222,9 @@ public class TelegramBot {
 			"/cam       — 10초마다 동영상 전송 (연속 루프 시작)\n" +
 			"/camHello  — 사진 1장 촬영·전송\n" +
 			"/recstop   — 전송 중단\n" +
-			"/camBye    — 전송 중단 + 종료\n\n" +
+			"/camBye    — 전송 중단 + 종료\n" +
+			"/SecureOn  — 웹캠 보안 감시 시작 + 자동 10초 영상 전송\n" +
+			"/SecureOff — 웹캠 보안 감시 종료\n\n" +
 			"📱 스마트폰 카메라\n" +
 			"/scam      — 10초마다 동영상 전송 (연속 루프 시작)\n" +
 			"/scamHello — 사진 1장 촬영·전송 (미연결 시 자동 연결)\n" +
