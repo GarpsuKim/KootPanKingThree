@@ -803,9 +803,9 @@ public class Multimedia {
         }
 
         private static final int CLIP_SEC  = 10;   // 클립 길이 (초)
-        private static final int FPS       = 10;   // 캡처 프레임율
-        private static final int OUT_WIDTH = 640;  // 출력 해상도 너비 (높이는 비율 자동)
-        private static final int CRF       = 28;   // 인코딩 품질 (낮을수록 고품질·대용량, 기본 23)
+        private static final int FPS       = 5;    // 캡처 프레임율 (↓낮을수록 빠름)
+        private static final int OUT_WIDTH = 320;  // 출력 해상도 너비 (↓낮을수록 빠름)
+        private static final int CRF       = 35;   // 인코딩 품질 (↑높을수록 파일 작아짐)
 
         // ── 전송 이력 (static: 인스턴스 교체 후에도 유지) ──────────────
         private static final java.util.Set<String> sentVideoNames =
@@ -1041,8 +1041,7 @@ public class Multimedia {
                             java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                         tg.sendVideo(chatId, tgTmp);
                         sentVideoNames.add(clipName);
-                        System.out.println("[TgCamLoop] clip " + clipIdx + " SENT: " + clipName
-                            + "  (list=" + sentVideoNames.size() + ")");
+                        System.out.println("[TgCamLoop] clip " + clipIdx + " SENT: " + clipName);
                     }
 
                 } catch (InterruptedException ie) {

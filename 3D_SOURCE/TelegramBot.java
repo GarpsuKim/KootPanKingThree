@@ -598,7 +598,8 @@ public class TelegramBot {
 		"/text", "/logout_calendar",
 		"/myschedule", "/ms", "/naverschedule", "/ns",
 		"/menu", "/app",
-		"/cam", "/camhello", "/recstop", "/cambye", "/rec"
+		"/cam", "/camhello", "/recstop", "/cambye", "/rec",
+		"/unpinall"
 	));
 	
 	private void processCommand(String chatId, String text) {
@@ -685,6 +686,10 @@ public class TelegramBot {
 			case "/cambye":
 				if (cameraHandler != null) cameraHandler.camBye(chatId);
 				else sendTelegram("❌ 카메라가 연결되지 않았습니다");
+				break;
+
+			case "/unpinall":
+				unpinAllMessages(chatId);
 				break;
 			case "/c":
 			case "/capture":
@@ -2192,6 +2197,29 @@ public class TelegramBot {
 		con.disconnect();
 		System.out.println("[TgSendVideo] " + file.getName() + " → HTTP " + code);
 		if (code != 200) throw new Exception("sendVideo HTTP " + code);
+	}
+
+	/** /unpinall — 채팅의 모든 pin 해제 */
+	private void unpinAllMessages(String chatId) {
+		try {
+			String apiUrl = "https://api.telegram.org/bot" + botToken + "/unpinAllChatMessages";
+			HttpURLConnection con = (HttpURLConnection) toUrl(apiUrl).openConnection();
+			con.setRequestMethod("POST");
+			con.setDoOutput(true);
+			con.setConnectTimeout(10000);
+			con.setReadTimeout(10000);
+			con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+			String body = "chat_id=" + java.net.URLEncoder.encode(chatId, "UTF-8");
+			con.getOutputStream().write(body.getBytes("UTF-8"));
+			int code = con.getResponseCode();
+			con.disconnect();
+			if (code == 200) sendTelegram("✅ 모든 pin 해제 완료");
+			else             sendTelegram("❌ unpin 실패 (HTTP " + code + ")");
+			System.out.println("[TgUnpinAll] → HTTP " + code);
+		} catch (Exception e) {
+			sendTelegram("❌ unpin 오류: " + e.getMessage());
+			System.out.println("[TgUnpinAll] failed: " + e.getMessage());
+		}
 	}
 
 	// ── 첨부File 수신 Save ─────────────────────────────────────────
