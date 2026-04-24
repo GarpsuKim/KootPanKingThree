@@ -532,11 +532,16 @@ public class Multimedia {
         }
 
         /** 새 프레임 반영 (FX 스레드에서 호출) */
+        private boolean firstFrameReceived = false;
+
         public void onFrame(javafx.scene.image.WritableImage frame) {
             if (frame == null || imageView == null) return;
             imageView.setImage(frame);
-            // 첫 프레임 도착 시 뷰포트에 맞게 fit
-            if (imageView.getFitWidth() <= 0) fitToViewport();
+            // 첫 프레임 도착 시 항상 viewport에 맞게 fit
+            if (!firstFrameReceived) {
+                firstFrameReceived = true;
+                javafx.application.Platform.runLater(this::fitToViewport);
+            }
         }
 
         /** 카메라 중지 시 화면 초기화 (FX 스레드에서 호출) */

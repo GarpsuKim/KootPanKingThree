@@ -524,6 +524,32 @@ public final class AppContext {
         set("tg.myChatId", chatId != null ? chatId.trim() : "");
         save();
 	}
+
+    // ── Admin ────────────────────────────────────────────────────
+    /** 관리자 전화번호 */
+    public static String getAdminTelNo() {
+        return get("admin.telno", "");
+    }
+    public static void setAdminTelNo(String no) {
+        set("admin.telno", no != null ? no.trim() : "");
+        save();
+    }
+    /** Gmail 검증 완료 일시 (yyMMddHHmmss) */
+    public static String getGmailCertified() {
+        return get("gmail.certified.yymmddhhmmss", "");
+    }
+    public static void setGmailCertified(String dt) {
+        set("gmail.certified.yymmddhhmmss", dt != null ? dt : "");
+        save();
+    }
+    /** 텔레그램 검증 완료 일시 (yyMMddHHmmss) */
+    public static String getTgCertified() {
+        return get("tg.certified.yymmddhhmmss", "");
+    }
+    public static void setTgCertified(String dt) {
+        set("tg.certified.yymmddhhmmss", dt != null ? dt : "");
+        save();
+    }
 	
 	// =========================================================
     // [17] 마스터 ini 전용 — 카메라 / YouTube / CCTV 공유 Settings

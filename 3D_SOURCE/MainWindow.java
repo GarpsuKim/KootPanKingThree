@@ -1275,6 +1275,350 @@ public class MainWindow {
 		);
         return bar;
 	}
+    // ═══════════════════════════════════════════════════════════════════
+    //  AdminAuth — 관리자 인증 서브클래스
+    // ═══════════════════════════════════════════════════════════════════
+    public static class AdminAuth {
+        /**
+         * 관리자 인증 다이얼로그 (300초 타이머).
+         * 반환값: true = 인증 통과
+         *
+         * 인증 규칙:
+         *  ① 전화번호/Gmail/텔레그램 모두 미등록 → 무조건 통과
+         *  ② 검증완료일 없음 (Gmail/TG 미인증) → 전화번호 단순 비교
+         *  ③ Gmail 또는 TG 중 하나 이상 인증 → 4자리 난수를 Gmail+TG 동시 발송, 입력 비교
+         */
+        public static boolean authenticate(javafx.stage.Stage owner) {
+            String telno    = AppContext.getAdminTelNo();
+            String gmailFrom= AppContext.getGmailFrom();
+            String gmailCert= AppContext.getGmailCertified();
+            String tgCert   = AppContext.getTgCertified();
+            boolean hasTelno = !telno.isEmpty();
+            boolean hasMail  = !gmailFrom.isEmpty();
+            boolean hasTg    = !AppContext.getTelegramBotToken().isEmpty();
+            boolean certified= !gmailCert.isEmpty() || !tgCert.isEmpty();
+
+            // ① 모두 미등록 → 무조건 통과
+            if (!hasTelno && !hasMail && !hasTg) return true;
+
+            // 다이얼로그 구성
+            javafx.stage.Stage dlg = new javafx.stage.Stage();
+            dlg.initOwner(owner);
+            dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+            dlg.setTitle("관리자 인증");
+            dlg.setResizable(false);
+
+            boolean[] result = {false};
+            int[]     timerSec = {300};
+            String[]  sentCode = {""};
+            boolean[] codeSent = {false};
+
+            javafx.scene.control.Label lblTitle = new javafx.scene.control.Label("관리자 인증이 필요합니다");
+            lblTitle.setStyle("-fx-font-size:15px;-fx-font-weight:bold;");
+
+            javafx.scene.control.Label lblTimer = new javafx.scene.control.Label("300초");
+            lblTimer.setStyle("-fx-font-size:13px;-fx-text-fill:#cc0000;");
+
+            javafx.scene.control.Label lblHint = new javafx.scene.control.Label();
+            javafx.scene.control.TextField tfInput = new javafx.scene.control.TextField();
+            tfInput.setPromptText(certified ? "4자리 인증 번호 입력" : "전화번호 입력 (숫자만)");
+            tfInput.setPrefWidth(220);
+
+            javafx.scene.control.Button btnOk = new javafx.scene.control.Button("인증");
+            btnOk.setStyle("-fx-background-color:#1976D2;-fx-text-fill:white;-fx-font-weight:bold;");
+            javafx.scene.control.Button btnCancel = new javafx.scene.control.Button("취소");
+
+            // ② 미인증 → 전화번호 비교
+            if (!certified) {
+                lblHint.setText("등록된 전화번호를 입력하세요");
+                btnOk.setOnAction(e -> {
+                    String input = tfInput.getText().replaceAll("[^0-9]", "");
+                    String stored = telno.replaceAll("[^0-9]", "");
+                    if (input.equals(stored)) {
+                        result[0] = true; dlg.close();
+                    } else {
+                        lblHint.setText("❌ 전화번호가 일치하지 않습니다");
+                    }
+                });
+            } else {
+                // ③ 인증된 경우 → 4자리 난수 발송
+                javafx.scene.control.Button btnSend =
+                    new javafx.scene.control.Button("인증번호 발송");
+                btnSend.setStyle("-fx-background-color:#388E3C;-fx-text-fill:white;-fx-font-weight:bold;");
+                lblHint.setText("인증번호 발송 후 입력하세요");
+
+                btnSend.setOnAction(e -> {
+                    String code = String.format("%04d",
+                        new java.util.Random().nextInt(10000));
+                    sentCode[0] = code;
+                    codeSent[0] = true;
+                    lblHint.setText("📨 인증번호를 발송했습니다 (60초)");
+                    // Gmail 발송
+                    GmailSender gm = GmailSender.getInstance();
+                    new Thread(() -> {
+                        try {
+                            String to = gm.lastTo.isEmpty()
+                                ? AppContext.getGmailFrom() : gm.lastTo;
+                            gm.sendOneSmtp(to, "[KootPanKing] 관리자 인증 코드",
+                                "인증 코드: " + code + "\n\n유효시간 60초");
+                        } catch (Exception ex) {
+                            System.out.println("[AdminAuth] gmail error: " + ex.getMessage());
+                        }
+                    }).start();
+                    // Telegram 발송
+                    TelegramBot tgInst = TelegramBot.getInstance();
+                    if (tgInst != null) {
+                        tgInst.sendTelegram("🔐 관리자 인증 코드: " + code + "\n(유효 60초)");
+                    }
+                });
+
+                javafx.scene.layout.HBox sendRow =
+                    new javafx.scene.layout.HBox(8, tfInput, btnSend);
+                sendRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+                btnOk.setOnAction(e -> {
+                    if (!codeSent[0]) {
+                        lblHint.setText("먼저 인증번호를 발송하세요");
+                        return;
+                    }
+                    if (tfInput.getText().trim().equals(sentCode[0])) {
+                        result[0] = true; dlg.close();
+                    } else {
+                        lblHint.setText("❌ 인증번호가 일치하지 않습니다");
+                    }
+                });
+
+                javafx.scene.layout.VBox body = new javafx.scene.layout.VBox(12,
+                    lblTitle, lblTimer, lblHint, sendRow,
+                    new javafx.scene.layout.HBox(8, btnOk, btnCancel));
+                body.setPadding(new javafx.geometry.Insets(24));
+                body.setAlignment(javafx.geometry.Pos.CENTER);
+                javafx.scene.Scene sc = new javafx.scene.Scene(body, 360, 230);
+                dlg.setScene(sc);
+
+                // 300초 타이머
+                javafx.animation.Timeline timer = new javafx.animation.Timeline(
+                    new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
+                        timerSec[0]--;
+                        lblTimer.setText(timerSec[0] + "초");
+                        if (timerSec[0] <= 0) { result[0] = false; dlg.close(); }
+                    }));
+                timer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+                timer.play();
+                btnCancel.setOnAction(e -> { result[0] = false; dlg.close(); });
+                dlg.showAndWait();
+                return result[0];
+            }
+
+            javafx.scene.layout.VBox body = new javafx.scene.layout.VBox(12,
+                lblTitle, lblTimer, lblHint, tfInput,
+                new javafx.scene.layout.HBox(8, btnOk, btnCancel));
+            body.setPadding(new javafx.geometry.Insets(24));
+            body.setAlignment(javafx.geometry.Pos.CENTER);
+            javafx.scene.Scene sc = new javafx.scene.Scene(body, 320, 220);
+            dlg.setScene(sc);
+
+            javafx.animation.Timeline timer = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
+                    timerSec[0]--;
+                    lblTimer.setText(timerSec[0] + "초");
+                    if (timerSec[0] <= 0) { result[0] = false; dlg.close(); }
+                }));
+            timer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+            timer.play();
+            btnCancel.setOnAction(e -> { result[0] = false; dlg.close(); });
+            dlg.showAndWait();
+            return result[0];
+        }
+    }
+
+    // ── 관리자 등록 다이얼로그 ───────────────────────────────────
+    private void showAdminRegistration() {
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.initOwner(theStage);
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dlg.setTitle("관리자 등록");
+        dlg.setResizable(false);
+
+        // ── 입력 필드 ──────────────────────────────────────────
+        javafx.scene.control.TextField tfTelno  = makeAdminField("전화번호",         AppContext.getAdminTelNo());
+        javafx.scene.control.TextField tfFrom   = makeAdminField("(발신) Gmail ID", AppContext.getGmailFrom());
+        javafx.scene.control.PasswordField tfPass = new javafx.scene.control.PasswordField();
+        tfPass.setText(AppContext.getGmailPass());
+        tfPass.setPromptText("(발신) Gmail App Password");
+        tfPass.setPrefWidth(240);
+        javafx.scene.control.TextField tfLastTo = makeAdminField("수신 Gmail",        AppContext.get("gmail.lastTo",""));
+        javafx.scene.control.TextField tfBotToken= makeAdminField("텔레그램 Bot Token",AppContext.getTelegramBotToken());
+        javafx.scene.control.TextField tfChatId  = makeAdminField("텔레그램 chatId",  AppContext.getTelegramMyChatId());
+
+        // ── 검증 코드 입력 ─────────────────────────────────────
+        javafx.scene.control.TextField tfGmailCode = makeAdminField("Gmail 인증 코드 (4자리)", "");
+        javafx.scene.control.TextField tfTgCode    = makeAdminField("텔레그램 인증 코드 (4자리)", "");
+        javafx.scene.control.Label lblGmailStatus  = new javafx.scene.control.Label("");
+        javafx.scene.control.Label lblTgStatus     = new javafx.scene.control.Label("");
+
+        String[] gmailCode = {""};
+        String[] tgCode    = {""};
+
+        // ── [Gmail 검증] 버튼 ──────────────────────────────────
+        javafx.scene.control.Button btnGmailVerify =
+            new javafx.scene.control.Button("📧 Gmail 검증");
+        btnGmailVerify.setOnAction(e -> {
+            String from = tfFrom.getText().trim();
+            String pass = tfPass.getText().trim();
+            String to   = tfLastTo.getText().trim();
+            if (from.isEmpty() || pass.isEmpty() || to.isEmpty()) {
+                lblGmailStatus.setText("❌ 발신/수신 Gmail 모두 입력 필요");
+                return;
+            }
+            String code = String.format("%04d", new java.util.Random().nextInt(10000));
+            gmailCode[0] = code;
+            lblGmailStatus.setText("⏳ 발송 중...");
+            new Thread(() -> {
+                try {
+                    GmailSender.getInstance().sendOneSmtp(to,
+                        "[KootPanKing] Gmail 등록 인증 코드",
+                        "인증 코드: " + code + "\n\n60초 이내에 입력하세요.");
+                    javafx.application.Platform.runLater(() ->
+                        lblGmailStatus.setText("✅ " + to + " 으로 발송 완료. 60초 내 입력."));
+                    // 60초 후 만료
+                    Thread.sleep(60_000);
+                    gmailCode[0] = "";
+                    javafx.application.Platform.runLater(() ->
+                        lblGmailStatus.setText("⚠️ 인증 코드 만료됨. 재발송 필요."));
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() ->
+                        lblGmailStatus.setText("❌ 발송 실패: " + ex.getMessage()));
+                }
+            }).start();
+        });
+
+        // ── [텔레그램 검증] 버튼 ──────────────────────────────
+        javafx.scene.control.Button btnTgVerify =
+            new javafx.scene.control.Button("📱 텔레그램 검증");
+        btnTgVerify.setOnAction(e -> {
+            String token  = tfBotToken.getText().trim();
+            String chatId = tfChatId.getText().trim();
+            if (token.isEmpty() || chatId.isEmpty()) {
+                lblTgStatus.setText("❌ Bot Token 과 Chat ID 모두 입력 필요");
+                return;
+            }
+            String code = String.format("%04d", new java.util.Random().nextInt(10000));
+            tgCode[0] = code;
+            lblTgStatus.setText("⏳ 발송 중...");
+            new Thread(() -> {
+                try {
+                    // 임시 TelegramBot으로 직접 API 호출
+                    String url = "https://api.telegram.org/bot" + token
+                        + "/sendMessage?chat_id=" + chatId
+                        + "&text=" + java.net.URLEncoder.encode(
+                            "🔐 텔레그램 등록 인증 코드: " + code + "\n(60초 이내 입력)", "UTF-8");
+                    java.net.HttpURLConnection con =
+                        (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                    con.setConnectTimeout(10000);
+                    int rc = con.getResponseCode();
+                    con.disconnect();
+                    javafx.application.Platform.runLater(() ->
+                        lblTgStatus.setText(rc == 200
+                            ? "✅ 텔레그램으로 발송 완료. 60초 내 입력."
+                            : "❌ 발송 실패 HTTP " + rc));
+                    Thread.sleep(60_000);
+                    tgCode[0] = "";
+                    javafx.application.Platform.runLater(() ->
+                        lblTgStatus.setText("⚠️ 인증 코드 만료됨. 재발송 필요."));
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() ->
+                        lblTgStatus.setText("❌ 발송 실패: " + ex.getMessage()));
+                }
+            }).start();
+        });
+
+        // ── [등록] 버튼 ───────────────────────────────────────
+        javafx.scene.control.Button btnSave = new javafx.scene.control.Button("💾 등록");
+        btnSave.setStyle("-fx-background-color:#1976D2;-fx-text-fill:white;-fx-font-weight:bold;-fx-font-size:13px;");
+        btnSave.setOnAction(e -> {
+            // 항상 저장 가능한 항목
+            AppContext.setAdminTelNo(tfTelno.getText().trim());
+            AppContext.setGmailFrom(tfFrom.getText().trim());
+            AppContext.setGmailPass(tfPass.getText().trim());
+            AppContext.set("gmail.lastTo", tfLastTo.getText().trim());
+            AppContext.save();
+            // Gmail 인증 코드 확인
+            String inputGmail = tfGmailCode.getText().trim();
+            if (!inputGmail.isEmpty() && !gmailCode[0].isEmpty()) {
+                if (inputGmail.equals(gmailCode[0])) {
+                    AppContext.setGmailFrom(tfFrom.getText().trim());
+                    AppContext.setGmailPass(tfPass.getText().trim());
+                    AppContext.set("gmail.lastTo", tfLastTo.getText().trim());
+                    String now = new java.text.SimpleDateFormat("yyMMddHHmmss").format(new java.util.Date());
+                    AppContext.setGmailCertified(now);
+                    AppContext.save();
+                    lblGmailStatus.setText("✅ Gmail 검증 완료 (" + now + ")");
+                } else {
+                    lblGmailStatus.setText("❌ Gmail 인증 코드 불일치");
+                    return;
+                }
+            }
+            // 텔레그램 인증 코드 확인
+            String inputTg = tfTgCode.getText().trim();
+            if (!inputTg.isEmpty() && !tgCode[0].isEmpty()) {
+                if (inputTg.equals(tgCode[0])) {
+                    AppContext.setTelegramBotToken(tfBotToken.getText().trim());
+                    AppContext.setTelegramMyChatId(tfChatId.getText().trim());
+                    String now = new java.text.SimpleDateFormat("yyMMddHHmmss").format(new java.util.Date());
+                    AppContext.setTgCertified(now);
+                    AppContext.save();
+                    lblTgStatus.setText("✅ 텔레그램 검증 완료 (" + now + ")");
+                } else {
+                    lblTgStatus.setText("❌ 텔레그램 인증 코드 불일치");
+                    return;
+                }
+            }
+            // Bot Token / ChatId 미검증 상태로도 저장 가능 (덮어쓰기)
+            AppContext.setTelegramBotToken(tfBotToken.getText().trim());
+            AppContext.setTelegramMyChatId(tfChatId.getText().trim());
+            AppContext.save();
+            showAlert("등록이 완료되었습니다.", "관리자 등록");
+            dlg.close();
+        });
+
+        javafx.scene.control.Button btnClose = new javafx.scene.control.Button("닫기");
+        btnClose.setOnAction(e -> dlg.close());
+
+        // ── 레이아웃 ──────────────────────────────────────────
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(10); grid.setVgap(8);
+        grid.setPadding(new javafx.geometry.Insets(20));
+        int r = 0;
+        grid.add(new javafx.scene.control.Label("전화번호:"), 0, r);      grid.add(tfTelno, 1, r++);
+        grid.add(new javafx.scene.control.Separator(), 0, r++, 2, 1);
+        grid.add(new javafx.scene.control.Label("발신 Gmail ID:"), 0, r); grid.add(tfFrom, 1, r++);
+        grid.add(new javafx.scene.control.Label("Gmail Password:"), 0, r);grid.add(tfPass, 1, r++);
+        grid.add(new javafx.scene.control.Label("수신 Gmail:"), 0, r);    grid.add(tfLastTo, 1, r++);
+        grid.add(btnGmailVerify, 0, r, 2, 1); r++;
+        grid.add(new javafx.scene.control.Label("Gmail 인증코드:"), 0, r);grid.add(tfGmailCode, 1, r++);
+        grid.add(lblGmailStatus, 0, r++, 2, 1);
+        grid.add(new javafx.scene.control.Separator(), 0, r++, 2, 1);
+        grid.add(new javafx.scene.control.Label("Bot Token:"), 0, r);     grid.add(tfBotToken, 1, r++);
+        grid.add(new javafx.scene.control.Label("Chat ID:"), 0, r);       grid.add(tfChatId, 1, r++);
+        grid.add(btnTgVerify, 0, r, 2, 1); r++;
+        grid.add(new javafx.scene.control.Label("TG 인증코드:"), 0, r);   grid.add(tfTgCode, 1, r++);
+        grid.add(lblTgStatus, 0, r++, 2, 1);
+        grid.add(new javafx.scene.layout.HBox(10, btnSave, btnClose), 0, r, 2, 1);
+
+        javafx.scene.Scene sc = new javafx.scene.Scene(
+            new javafx.scene.layout.StackPane(grid));
+        dlg.setScene(sc);
+        dlg.showAndWait();
+    }
+
+    private javafx.scene.control.TextField makeAdminField(String prompt, String value) {
+        javafx.scene.control.TextField tf = new javafx.scene.control.TextField(value);
+        tf.setPromptText(prompt);
+        tf.setPrefWidth(240);
+        return tf;
+    }
+
     private Menu buildFileMenu() {
         Menu menu = makeMenu("File", "Open Files & App Control");
 		
@@ -1297,7 +1641,12 @@ public class MainWindow {
 		
         menu.getItems().add(makeRichMenuItem("⏻", "System Reboot",
 		"Reboot system and restart program.", "", this::doWindowsReboot));
-		
+
+        menu.getItems().add(new SeparatorMenuItem());
+        menu.getItems().add(makeRichMenuItem("👤", "관리자 등록",
+		"Admin registration (phone / Gmail / Telegram)", null,
+        this::showAdminRegistration));
+
         return menu;
 	}
     private Menu buildToolsMenu() {
@@ -1786,6 +2135,10 @@ public class MainWindow {
 
     // ── Web Camera: Stop ─────────────────────────────────────────
     private void stopWebCam() {
+        if (webSecCamMode) {
+            showAlert("웹캠 보안 감시 중에는 중지할 수 없습니다.\n먼저 [Secure Stop] 을 실행하세요.", "Web Camera");
+            return;
+        }
         if (webCam != null) { webCam.stop(); webCam = null; }
         if (webCamTabHandle != null) {
             webCamTabHandle.closeTab();
@@ -1801,11 +2154,30 @@ public class MainWindow {
             showAlert("Web Security Cam is already running.", "Web Security Cam");
             return;
         }
-        // 웹캠이 연결 안 되어 있으면 먼저 자동 연결
+        // 웹캠 미연결 시 자동 연결
         if (webCam == null || !webCam.isRunning()) {
-            showAlert("웹캠이 연결되지 않았습니다.\n먼저 [Connect] 를 실행하세요.", "Web Security Cam");
+            connectWebCam();
+            // connectWebCam은 비동기 → 연결 완료 후 재호출되도록 딜레이
+            new Thread(() -> {
+                long deadline = System.currentTimeMillis() + 10_000L;
+                while ((webCam == null || webCam.getLastFrameAWT() == null)
+                        && System.currentTimeMillis() < deadline) {
+                    try { Thread.sleep(300); } catch (InterruptedException ie) { return; }
+                }
+                if (webCam == null || webCam.getLastFrameAWT() == null) {
+                    javafx.application.Platform.runLater(() ->
+                        showAlert("웹캠 자동 연결 실패. 먼저 [Connect] 를 실행하세요.", "Web Security Cam"));
+                    return;
+                }
+                javafx.application.Platform.runLater(this::doStartWebSecurityCam);
+            }, "WebSecAutoConnect").start();
             return;
         }
+        doStartWebSecurityCam();
+    }
+
+    private void doStartWebSecurityCam() {
+        if (webSecCamMode) return;
         webSecCamMode = true;
         System.out.println("[WebSecCam] starting motion detection...");
 
@@ -1862,6 +2234,7 @@ public class MainWindow {
             showAlert("Web Security Cam is not running.", "Web Security Cam");
             return;
         }
+        if (!AdminAuth.authenticate(theStage)) return;
         if (webMotionDetector != null) { webMotionDetector.stop(); webMotionDetector = null; }
         webSecCamMode = false;
         javafx.application.Platform.runLater(() -> {
@@ -2055,6 +2428,7 @@ public class MainWindow {
         MenuItem phoneSecStop = makeRichMenuItem("🔓", "Secure Stop",
             "Stop motion detection security (Phone Camera)", null, () -> {
             if (!secCamMode) { showAlert("Security Cam is not running.", "Security Cam"); return; }
+            if (!AdminAuth.authenticate(theStage)) return;
             stopSecurityCam();
         });
 
@@ -2319,6 +2693,7 @@ public class MainWindow {
 	}
     /** App Restart */
     private void doRestart() {
+        if (!AdminAuth.authenticate(theStage)) return;
 		String title = "Restart Program";
 		String labelMessage = "Save settings and restart?";
 		String timerlMessage = "Auto cancel in: 15s";
@@ -2329,6 +2704,7 @@ public class MainWindow {
 		}
 	}
 	private void doExit() {
+        if (!AdminAuth.authenticate(theStage)) return;
 		String title = "Confirm Exit";
 		String labelMessage = "Exit the program?";
 		String timerlMessage = "Auto cancel in: 15s";
@@ -2336,6 +2712,7 @@ public class MainWindow {
 		if (yesNoTimerConfirm(title, labelMessage, timerlMessage , second ))	exitAll();
 	}
     private void doWindowsReboot() {
+        if (!AdminAuth.authenticate(theStage)) return;
 		String title = "Confirm System Reboot";
 		String labelMessage = "Reboot the system?";
 		String timerlMessage = "Auto cancel in: 15s";
