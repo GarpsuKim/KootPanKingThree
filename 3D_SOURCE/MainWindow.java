@@ -1422,9 +1422,7 @@ public class MainWindow {
                         hideSecurityAlarm();
                         showSecurityGuard();
                     });
-                    // 전송 중단
-                    TelegramBot tgInst = TelegramBot.getInstance();
-                    if (tgInst != null) tgInst.stopCam();
+                    // 전송은 사용자가 /recstop 또는 /camBye 로 직접 중단
                 }
             });
             motionDetector.start();

@@ -119,7 +119,14 @@ public class TelegramBot {
 
     /** Security Cam 등 외부에서 /cam 과 동일한 동작을 트리거 */
     public void startCam() {
-        if (!myChatId.isEmpty()) processCommand(myChatId, "/cam");
+        if (!myChatId.isEmpty()) {
+            // 이미 cameraHandler가 있고 루프 중이면 중복 시작 방지
+            if (cameraHandler != null) {
+                System.out.println("[startCam] already running, skip");
+                return;
+            }
+            processCommand(myChatId, "/cam");
+        }
     }
 
     /** Security Cam 등 외부에서 /recstop 과 동일한 동작을 트리거 */
@@ -825,8 +832,16 @@ public class TelegramBot {
 	 * /cam — 카메라 미연결 상태에서 자동 연결 → TelegramCamRecorder 생성 → 10초 연속 루프 시작.
 	 * 생성된 핸들러를 setCameraHandler() 로 등록하여 /recstop, /cambye 도 정상 동작한다.
 	 */
+	private final java.util.concurrent.atomic.AtomicBoolean autoConnecting =
+		new java.util.concurrent.atomic.AtomicBoolean(false);
+
 	private void autoConnectAndStartContinuousRec(String chatId) {
+		if (!autoConnecting.compareAndSet(false, true)) {
+			System.out.println("[AutoCam] already connecting/running, skip");
+			return;
+		}
 		new Thread(() -> {
+			try {
 			String url = AppContext.getCameraUrl();
 			if (url == null || url.trim().isEmpty()) {
 				sendTelegram("❌ 카메라 URL이 설정되지 않았습니다\n메인창 > Phone Camera > Connect 에서 URL을 먼저 설정하세요");
@@ -863,6 +878,7 @@ public class TelegramBot {
 							rec.waitForStop();
 							tmpCam.stop();
 							setCameraHandler(null);
+							autoConnecting.set(false);  // ← guard 해제
 							System.out.println("[AutoCam] camera stopped & handler cleared");
 						}, "AutoCamByeWaiter").start();
 					}
@@ -872,10 +888,17 @@ public class TelegramBot {
 			} catch (InterruptedException ie) {
 				Thread.currentThread().interrupt();
 				tmpCam.stop();
+				autoConnecting.set(false);
 			} catch (Exception e) {
 				sendTelegram("❌ /cam 자동연결 오류: " + e.getMessage());
 				System.out.println("[AutoCam] error: " + e.getMessage());
 				tmpCam.stop();
+				autoConnecting.set(false);
+			}
+			} finally {
+				// camBye 경로 외에서 종료된 경우 guard 해제 보장
+				// (camBye는 내부에서 직접 해제하므로 여기서는 handler 없을 때만)
+				if (cameraHandler == null) autoConnecting.set(false);
 			}
 		}, "TgCamAutoConnect").start();
 	}
