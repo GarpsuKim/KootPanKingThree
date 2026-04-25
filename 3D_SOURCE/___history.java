@@ -18,13 +18,6 @@ git push -u origin main
 
 
 
-1. [MainMenu/Help/AutoStartOnBoot] : 설정되어 있었는데 해제하려는 경우, 우선 관리자 인증 절차 필요
-2. [MainMenu/Image&Files] : 써브 메뉴 ('MP4 Files ...')  추가
-ㅡ 'MP4 Files ...' : file chooser --> 카메라 영상 녹화 폴더 호출 --> mp4 파일 선택하면, 시스템 기본 플레이어 호출
-
-3. cam on / cam off / secure on / secure off 상태를, 텔레그램 일반 메시지가 아닌 Pin 메세지로 항상 표시 (기존의 Pin메세지와 통합하여 한꺼번에 메세지 발신 )
-
-
 
 
 1. 텔레그램  /secureOff는  관리자 인증 하지 않음

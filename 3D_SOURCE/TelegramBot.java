@@ -152,6 +152,8 @@ public class TelegramBot {
     public static String  appDir    = AppContext.theExeFile.getParent();
     // ── 내부 상태 ─────────────────────────────────────────────────
     private volatile long              lastUpdateId  = 0;    // 마지막 처리한 update_id
+    private volatile String            lastDetectedChannelId = null; // /chanel 명령용 채널 ID 임시 저장
+    private volatile boolean           waitingForChannelForward = false; // 채널 forward 대기 상태
     private ScheduledExecutorService   pollScheduler = null; // 폴링 스케lines러
     // 멀티스레드 안전: /reboot, /down 확인 대기 명령
     private final AtomicReference<String> pendingCmd = new AtomicReference<>("");
@@ -500,7 +502,8 @@ public class TelegramBot {
 		}
 		try {
 			String apiUrl = "https://api.telegram.org/bot" + botToken
-			+ "/getUpdates?timeout=1&offset=" + (lastUpdateId + 1);
+			+ "/getUpdates?timeout=1&offset=" + (lastUpdateId + 1)
+			+ "&allowed_updates=%5B%22message%22%2C%22callback_query%22%2C%22my_chat_member%22%2C%22channel_post%22%5D";
 			HttpURLConnection con = (HttpURLConnection) toUrl(apiUrl).openConnection();
 			con.setRequestMethod("GET");
 			con.setConnectTimeout(8000);
@@ -533,6 +536,42 @@ public class TelegramBot {
 				if (updateId <= lastUpdateId) continue;
 				lastUpdateId = updateId;
 				
+				// my_chat_member — 채널 관리자 초대 감지 (/chanel 명령용)
+				JSONObject myChatMember = (JSONObject) update.get("my_chat_member");
+				if (myChatMember != null) {
+					JSONObject mcChat    = (JSONObject) myChatMember.get("chat");
+					JSONObject newMember = (JSONObject) myChatMember.get("new_chat_member");
+					if (mcChat != null && "channel".equals(mcChat.get("type"))) {
+						String status = newMember != null ? String.valueOf(newMember.get("status")) : "";
+						if ("administrator".equals(status)) {
+							lastDetectedChannelId = String.valueOf(mcChat.get("id"));
+							String title = mcChat.get("title") != null ? String.valueOf(mcChat.get("title")) : "";
+							System.out.println("[Telegram] 채널 감지: " + title + " / " + lastDetectedChannelId);
+							// 즉시 ini 저장 — 사용자가 /chanel 명령을 보낼 필요 없음
+							AppContext.set("tg.channelId", lastDetectedChannelId);
+							AppContext.save();
+							System.out.println("[Telegram] tg.channelId 자동 저장: " + lastDetectedChannelId);
+							// 채널에 안내 메시지 자동 전송
+							final String autoChannelId = lastDetectedChannelId;
+							new Thread(() -> {
+								try {
+									String notice =
+										"📢 *KootPanKing 채널 등록 완료*\n\n"
+										+ "이 채널은 KootPanKing 앱과 연결되었습니다.\n\n"
+										+ "🎬 앱에서 녹화·전송되는 *모든 동영상*은 이 채널에서 확인하실 수 있습니다.\n\n"
+										+ "📌 웹캠 녹화, 보안 카메라, 스마트폰 카메라 영상 등\n"
+										+ "   모든 MP4 파일이 이곳으로 자동 전송됩니다.\n\n"
+										+ "✅ 채널 구독 후 알림을 켜두시면 놓치지 않습니다.";
+									sendMarkdown(autoChannelId, notice);
+								} catch (Exception e) {
+									System.out.println("[Telegram] 채널 안내 메시지 전송 실패: " + e.getMessage());
+								}
+							}, "ChannelNotice").start();
+						}
+					}
+					continue;
+				}
+
 				// edited_message — peer 서버 heartbeat 감지
 				JSONObject editedMsg = (JSONObject) update.get("edited_message");
 				if (editedMsg != null) {
@@ -559,8 +598,9 @@ public class TelegramBot {
 					continue;
 				}
 				
-				// 반 message 처리
+				// 일반 message 또는 channel_post 처리
 				JSONObject message = (JSONObject) update.get("message");
+				if (message == null) message = (JSONObject) update.get("channel_post");
 				if (message == null) continue;
 				JSONObject chat = (JSONObject) message.get("chat");
 				if (chat == null) continue;
@@ -573,6 +613,38 @@ public class TelegramBot {
 				*/
 				
 				String text = (String) message.get("text");
+
+				// ── forward 대기 중: 채널에서 전달된 메시지로 채널 ID 추출 ──
+				if (waitingForChannelForward) {
+					JSONObject forwardChat = (JSONObject) message.get("forward_from_chat");
+					if (forwardChat != null && "channel".equals(forwardChat.get("type"))) {
+						String fwdChannelId = String.valueOf(forwardChat.get("id"));
+						String fwdTitle     = forwardChat.get("title") != null
+								? String.valueOf(forwardChat.get("title")) : "";
+						lastDetectedChannelId  = fwdChannelId;
+						waitingForChannelForward = false;
+						AppContext.set("tg.channelId", fwdChannelId);
+						AppContext.save();
+						System.out.println("[Telegram] forward로 채널 감지: " + fwdTitle + " / " + fwdChannelId);
+						sendTelegramWarning(fromChatId, "✅ 채널 ID 저장 완료!\n채널명: " + fwdTitle + "\nID: " + fwdChannelId);
+						final String fwdId = fwdChannelId;
+						new Thread(() -> {
+							try {
+								String notice =
+									"📢 *KootPanKing 채널 등록 완료*\n\n"
+									+ "이 채널은 KootPanKing 앱과 연결되었습니다.\n\n"
+									+ "🎬 앱에서 녹화·전송되는 *모든 동영상*은 이 채널에서 확인하실 수 있습니다.\n\n"
+									+ "📌 웹캠 녹화, 보안 카메라, 스마트폰 카메라 영상 등\n"
+									+ "   모든 MP4 파일이 이곳으로 자동 전송됩니다.\n\n"
+									+ "✅ 채널 구독 후 알림을 켜두시면 놓치지 않습니다.";
+								sendMarkdown(fwdId, notice);
+							} catch (Exception e) {
+								System.out.println("[Telegram] 채널 안내 메시지 전송 실패: " + e.getMessage());
+							}
+						}, "ChannelNotice").start();
+						continue;
+					}
+				}
 				if (text == null) {
 					receiveFileFromJson(fromChatId, message);
 					continue;
@@ -637,7 +709,8 @@ public class TelegramBot {
 		// ── PC 웹캠 ───────────────────────────────────────────────
 		"/cam", "/camhello", "/recstop", "/cambye", "/rec",
 		"/unpinall", "/allclear", "/wallclear",
-		"/secureon", "/secureoff"
+		"/secureon", "/secureoff",
+		"/chanel"
 	));
 	
 	private void processCommand(String chatId, String text) {
@@ -792,6 +865,41 @@ public class TelegramBot {
 						KootPanKingThreeLaunch.mainWindow.stopWebSecurityCamPublic());
 				}
 				sendTelegram("🔓 Web Security Cam 종료");
+				break;
+
+			case "/chanel":
+				if (lastDetectedChannelId != null) {
+					AppContext.set("tg.channelId", lastDetectedChannelId);
+					AppContext.save();
+					sendTelegramWarning(chatId, "✅ 채널 ID 저장 완료: " + lastDetectedChannelId);
+					System.out.println("[Telegram] tg.channelId = " + lastDetectedChannelId);
+					// 채널에 안내 메시지 전송
+					final String savedChannelId = lastDetectedChannelId;
+					new Thread(() -> {
+						try {
+							String notice =
+								"📢 *KootPanKing 채널 등록 완료*\n\n"
+								+ "이 채널은 KootPanKing 앱과 연결되었습니다.\n\n"
+								+ "🎬 앱에서 녹화·전송되는 *모든 동영상*은 이 채널에서 확인하실 수 있습니다.\n\n"
+								+ "📌 웹캠 녹화, 보안 카메라, 스마트폰 카메라 영상 등\n"
+								+ "   모든 MP4 파일이 이곳으로 자동 전송됩니다.\n\n"
+								+ "✅ 채널 구독 후 알림을 켜두시면 놓치지 않습니다.";
+							sendMarkdown(savedChannelId, notice);
+						} catch (Exception e) {
+							System.out.println("[Telegram] 채널 안내 메시지 전송 실패: " + e.getMessage());
+						}
+					}, "ChannelNotice").start();
+				} else {
+					// 채널이 감지 안된 경우 → forward 방식으로 안내
+					waitingForChannelForward = true;
+					sendTelegramWarning(chatId,
+						"📌 채널 ID를 자동 감지하지 못했습니다.\n\n"
+						+ "아래 순서로 진행해 주세요:\n"
+						+ "1️⃣ 등록할 채널에 들어가기\n"
+						+ "2️⃣ 채널의 아무 메시지나 길게 눌러 → [전달하기(Forward)]\n"
+						+ "3️⃣ 이 봇 채팅창으로 전달\n\n"
+						+ "전달 받는 즉시 채널 ID를 자동 저장합니다.");
+				}
 				break;
 			case "/c":
 			case "/capture":
@@ -2082,6 +2190,29 @@ public class TelegramBot {
 		}
 	}
 	
+	/** 특정 chatId(또는 채널 ID)로 Markdown 형식 메시지 전송 */
+	public void sendMarkdown(String chatId, String text) {
+		if (botToken.isEmpty() || chatId.isEmpty()) return;
+		try {
+			URL url = toUrl("https://api.telegram.org/bot" + botToken + "/sendMessage");
+			HttpURLConnection con = (HttpURLConnection) url.openConnection();
+			con.setRequestMethod("POST");
+			con.setDoOutput(true);
+			con.setConnectTimeout(10000);
+			con.setReadTimeout(10000);
+			con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+			String body = "chat_id="    + java.net.URLEncoder.encode(chatId, "UTF-8")
+					+ "&text="         + java.net.URLEncoder.encode(text,   "UTF-8")
+					+ "&parse_mode=Markdown";
+			con.getOutputStream().write(body.getBytes("UTF-8"));
+			int code = con.getResponseCode();
+			con.disconnect();
+			System.out.println("[Telegram][sendMarkdown] chatId=" + chatId + " → HTTP " + code);
+		} catch (Exception e) {
+			System.out.println("[Telegram][sendMarkdown] error: " + e.getMessage());
+		}
+	}
+
 	/**
 		* 인라인 키보드 버튼이 포함된 메시지 전송.
 		* buttons: [ ["버튼Text1", "callbackData1"], ["버튼Text2", "callbackData2"] ... ]

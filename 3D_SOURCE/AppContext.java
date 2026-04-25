@@ -534,6 +534,15 @@ public final class AppContext {
         save();
 	}
 
+    /** Telegram 채널 ID (Bot이 관리자로 초대된 채널, /chanel 명령으로 저장) */
+    public static String getTelegramChannelId() {
+        return get("tg.channelId", "");
+    }
+    public static void setTelegramChannelId(String channelId) {
+        set("tg.channelId", channelId != null ? channelId.trim() : "");
+        save();
+    }
+
     // ── Admin ────────────────────────────────────────────────────
     /** 관리자 전화번호 */
     public static String getAdminTelNo() {
