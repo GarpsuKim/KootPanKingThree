@@ -242,9 +242,19 @@ public class MainWindow {
 			System.out.println("toggleTheMainWindow(): theStage == null");
 			return;
 		}
+		// minimize(최소화) 상태면 → 복원 후 앞으로
+		if (theStage.isIconified()) {
+			theStage.setIconified(false);
+			theStage.show();
+			theStage.setAlwaysOnTop(true);
+			theStage.toFront();
+			theStage.requestFocus();
+			theStage.setAlwaysOnTop(false);
+			return;
+		}
 		if (theStage.isShowing()) {
 			theStage.hide();
-			} else {
+		} else {
 			theStage.show();
 			theStage.setAlwaysOnTop(true);
 			theStage.toFront();
@@ -252,13 +262,14 @@ public class MainWindow {
 			theStage.setAlwaysOnTop(false);
 		}
 	}
-	/** 메인창을 항상 앞으로 보이게 (숨겨져 있어도 show) */
+	/** 메인창을 항상 앞으로 보이게 (숨겨져 있어도 show, 최소화 상태도 복원) */
 	public void showTheMainWindow() {
 		if (!Platform.isFxApplicationThread()) {
 			Platform.runLater(this::showTheMainWindow);
 			return;
 		}
 		if (theStage == null) return;
+		if (theStage.isIconified()) theStage.setIconified(false);
 		theStage.show();
 		theStage.setAlwaysOnTop(true);
 		theStage.toFront();
@@ -1439,58 +1450,59 @@ public class MainWindow {
     private void showAdminRegistration() {
         boolean isKR = "KR".equals(AppContext.NationCode);
 
-        // ── 텍스트 (KR/EN) ──────────────────────────────────
-        String titleTxt     = isKR ? "관리자 등록" : "Admin Registration";
-        String btnGmailTxt  = isKR ? "📧 Gmail 검증번호 발송" : "📧 Send Gmail Verify Code";
-        String btnTgTxt     = isKR ? "📱 텔레그램 검증번호 발송" : "📱 Send Telegram Verify Code";
-        String btnSaveTxt   = isKR ? "💾 등록" : "💾 Register";
-        String btnCloseTxt  = isKR ? "닫기" : "Close";
+        javafx.stage.Stage dlg = TOOLS.DialogStyle.createDialog(theStage,
+            isKR ? "관리자 등록" : "Admin Registration");
 
-        javafx.stage.Stage dlg = new javafx.stage.Stage();
-        dlg.initOwner(theStage);
-        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
-        dlg.setTitle(titleTxt);
-        dlg.setResizable(false);
-
-        // ── 600초 타이머 ─────────────────────────────────────
+        // ── 600초 타이머 (모니터 좌상단 오버레이로 표시) ─────────
         int[] timerSec = {600};
-        javafx.scene.control.Label lblTimer = new javafx.scene.control.Label("600" + (isKR ? "초" : "s"));
-        lblTimer.setStyle("-fx-font-size:12px;-fx-text-fill:#888888;");
 
-        // ── 입력 필드 ──────────────────────────────────────────
-        javafx.scene.control.TextField tfTelno  = makeAdminField(isKR ? "전화번호" : "Phone No.",    AppContext.getAdminTelNo());
-        javafx.scene.control.TextField tfFrom   = makeAdminField(isKR ? "(발신) Gmail ID" : "(From) Gmail ID", AppContext.getGmailFrom());
-        javafx.scene.control.PasswordField tfPass = new javafx.scene.control.PasswordField();
-        tfPass.setText(AppContext.getGmailPass());
-        tfPass.setPromptText(isKR ? "(발신) Gmail App Password" : "(From) Gmail App Password");
-        tfPass.setPrefWidth(240);
-        javafx.scene.control.TextField tfLastTo  = makeAdminField(isKR ? "수신 Gmail" : "Recipient Gmail", AppContext.get("gmail.lastTo",""));
-        javafx.scene.control.TextField tfBotToken= makeAdminField("Telegram Bot Token", AppContext.getTelegramBotToken());
-        javafx.scene.control.TextField tfChatId  = makeAdminField("Telegram Chat ID",   AppContext.getTelegramMyChatId());
+        // ════════════════════════════════════════════════════════
+        //  ① 전화번호
+        // ════════════════════════════════════════════════════════
+        javafx.scene.control.TextField tfTelno =
+            TOOLS.DialogStyle.createTextField(AppContext.getAdminTelNo(),
+                isKR ? "전화번호 (숫자만)" : "Phone number (digits only)");
 
-        // ── 검증 코드 입력 ─────────────────────────────────────
-        javafx.scene.control.TextField tfGmailCode = makeAdminField(isKR ? "Gmail 인증 코드 (4자리)" : "Gmail verify code (4 digits)", "");
-        javafx.scene.control.TextField tfTgCode    = makeAdminField(isKR ? "텔레그램 인증 코드 (4자리)" : "Telegram verify code (4 digits)", "");
-        javafx.scene.control.Label lblGmailStatus  = new javafx.scene.control.Label("");
-        javafx.scene.control.Label lblTgStatus     = new javafx.scene.control.Label("");
+        javafx.scene.layout.VBox phoneForm = TOOLS.DialogStyle.createFormCard(
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "전화번호" : "Phone"),
+                tfTelno));
 
+        // ════════════════════════════════════════════════════════
+        //  ② Gmail
+        // ════════════════════════════════════════════════════════
+        javafx.scene.control.TextField tfFrom =
+            TOOLS.DialogStyle.createTextField(AppContext.getGmailFrom(),
+                isKR ? "(발신) Gmail ID" : "(From) Gmail ID");
+        TOOLS.DialogStyle.PasswordControls tfPass =
+            TOOLS.DialogStyle.createPasswordControls(AppContext.getGmailPass(),
+                isKR ? "(발신) Gmail App Password" : "(From) Gmail App Password");
+        javafx.scene.control.TextField tfLastTo =
+            TOOLS.DialogStyle.createTextField(AppContext.get("gmail.lastTo",""),
+                isKR ? "수신 Gmail" : "Recipient Gmail");
+        javafx.scene.control.TextField tfGmailCode =
+            TOOLS.DialogStyle.createTextField("",
+                isKR ? "Gmail 인증 코드 (4자리)" : "Gmail verify code (4 digits)");
+        javafx.scene.control.Label lblGmailStatus = TOOLS.DialogStyle.createResultLabel();
         String[] gmailCode = {""};
-        String[] tgCode    = {""};
 
-        // ── [Gmail 검증번호 발송] 버튼 ────────────────────────
         javafx.scene.control.Button btnGmailVerify =
-            new javafx.scene.control.Button(btnGmailTxt);
+            TOOLS.DialogStyle.createSecondaryButton(
+                isKR ? "📧 Gmail 검증번호 발송" : "📧 Send Gmail Verify Code");
+        btnGmailVerify.setMaxWidth(Double.MAX_VALUE);
         btnGmailVerify.setOnAction(e -> {
             String from = tfFrom.getText().trim();
-            String pass = tfPass.getText().trim();
+            String pass = tfPass.getText();
             String to   = tfLastTo.getText().trim();
             if (from.isEmpty() || pass.isEmpty() || to.isEmpty()) {
-                lblGmailStatus.setText(isKR ? "❌ 발신/수신 Gmail 모두 입력 필요" : "❌ From/To Gmail required");
+                TOOLS.DialogStyle.setResultError(lblGmailStatus,
+                    isKR ? "❌ 발신/수신 Gmail 모두 입력 필요" : "❌ From/To Gmail required");
                 return;
             }
             String code = String.format("%04d", new java.util.Random().nextInt(10000));
             gmailCode[0] = code;
-            lblGmailStatus.setText(isKR ? "⏳ 발송 중..." : "⏳ Sending...");
+            TOOLS.DialogStyle.setResultNeutral(lblGmailStatus,
+                isKR ? "⏳ 발송 중..." : "⏳ Sending...");
             new Thread(() -> {
                 try {
                     GmailSender.getInstance().sendOneSmtp(to,
@@ -1498,31 +1510,64 @@ public class MainWindow {
                         (isKR ? "인증 코드: " : "Verification code: ") + code
                             + (isKR ? "\n\n60초 이내에 입력하세요." : "\n\nEnter within 60 seconds."));
                     javafx.application.Platform.runLater(() ->
-                        lblGmailStatus.setText("✅ " + to + (isKR ? " 으로 발송 완료. 60초 내 입력." : " — code sent. Enter within 60s.")));
+                        TOOLS.DialogStyle.setResultSuccess(lblGmailStatus,
+                            "✅ " + to + (isKR ? " 으로 발송 완료. 60초 내 입력." : " — code sent. Enter within 60s.")));
                     Thread.sleep(60_000);
                     gmailCode[0] = "";
                     javafx.application.Platform.runLater(() ->
-                        lblGmailStatus.setText(isKR ? "⚠️ 인증 코드 만료됨. 재발송 필요." : "⚠️ Code expired. Resend required."));
+                        TOOLS.DialogStyle.setResultNeutral(lblGmailStatus,
+                            isKR ? "⚠️ 인증 코드 만료됨. 재발송 필요." : "⚠️ Code expired. Resend required."));
                 } catch (Exception ex) {
                     javafx.application.Platform.runLater(() ->
-                        lblGmailStatus.setText("❌ " + ex.getMessage()));
+                        TOOLS.DialogStyle.setResultError(lblGmailStatus, "❌ " + ex.getMessage()));
                 }
             }).start();
         });
 
-        // ── [텔레그램 검증번호 발송] 버튼 ────────────────────
+        javafx.scene.layout.VBox gmailForm = TOOLS.DialogStyle.createFormCard(
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "발신 Gmail ID" : "From Gmail ID"), tfFrom),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "Gmail App Password" : "Gmail App Password"),
+                tfPass.stack, tfPass.showCheckBox),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "수신 Gmail" : "Recipient Gmail"), tfLastTo),
+            new javafx.scene.layout.VBox(6, btnGmailVerify),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "Gmail 인증코드" : "Gmail Code"), tfGmailCode),
+            new javafx.scene.layout.VBox(2, lblGmailStatus));
+
+        // ════════════════════════════════════════════════════════
+        //  ③ Telegram
+        // ════════════════════════════════════════════════════════
+        javafx.scene.control.TextField tfBotToken =
+            TOOLS.DialogStyle.createTextField(AppContext.getTelegramBotToken(),
+                "123456789:ABCdef...");
+        javafx.scene.control.TextField tfChatId =
+            TOOLS.DialogStyle.createTextField(AppContext.getTelegramMyChatId(),
+                "1:1 chat id");
+        javafx.scene.control.TextField tfTgCode =
+            TOOLS.DialogStyle.createTextField("",
+                isKR ? "텔레그램 인증 코드 (4자리)" : "Telegram verify code (4 digits)");
+        javafx.scene.control.Label lblTgStatus = TOOLS.DialogStyle.createResultLabel();
+        String[] tgCode = {""};
+
         javafx.scene.control.Button btnTgVerify =
-            new javafx.scene.control.Button(btnTgTxt);
+            TOOLS.DialogStyle.createSecondaryButton(
+                isKR ? "📱 텔레그램 검증번호 발송" : "📱 Send Telegram Verify Code");
+        btnTgVerify.setMaxWidth(Double.MAX_VALUE);
         btnTgVerify.setOnAction(e -> {
             String token  = tfBotToken.getText().trim();
             String chatId = tfChatId.getText().trim();
             if (token.isEmpty() || chatId.isEmpty()) {
-                lblTgStatus.setText(isKR ? "❌ Bot Token 과 Chat ID 모두 입력 필요" : "❌ Bot Token and Chat ID required");
+                TOOLS.DialogStyle.setResultError(lblTgStatus,
+                    isKR ? "❌ Bot Token 과 Chat ID 모두 입력 필요" : "❌ Bot Token and Chat ID required");
                 return;
             }
             String code = String.format("%04d", new java.util.Random().nextInt(10000));
             tgCode[0] = code;
-            lblTgStatus.setText(isKR ? "⏳ 발송 중..." : "⏳ Sending...");
+            TOOLS.DialogStyle.setResultNeutral(lblTgStatus,
+                isKR ? "⏳ 발송 중..." : "⏳ Sending...");
             new Thread(() -> {
                 try {
                     String url = "https://api.telegram.org/bot" + token
@@ -1535,42 +1580,157 @@ public class MainWindow {
                     con.setConnectTimeout(10000);
                     int rc = con.getResponseCode();
                     con.disconnect();
-                    javafx.application.Platform.runLater(() ->
-                        lblTgStatus.setText(rc == 200
-                            ? (isKR ? "✅ 텔레그램으로 발송 완료. 60초 내 입력." : "✅ Sent to Telegram. Enter within 60s.")
-                            : "❌ HTTP " + rc));
+                    javafx.application.Platform.runLater(() -> {
+                        if (rc == 200)
+                            TOOLS.DialogStyle.setResultSuccess(lblTgStatus,
+                                isKR ? "✅ 텔레그램으로 발송 완료. 60초 내 입력." : "✅ Sent to Telegram. Enter within 60s.");
+                        else
+                            TOOLS.DialogStyle.setResultError(lblTgStatus, "❌ HTTP " + rc);
+                    });
                     Thread.sleep(60_000);
                     tgCode[0] = "";
                     javafx.application.Platform.runLater(() ->
-                        lblTgStatus.setText(isKR ? "⚠️ 인증 코드 만료됨. 재발송 필요." : "⚠️ Code expired. Resend required."));
+                        TOOLS.DialogStyle.setResultNeutral(lblTgStatus,
+                            isKR ? "⚠️ 인증 코드 만료됨. 재발송 필요." : "⚠️ Code expired. Resend required."));
                 } catch (Exception ex) {
                     javafx.application.Platform.runLater(() ->
-                        lblTgStatus.setText("❌ " + ex.getMessage()));
+                        TOOLS.DialogStyle.setResultError(lblTgStatus, "❌ " + ex.getMessage()));
                 }
             }).start();
         });
 
-        // ── [등록] 버튼 ───────────────────────────────────────
-        javafx.scene.control.Button btnSave = new javafx.scene.control.Button(btnSaveTxt);
-        btnSave.setStyle("-fx-background-color:#1976D2;-fx-text-fill:white;-fx-font-weight:bold;-fx-font-size:13px;");
+        javafx.scene.layout.VBox tgForm = TOOLS.DialogStyle.createFormCard(
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel("Bot Token"), tfBotToken),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel("Chat ID"), tfChatId),
+            new javafx.scene.layout.VBox(6, btnTgVerify),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "텔레그램 인증코드" : "TG Code"), tfTgCode),
+            new javafx.scene.layout.VBox(2, lblTgStatus));
+
+        // ════════════════════════════════════════════════════════
+        //  ④ Naver (신규)
+        // ════════════════════════════════════════════════════════
+        javafx.scene.control.TextField tfNaverId =
+            TOOLS.DialogStyle.createTextField(AppContext.getNaverId(), "Naver ID");
+        TOOLS.DialogStyle.PasswordControls tfNaverPass =
+            TOOLS.DialogStyle.createPasswordControls(AppContext.getNaverPassword(),
+                isKR ? "네이버 비밀번호" : "Naver Password");
+        javafx.scene.control.TextField tfNaverCode =
+            TOOLS.DialogStyle.createTextField("",
+                isKR ? "네이버 수신 난수 숫자 (4자리)" : "Naver received code (4 digits)");
+        javafx.scene.control.Label lblNaverStatus = TOOLS.DialogStyle.createResultLabel();
+        String[] naverCode = {""};
+
+        // 안내 레이블
+        javafx.scene.control.Label naverInfoLbl = new javafx.scene.control.Label(
+            isKR ? "※ (네이버 칼렌다 일정관리) 기능을 이용하는데 필요합니다"
+                 : "※ Required for Naver Calendar scheduling feature");
+        naverInfoLbl.setWrapText(true);
+        naverInfoLbl.setStyle(
+            "-fx-font-size:12px; -fx-text-fill:#1a7a40; -fx-font-style:italic;");
+
+        javafx.scene.control.Button btnNaverVerify =
+            TOOLS.DialogStyle.createSecondaryButton(
+                isKR ? "📬 네이버 메일 수신 확인" : "📬 Send Naver Mail Verify");
+        btnNaverVerify.setMaxWidth(Double.MAX_VALUE);
+        btnNaverVerify.setOnAction(e -> {
+            String id = tfNaverId.getText().trim();
+            if (id.isEmpty()) {
+                TOOLS.DialogStyle.setResultError(lblNaverStatus,
+                    isKR ? "❌ 네이버 ID를 입력하세요" : "❌ Enter Naver ID");
+                return;
+            }
+            // Gmail(발신) 설정 여부 확인
+            String gmailFrom  = tfFrom.getText().trim();
+            String gmailPass2 = tfPass.getText();
+            if (gmailFrom.isEmpty() || gmailPass2.isEmpty()) {
+                TOOLS.DialogStyle.setResultError(lblNaverStatus,
+                    isKR ? "❌ 먼저 Gmail(발신) 정보를 입력하세요" : "❌ Set From Gmail info first");
+                return;
+            }
+            String naverEmail = id + "@naver.com";
+            String code = String.format("%04d", new java.util.Random().nextInt(10000));
+            naverCode[0] = code;
+            TOOLS.DialogStyle.setResultNeutral(lblNaverStatus,
+                isKR ? "⏳ " + naverEmail + " 으로 발송 중..." : "⏳ Sending to " + naverEmail + "...");
+            new Thread(() -> {
+                try {
+                    GmailSender.getInstance().sendOneSmtp(naverEmail,
+                        "[KootPanKing] " + (isKR ? "네이버 메일 인증 코드" : "Naver Mail Verification Code"),
+                        (isKR ? "인증 코드: " : "Verification code: ") + code
+                            + (isKR ? "\n\n60초 이내에 입력하세요." : "\n\nEnter within 60 seconds."));
+                    // gmail.lastTo 자동 갱신
+                    javafx.application.Platform.runLater(() -> {
+                        tfLastTo.setText(naverEmail);
+                        TOOLS.DialogStyle.setResultSuccess(lblNaverStatus,
+                            "✅ " + naverEmail + (isKR ? " 으로 발송 완료. 60초 내 입력." : " — code sent. Enter within 60s."));
+                    });
+                    Thread.sleep(60_000);
+                    naverCode[0] = "";
+                    javafx.application.Platform.runLater(() ->
+                        TOOLS.DialogStyle.setResultNeutral(lblNaverStatus,
+                            isKR ? "⚠️ 인증 코드 만료됨. 재발송 필요." : "⚠️ Code expired. Resend required."));
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() ->
+                        TOOLS.DialogStyle.setResultError(lblNaverStatus, "❌ " + ex.getMessage()));
+                }
+            }).start();
+        });
+
+        javafx.scene.layout.VBox naverForm = TOOLS.DialogStyle.createFormCard(
+            new javafx.scene.layout.VBox(8, naverInfoLbl),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel("Naver ID"), tfNaverId),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "네이버 비밀번호" : "Naver Password"),
+                tfNaverPass.stack, tfNaverPass.showCheckBox),
+            new javafx.scene.layout.VBox(6, btnNaverVerify),
+            new javafx.scene.layout.VBox(6,
+                TOOLS.DialogStyle.createFieldLabel(isKR ? "수신 인증코드 입력" : "Enter Received Code"),
+                tfNaverCode),
+            new javafx.scene.layout.VBox(2, lblNaverStatus));
+
+        // ════════════════════════════════════════════════════════
+        //  [등록] / [위치] / [닫기] 버튼
+        // ════════════════════════════════════════════════════════
+        javafx.scene.control.Button btnSave =
+            TOOLS.DialogStyle.createPrimaryButton(isKR ? "💾 등록" : "💾 Register");
+        javafx.scene.control.Button btnLocation =
+            TOOLS.DialogStyle.createSecondaryButton(
+                isKR ? "📍 현재 위치 활성화" : "📍 Activate Location");
+        javafx.scene.control.Button btnClose =
+            TOOLS.DialogStyle.createSoftButton(isKR ? "닫기" : "Close");
+
+        btnClose.setOnAction(ev -> dlg.close());
+        btnLocation.setOnAction(ev -> launchLocationBrowser());
+        btnSave.setDefaultButton(true);
+
         btnSave.setOnAction(e -> {
+            // 전화번호 저장
             AppContext.setAdminTelNo(tfTelno.getText().trim());
+            // Gmail 저장
             AppContext.setGmailFrom(tfFrom.getText().trim());
-            AppContext.setGmailPass(tfPass.getText().trim());
+            AppContext.setGmailPass(tfPass.getText());
             AppContext.set("gmail.lastTo", tfLastTo.getText().trim());
             AppContext.save();
+            // Gmail 인증 코드 검증
             String inputGmail = tfGmailCode.getText().trim();
             if (!inputGmail.isEmpty() && !gmailCode[0].isEmpty()) {
                 if (inputGmail.equals(gmailCode[0])) {
                     String now = new java.text.SimpleDateFormat("yyMMddHHmmss").format(new java.util.Date());
                     AppContext.setGmailCertified(now);
                     AppContext.save();
-                    lblGmailStatus.setText("✅ " + (isKR ? "Gmail 검증 완료 (" : "Gmail verified (") + now + ")");
+                    TOOLS.DialogStyle.setResultSuccess(lblGmailStatus,
+                        "✅ " + (isKR ? "Gmail 검증 완료 (" : "Gmail verified (") + now + ")");
                 } else {
-                    lblGmailStatus.setText(isKR ? "❌ Gmail 인증 코드 불일치" : "❌ Gmail code mismatch");
+                    TOOLS.DialogStyle.setResultError(lblGmailStatus,
+                        isKR ? "❌ Gmail 인증 코드 불일치" : "❌ Gmail code mismatch");
                     return;
                 }
             }
+            // 텔레그램 인증 코드 검증
             String inputTg = tfTgCode.getText().trim();
             if (!inputTg.isEmpty() && !tgCode[0].isEmpty()) {
                 if (inputTg.equals(tgCode[0])) {
@@ -1579,80 +1739,170 @@ public class MainWindow {
                     String now = new java.text.SimpleDateFormat("yyMMddHHmmss").format(new java.util.Date());
                     AppContext.setTgCertified(now);
                     AppContext.save();
-                    lblTgStatus.setText("✅ " + (isKR ? "텔레그램 검증 완료 (" : "Telegram verified (") + now + ")");
+                    TOOLS.DialogStyle.setResultSuccess(lblTgStatus,
+                        "✅ " + (isKR ? "텔레그램 검증 완료 (" : "Telegram verified (") + now + ")");
                 } else {
-                    lblTgStatus.setText(isKR ? "❌ 텔레그램 인증 코드 불일치" : "❌ Telegram code mismatch");
+                    TOOLS.DialogStyle.setResultError(lblTgStatus,
+                        isKR ? "❌ 텔레그램 인증 코드 불일치" : "❌ Telegram code mismatch");
                     return;
                 }
             }
             AppContext.setTelegramBotToken(tfBotToken.getText().trim());
             AppContext.setTelegramMyChatId(tfChatId.getText().trim());
             AppContext.save();
-            showAlert(isKR ? "등록이 완료되었습니다." : "Registration complete.", titleTxt);
+            // 네이버 인증 코드 검증
+            String inputNaver = tfNaverCode.getText().trim();
+            if (!inputNaver.isEmpty()) {
+                if (naverCode[0].isEmpty()) {
+                    TOOLS.DialogStyle.setResultError(lblNaverStatus,
+                        isKR ? "❌ 먼저 [네이버 메일 수신 확인] 버튼을 누르세요" : "❌ Press verify button first");
+                    return;
+                }
+                if (inputNaver.equals(naverCode[0])) {
+                    String navId = tfNaverId.getText().trim();
+                    String navPw = tfNaverPass.getText();
+                    AppContext.setNaverId(navId);
+                    AppContext.setNaverPassword(navPw);
+                    String now = new java.text.SimpleDateFormat("yyMMddHHmmss").format(new java.util.Date());
+                    AppContext.set("naver.certified", now);
+                    AppContext.save();
+                    if (naverCalendarService != null) naverCalendarService.setCredentials(navId, navPw);
+                    TOOLS.DialogStyle.setResultSuccess(lblNaverStatus,
+                        "✅ " + (isKR ? "네이버 검증 완료 (" : "Naver verified (") + now + ")");
+                } else {
+                    TOOLS.DialogStyle.setResultError(lblNaverStatus,
+                        isKR ? "❌ 네이버 인증 코드 불일치" : "❌ Naver code mismatch");
+                    return;
+                }
+            } else if (!tfNaverId.getText().trim().isEmpty()) {
+                // 인증 코드 없이 ID/PW만 저장 (선택적)
+                AppContext.setNaverId(tfNaverId.getText().trim());
+                AppContext.setNaverPassword(tfNaverPass.getText());
+                AppContext.save();
+                if (naverCalendarService != null)
+                    naverCalendarService.setCredentials(tfNaverId.getText().trim(), tfNaverPass.getText());
+            }
+            showAlert(isKR ? "등록이 완료되었습니다." : "Registration complete.",
+                isKR ? "관리자 등록" : "Admin Registration");
             dlg.close();
         });
 
-        javafx.scene.control.Button btnClose = new javafx.scene.control.Button(btnCloseTxt);
-        btnClose.setOnAction(e -> dlg.close());
+        javafx.scene.control.Label hdrPhone = makeSectionHeaderLabel("📞 " + (isKR ? "전화번호" : "Phone"));
+        javafx.scene.control.Label hdrGmail = makeSectionHeaderLabel("📧 Gmail");
+        javafx.scene.control.Label hdrTg    = makeSectionHeaderLabel("📱 Telegram");
+        javafx.scene.control.Label hdrNaver = makeSectionHeaderLabel("🟢 Naver");
 
-        // ── 레이아웃 ──────────────────────────────────────────
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(10); grid.setVgap(8);
-        grid.setPadding(new javafx.geometry.Insets(20));
-        int r = 0;
-        grid.add(lblTimer, 1, r, 1, 1);
-        javafx.scene.layout.GridPane.setHalignment(lblTimer, javafx.geometry.HPos.RIGHT); r++;
-        grid.add(new javafx.scene.control.Label(isKR ? "전화번호:" : "Phone:"), 0, r); grid.add(tfTelno, 1, r++);
-        grid.add(new javafx.scene.control.Separator(), 0, r++, 2, 1);
-        grid.add(new javafx.scene.control.Label(isKR ? "발신 Gmail ID:" : "From Gmail ID:"), 0, r); grid.add(tfFrom, 1, r++);
-        grid.add(new javafx.scene.control.Label(isKR ? "Gmail Password:" : "Gmail Password:"), 0, r); grid.add(tfPass, 1, r++);
-        grid.add(new javafx.scene.control.Label(isKR ? "수신 Gmail:" : "To Gmail:"), 0, r); grid.add(tfLastTo, 1, r++);
-        grid.add(btnGmailVerify, 0, r, 2, 1); r++;
-        grid.add(new javafx.scene.control.Label(isKR ? "Gmail 인증코드:" : "Gmail code:"), 0, r); grid.add(tfGmailCode, 1, r++);
-        grid.add(lblGmailStatus, 0, r++, 2, 1);
-        grid.add(new javafx.scene.control.Separator(), 0, r++, 2, 1);
-        grid.add(new javafx.scene.control.Label("Bot Token:"), 0, r); grid.add(tfBotToken, 1, r++);
-        grid.add(new javafx.scene.control.Label("Chat ID:"), 0, r); grid.add(tfChatId, 1, r++);
-        grid.add(btnTgVerify, 0, r, 2, 1); r++;
-        grid.add(new javafx.scene.control.Label(isKR ? "TG 인증코드:" : "TG code:"), 0, r); grid.add(tfTgCode, 1, r++);
-        grid.add(lblTgStatus, 0, r++, 2, 1);
-        // ── 현재 위치 활성화 버튼 ────────────────────────────
-        javafx.scene.control.Button btnLocation = new javafx.scene.control.Button(
-            isKR ? "📍 현재 위치 활성화" : "📍 Activate Location");
-        btnLocation.setStyle("-fx-background-color:#2e7d32;-fx-text-fill:white;-fx-font-size:12px;");
-        btnLocation.setOnAction(e -> launchLocationBrowser());
+        javafx.scene.layout.HBox buttonRow =
+            TOOLS.DialogStyle.createButtonRow(btnClose, btnLocation, btnSave);
 
-        javafx.scene.layout.HBox leftBtns  = new javafx.scene.layout.HBox(10, btnSave, btnClose);
-        javafx.scene.layout.HBox rightBtns = new javafx.scene.layout.HBox(btnLocation);
-        javafx.scene.layout.BorderPane bottomRow = new javafx.scene.layout.BorderPane();
-        bottomRow.setLeft(leftBtns);
-        bottomRow.setRight(rightBtns);
-        grid.add(bottomRow, 0, r, 2, 1);
+        // 스크롤 가능한 전체 콘텐츠 (타이머는 스크롤 밖 오버레이로 분리)
+        javafx.scene.layout.VBox contentBox = new javafx.scene.layout.VBox(10,
+            hdrPhone,  phoneForm,
+            hdrGmail,  gmailForm,
+            hdrTg,     tgForm,
+            hdrNaver,  naverForm,
+            buttonRow);
+        contentBox.setPadding(new javafx.geometry.Insets(4, 0, 10, 0));
 
-        javafx.scene.Scene sc = new javafx.scene.Scene(
-            new javafx.scene.layout.StackPane(grid));
+        javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(contentBox);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        javafx.scene.layout.VBox.setVgrow(scroll, javafx.scene.layout.Priority.ALWAYS);
+
+        // ── 수동 헤더 (createDialogRoot 미사용 — ScrollPane 호환) ──
+        javafx.scene.control.Label dlgTitleLbl = new javafx.scene.control.Label(
+            isKR ? "관리자 등록" : "Admin Registration");
+        dlgTitleLbl.setStyle(
+            "-fx-font-size:22px; -fx-font-weight:bold; -fx-text-fill:#6b2148;");
+
+        javafx.scene.control.Label dlgSubtitleLbl = new javafx.scene.control.Label(
+            isKR ? "전화번호 · Gmail · 텔레그램 · 네이버 정보를 등록하고 인증합니다."
+                 : "Register and verify phone, Gmail, Telegram, and Naver credentials.");
+        dlgSubtitleLbl.setStyle("-fx-font-size:12px; -fx-text-fill:#a0507a;");
+        dlgSubtitleLbl.setWrapText(true);
+
+        javafx.scene.layout.VBox dlgHeader = new javafx.scene.layout.VBox(4,
+            dlgTitleLbl, dlgSubtitleLbl);
+        dlgHeader.setPadding(new javafx.geometry.Insets(18, 18, 8, 18));
+
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(dlgHeader, scroll);
+        root.setStyle(
+            "-fx-background-color: linear-gradient(to bottom right, #fff7fb 0%, #ffe8f4 45%, #ffd6eb 100%);");
+        javafx.scene.layout.VBox.setVgrow(scroll, javafx.scene.layout.Priority.ALWAYS);
+
+        javafx.scene.Scene sc = new javafx.scene.Scene(root, 680, 720);
+        AppContext.applyGlobalFont(sc);
         dlg.setScene(sc);
+        dlg.setResizable(true);
+        dlg.setMinWidth(620);
+        dlg.setMinHeight(560);
 
-        // 600초 타이머
+        // ── 모니터 좌상단 점멸 타이머 오버레이 ─────────────────
+        javafx.stage.Stage timerOverlay = new javafx.stage.Stage();
+        timerOverlay.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+        timerOverlay.setAlwaysOnTop(true);
+        timerOverlay.setResizable(false);
+
+        javafx.scene.control.Label overlayLbl = new javafx.scene.control.Label(
+            "🔐 " + (isKR ? "관리자 등록  남은시간  " : "Admin Reg  ") + "600" + (isKR ? "초" : "s"));
+        overlayLbl.setStyle(
+            "-fx-text-fill: white; -fx-font-size: 14px; -fx-font-weight: bold;"
+            + " -fx-font-family: 'Malgun Gothic';");
+
+        javafx.scene.layout.VBox overlayBox = new javafx.scene.layout.VBox(overlayLbl);
+        overlayBox.setPadding(new javafx.geometry.Insets(8, 18, 8, 18));
+        overlayBox.setStyle(
+            "-fx-background-color: rgba(0,150,0,0.88); -fx-background-radius: 8;");
+        overlayBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+        javafx.scene.Scene overlayScene = new javafx.scene.Scene(overlayBox);
+        overlayScene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        timerOverlay.setScene(overlayScene);
+
+        javafx.geometry.Rectangle2D screen =
+            javafx.stage.Screen.getPrimary().getVisualBounds();
+        timerOverlay.show();
+        timerOverlay.setX(screen.getMinX() + 10);
+        timerOverlay.setY(screen.getMinY() + 10);
+
+        // 점멸 애니메이션
+        javafx.animation.Timeline blink = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.millis(700), ev ->
+                overlayBox.setOpacity(overlayBox.getOpacity() > 0.5 ? 0.3 : 1.0)));
+        blink.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        blink.play();
+
+        // 600초 카운트다운
         javafx.animation.Timeline timer600 = new javafx.animation.Timeline(
             new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev -> {
                 timerSec[0]--;
-                lblTimer.setText(timerSec[0] + (isKR ? "초" : "s"));
-                if (timerSec[0] <= 30)
-                    lblTimer.setStyle("-fx-font-size:12px;-fx-text-fill:#cc0000;-fx-font-weight:bold;");
+                overlayLbl.setText(
+                    "🔐 " + (isKR ? "관리자 등록  남은시간  " : "Admin Reg  ")
+                    + timerSec[0] + (isKR ? "초" : "s"));
+                if (timerSec[0] <= 60)
+                    overlayBox.setStyle(
+                        "-fx-background-color: rgba(180,0,0,0.88); -fx-background-radius: 8;");
                 if (timerSec[0] <= 0) dlg.close();
             }));
         timer600.setCycleCount(javafx.animation.Animation.INDEFINITE);
         timer600.play();
-        dlg.setOnHidden(e -> timer600.stop());
+
+        dlg.setOnHidden(e -> {
+            timer600.stop();
+            blink.stop();
+            timerOverlay.close();
+        });
         dlg.showAndWait();
     }
 
-    private javafx.scene.control.TextField makeAdminField(String prompt, String value) {
-        javafx.scene.control.TextField tf = new javafx.scene.control.TextField(value);
-        tf.setPromptText(prompt);
-        tf.setPrefWidth(240);
-        return tf;
+    /** 섹션 헤더 레이블 (관리자 등록 다이얼로그용) */
+    private javafx.scene.control.Label makeSectionHeaderLabel(String text) {
+        javafx.scene.control.Label lbl = new javafx.scene.control.Label(text);
+        lbl.setStyle("-fx-font-size:13px;-fx-font-weight:bold;-fx-text-fill:#5a2070;"
+            + "-fx-padding:6 0 2 0;");
+        return lbl;
     }
 
     private Menu buildFileMenu() {
@@ -1688,16 +1938,36 @@ public class MainWindow {
 	}
     private Menu buildToolsMenu() {
         Menu menu = makeMenu("Tools", "Notifications and external services");
-        menu.getItems().add(makeSectionHeader("Notice"));
-        menu.getItems().add(makeRichMenuItem("🔔", "Chime Settings",
+        // ── Chime ─────────────────────────────────────────────
+        menu.getItems().add(makeRichMenuItem("🔔", "Chime Setting",
             "Chime Settings", null,
-		() -> showChimeDialogPublic(theStage)));
-		menu.getItems().add(makeSectionHeader("Integrations"));
-		menu.getItems().add(buildGmailMenu());
-		menu.getItems().add(buildKakaoMenuFx());
-		menu.getItems().add(buildTelegramMenuFx());
-		return menu;
-	}
+            () -> showChimeDialogPublic(theStage)));
+        menu.getItems().add(new SeparatorMenuItem());
+        // ── Google Calendar ─────────────────────────────────────
+        menu.getItems().add(calMenuAction("📧 구글 칼렌다 조회 (3일)",
+            () -> showCalendarResult("Google","google",3,"next")));
+        menu.getItems().add(calMenuAction("📧 구글 칼렌다 조회 (다음 7일)",
+            () -> showCalendarResult("Google","google",7,"next")));
+        menu.getItems().add(calMenuAction("📧 구글 칼렌다 조회 (지난 7일)",
+            () -> showCalendarResult("Google","google",7,"past")));
+        menu.getItems().add(calMenuAction("📧 구글 칼렌다 조회 (이번달)",
+            () -> showCalendarResult("Google","google",0,"month")));
+        menu.getItems().add(calMenuAction("📧 구글 칼렌다 조회 (다음달)",
+            () -> showCalendarResult("Google","google",0,"nextmonth")));
+        menu.getItems().add(new SeparatorMenuItem());
+        // ── Naver Calendar ──────────────────────────────────────
+        menu.getItems().add(calMenuAction("🟢 네이버 칼렌다 조회 (3일)",
+            () -> showCalendarResult("Naver","naver",3,"next")));
+        menu.getItems().add(calMenuAction("🟢 네이버 칼렌다 조회 (다음 7일)",
+            () -> showCalendarResult("Naver","naver",7,"next")));
+        menu.getItems().add(calMenuAction("🟢 네이버 칼렌다 조회 (지난 7일)",
+            () -> showCalendarResult("Naver","naver",7,"past")));
+        menu.getItems().add(calMenuAction("🟢 네이버 칼렌다 조회 (이번달)",
+            () -> showCalendarResult("Naver","naver",0,"month")));
+        menu.getItems().add(calMenuAction("🟢 네이버 칼렌다 조회 (다음달)",
+            () -> showCalendarResult("Naver","naver",0,"nextmonth")));
+        return menu;
+    }
     // ═══════════════════════════════════════════════════════════
     //  Image&Camera 메뉴 (3번째 최상위 메뉴)
     // ═══════════════════════════════════════════════════════════
@@ -1739,6 +2009,28 @@ public class MainWindow {
 
         // ── 제5서브: PhoneCamera (서브메뉴) ───────────────────
         menu.getItems().add(buildPhoneCameraMenu());
+
+        // ── 제6서브: 녹화된 mp4 파일들 ──────────────────────────
+        menu.getItems().add(new SeparatorMenuItem());
+        menu.getItems().add(makeRichMenuItem("🎬", "녹화된 mp4 파일들...",
+            "녹화된 MP4 파일을 선택하여 기본 플레이어로 재생", null, () -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle("녹화된 MP4 파일 선택");
+            fc.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("MP4 Video (*.mp4)", "*.mp4"));
+            fc.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("All Files", "*.*"));
+            File initDir = new File(AppContext.getAPP_DIR() + File.separator + "img");
+            if (!initDir.exists()) initDir = new File(AppContext.getAPP_DIR());
+            if (initDir.exists()) fc.setInitialDirectory(initDir);
+            File chosen = fc.showOpenDialog(theStage);
+            if (chosen == null) return;
+            try {
+                java.awt.Desktop.getDesktop().open(chosen);
+            } catch (Exception ex) {
+                showAlert("파일을 열 수 없습니다:\n" + ex.getMessage(), "MP4 재생");
+            }
+        }));
 
         return menu;
     }
@@ -2628,6 +2920,11 @@ public class MainWindow {
 	}
 	private Menu buildHelpMenu() {
 		Menu menu = makeMenu("Help", "Log, Settings, Download, About, Contact");
+		// ── User Guide (첫번째 단독 메뉴) ─────────────────────────
+		menu.getItems().add(makeRichMenuItem("📖", "User Guide",
+			"Open user guide in browser", null,
+			() -> openBrowser("https://blog.naver.com/garpsu/224264857640")));
+		menu.getItems().add(new SeparatorMenuItem());
 		// ── 유지보수 ─────────────────────────────────────────────
 		menu.getItems().add(makeSectionHeader("Maintenance"));
 		menu.getItems().add(makeRichMenuItem("🔄", "Program Upgrade",
@@ -2635,10 +2932,17 @@ public class MainWindow {
 		// ── 부팅 자동 실행 (CheckMenuItem) ──────────────────────
 		CheckMenuItem autoStartItem = new CheckMenuItem("🖥  Auto-start on Boot");
 		autoStartItem.setStyle(
-			"-fx-font-family:'Malgun Gothic'; -fx-font-size:13px;"
+			"-fx-font-family:'" + AppContext.getUiFontFamily() + "'; -fx-font-size:" + AppContext.getUiFontSize() + "px;"
 		+ " -fx-text-fill:" + fgColor() + ";");
 		autoStartItem.setOnAction(e -> {
 			boolean enable = autoStartItem.isSelected();
+			// ── 해제(disable) 시에는 관리자 인증 필요 ───────────────
+			if (!enable) {
+				if (!AdminAuth.authenticate(theStage)) {
+					autoStartItem.setSelected(true); // 인증 실패 → 체크 상태 복원
+					return;
+				}
+			}
 			new Thread(() -> {
 				boolean ok = AppRestarter.AutoStart.set(enable);
 				Platform.runLater(() -> {
@@ -3789,15 +4093,28 @@ public class MainWindow {
     // ── 메인창 보이기/숨기기 토글 (글로벌 마우스 훅에서 호출) ──
     public void toggleWindow() {
         if (theStage == null) return;
+        if (theStage.isIconified()) {
+            theStage.setIconified(false);
+            theStage.show();
+            theStage.setAlwaysOnTop(true);
+            theStage.toFront();
+            theStage.requestFocus();
+            theStage.setAlwaysOnTop(false);
+            System.out.println("[MainWindow] Main window restored from minimized");
+            return;
+        }
         if (theStage.isShowing()) {
             theStage.hide();
             System.out.println("[MainWindow] Main window hidden");
-			} else {
+        } else {
             theStage.show();
+            theStage.setAlwaysOnTop(true);
             theStage.toFront();
+            theStage.requestFocus();
+            theStage.setAlwaysOnTop(false);
             System.out.println("[MainWindow] Main window shown");
-		}
-	}
+        }
+    }
     // ── 테마 토글 ──────────────────────────────────────────────
     private void toggleTheme() {
         themeMode = (themeMode == ThemeMode.PINK_GLASS) ? ThemeMode.BASIC : ThemeMode.PINK_GLASS;
@@ -3825,6 +4142,8 @@ public class MainWindow {
 	}
     private MenuItem makeRichMenuItem(String icon, String text, String helpText,
 		String shortcut, Runnable action) {
+        String ff  = AppContext.getUiFontFamily();
+        int    fs  = AppContext.getUiFontSize();
         javafx.scene.layout.HBox row = new javafx.scene.layout.HBox(8);
         row.setAlignment(Pos.CENTER_LEFT);
         row.setPadding(new Insets(3, 8, 3, 8));
@@ -3832,17 +4151,17 @@ public class MainWindow {
 		+ "; -fx-background-radius: 14; -fx-border-color: transparent; -fx-border-radius:14;");
         if (icon != null && !icon.isEmpty()) {
             Label iconLabel = new Label(icon);
-            iconLabel.setStyle("-fx-font-size:14px;");
+            iconLabel.setStyle("-fx-font-size:" + fs + "px;");
             row.getChildren().add(iconLabel);
 		}
         Label textLabel = new Label(text);
-        textLabel.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:13px; -fx-text-fill:" + fgColor() + ";");
+        textLabel.setStyle("-fx-font-family:'" + ff + "'; -fx-font-size:" + fs + "px; -fx-text-fill:" + fgColor() + ";");
         row.getChildren().add(textLabel);
         if (shortcut != null && !shortcut.isEmpty()) {
             javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
             javafx.scene.layout.HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
             Label scLabel = new Label(shortcut);
-            scLabel.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:11px; -fx-text-fill:" + TS_CLR + ";");
+            scLabel.setStyle("-fx-font-family:'" + ff + "'; -fx-font-size:" + Math.max(fs - 2, 9) + "px; -fx-text-fill:" + TS_CLR + ";");
             row.getChildren().addAll(spacer, scLabel);
 		}
         CustomMenuItem item = new CustomMenuItem(row, true);
@@ -3864,8 +4183,11 @@ public class MainWindow {
         return item;
 	}
     private CustomMenuItem makeSectionHeader(String text) {
+        String ff = AppContext.getUiFontFamily();
+        int    fs = AppContext.getUiFontSize();
         Label label = new Label(text);
-        label.setStyle("-fx-font-size:11px; -fx-font-weight:bold; -fx-text-fill:"
+        label.setStyle("-fx-font-family:'" + ff + "'; -fx-font-size:" + Math.max(fs - 2, 9) + "px;"
+            + " -fx-font-weight:bold; -fx-text-fill:"
 		+ (themeMode == ThemeMode.PINK_GLASS ? "#c24d8f" : "#5078b4") + ";");
         HBox box = new HBox(label);
         box.setPadding(new Insets(8, 10, 5, 10));
@@ -3878,8 +4200,10 @@ public class MainWindow {
         return item;
 	}
     private Tooltip makeSmallTooltip(String text) {
+        String ff = AppContext.getUiFontFamily();
+        int    fs = AppContext.getUiFontSize();
         Tooltip t = new Tooltip(text);
-        t.setStyle("-fx-font-family:'Malgun Gothic'; -fx-font-size:11px;"
+        t.setStyle("-fx-font-family:'" + ff + "'; -fx-font-size:" + Math.max(fs - 2, 9) + "px;"
             + "-fx-background-color:rgba(255,245,251,0.95); -fx-text-fill:" + fgColor()
 		+ "; -fx-background-radius:8; -fx-border-color:" + borderColor() + "; -fx-border-radius:8;");
         return t;

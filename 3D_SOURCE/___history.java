@@ -1,7 +1,7 @@
 
 git add .
 
-git commit -m "위치추적"
+git commit -m "위치추적2"
 
 git push -u origin main
 
@@ -15,6 +15,51 @@ git commit -m "first commit"
 git remote add origin https://github.com/GarpsuKim/KootPanKingThree.git
 git branch -M main
 git push -u origin main
+
+
+
+
+
+
+
+
+1. [mainMenu / Help / Auto-Start on Boot] : 등록되어 있는 상태에서 해제하려면, [Admin Reg(관리자 인증)]을 통과해야만 하도록 수정
+
+2. [mainMenu / Image&Camera]  : 서브메뉴 추가 '녹화된 mp4 파일들...' --> fileChooser호출  --> 시스템 기본 플레이어 호출
+
+3. [Admin Reg] 네이버 등록 기능 추가
+--> 텍스트 2개 : 네이버 id , 네이버 비밀번호
+--> 적당한 위치에 '(네이버 칼렌다 일정관리) 기능을 이용하는데 필요합니다'라고 표시
+--> 버튼 1개 : '네이버 메일 수신 확인'표시
+--> 버튼 누르면, 4자리 난수 숫자를, 이미 먼저 등록되어 있는 gmail에서  수신자 xxxxx@naver.com 으로 발송
+--> 텍스트 1개 : 네이버 수신 난수 숫자 입력 --> 값 확인 ---> ini 등록 
+naver.caldav.id , naver.caldav.password , naver.certified.yymmddhhmmss(신규항목)
+"xxxxx@naver.com"  -->  gmail.lastTo  
+
+4. [Admin Reg] 다이알로그에 스타일 적용, 프로페셔날 느낌이 나도록
+ㅡ Naver CalDAV Settings 다이알로그 참고하여 이와 유사하게
+ㅡ 전체적인 좌우상하 싸이즈를 현재보다 대폭 크게 확장
+
+5. [ MainMenu / Tools / GmailCalendar / Naver Setting ] : 메뉴 삭제 --> [Admin Reg]에 통합
+
+6. [ MainMenu / Tools / GmailCalendar / Gmail Setup ] : 메뉴 삭제 --> [Admin Reg]에 이미 통합
+
+7. [ MainMenu / Tools / TeleGram ] : 메뉴 삭제 --> [Admin Reg]에 이미 통합
+
+8. [ MainMenu / Tools ] 서브 메뉴 개편 : 일정 조회 서브 메뉴들을 전부 레벨업해서 다음 구조로
+ㅡ Chime Setting
+ㅡ (구분선)
+ㅡ 구글 칼렌다 조회 (3일)
+ㅡ 구글 칼렌다 조회 (다음 7일)
+ㅡ 구글 칼렌다 조회 (지난 7일)
+ㅡ 구글 칼렌다 조회 (이번달)
+ㅡ 구글 칼렌다 조회 (다음달)
+ㅡ (구분선)
+ㅡ 네이버 칼렌다 조회 (3일)
+ㅡ 네이버 칼렌다 조회 (다음 7일)
+ㅡ 네이버 칼렌다 조회 (지난 7일)
+ㅡ 네이버 칼렌다 조회 (이번달)
+ㅡ 네이버 칼렌다 조회 (다음달)
 
 
 
