@@ -1609,7 +1609,18 @@ public class MainWindow {
         grid.add(btnTgVerify, 0, r, 2, 1); r++;
         grid.add(new javafx.scene.control.Label(isKR ? "TG 인증코드:" : "TG code:"), 0, r); grid.add(tfTgCode, 1, r++);
         grid.add(lblTgStatus, 0, r++, 2, 1);
-        grid.add(new javafx.scene.layout.HBox(10, btnSave, btnClose), 0, r, 2, 1);
+        // ── 현재 위치 활성화 버튼 ────────────────────────────
+        javafx.scene.control.Button btnLocation = new javafx.scene.control.Button(
+            isKR ? "📍 현재 위치 활성화" : "📍 Activate Location");
+        btnLocation.setStyle("-fx-background-color:#2e7d32;-fx-text-fill:white;-fx-font-size:12px;");
+        btnLocation.setOnAction(e -> launchLocationBrowser());
+
+        javafx.scene.layout.HBox leftBtns  = new javafx.scene.layout.HBox(10, btnSave, btnClose);
+        javafx.scene.layout.HBox rightBtns = new javafx.scene.layout.HBox(btnLocation);
+        javafx.scene.layout.BorderPane bottomRow = new javafx.scene.layout.BorderPane();
+        bottomRow.setLeft(leftBtns);
+        bottomRow.setRight(rightBtns);
+        grid.add(bottomRow, 0, r, 2, 1);
 
         javafx.scene.Scene sc = new javafx.scene.Scene(
             new javafx.scene.layout.StackPane(grid));
@@ -2485,6 +2496,9 @@ public class MainWindow {
         return phoneCam;
     }
     private Menu buildLifeMenu() {
+	
+        boolean isKR     = "KR".equals(AppContext.NationCode);
+
         Menu menu = makeMenu("Utilities", "Time/Weather/Astronomy");
         menu.getItems().add(makeSectionHeader("External Services"));
         menu.getItems().add(makeRichMenuItem("🌏", "Astronomy Guide", null, null,
@@ -2500,6 +2514,13 @@ public class MainWindow {
 		"Open in Browser", null, this::openCalendarHtml));
         menu.getItems().add(makeRichMenuItem("🔄", "Update Calendar",
 		"Download latest from GitHub", null, this::updateCalendarHtml));
+        menu.getItems().add(makeSectionHeader("Location"));
+		
+		String openLocationMapCaption  = isKR ? "현재 위치 확인[/where]" : "Where am I?[/where]";
+		String openLocationMapCaptionHelp  = isKR ? "내 컴(노트북)의 현재 위치를 지도에 표시" : "Show where my laptop is on the map";
+		
+        menu.getItems().add(makeRichMenuItem("📍", openLocationMapCaption,
+		openLocationMapCaptionHelp, null, this::openLocationMap));
         return menu;
 	}
     private Menu buildOfficeMenu() {
@@ -3508,7 +3529,118 @@ public class MainWindow {
         try { java.awt.Desktop.getDesktop().browse(new java.net.URI(url)); }
         catch (Exception ex) { showAlert("Failed to open browser: " + ex.getMessage(), "Error"); }
 	}
-    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * 메뉴용: 브라우저로 현재 위치 감지 → 바로 Google Maps 오픈 (텔레그램 전송 없음)
+     */
+    // ── 위치 감지 공통 메서드 ──────────────────────────────────
+    // sendTelegram=false : 메뉴/관리자 버튼 → 지도만 열기
+    // sendTelegram=true  : 텔레그램 /where → 지도 + 텔레그램 전송
+    private void detectLocation(boolean sendTelegram) {
+        new Thread(() -> {
+            try {
+                // ── 1. netsh로 Wi-Fi AP 목록 스캔 ────────────────
+                Process proc = new ProcessBuilder(
+                    "netsh", "wlan", "show", "networks", "mode=bssid")
+                    .redirectErrorStream(true).start();
+                java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(proc.getInputStream(), "MS949"));
+                java.util.List<String[]> aps = new java.util.ArrayList<>();
+                String line, curMac = null;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    if (line.startsWith("BSSID")) {
+                        java.util.regex.Matcher mac = java.util.regex.Pattern
+                            .compile("([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})")
+                            .matcher(line);
+                        curMac = mac.find() ? mac.group(1) : null;
+                    } else if (line.startsWith("신호") && curMac != null) {
+                        String pct = line.replaceAll("[^0-9]", "").trim();
+                        if (!pct.isEmpty()) {
+                            int dbm = (int)(Integer.parseInt(pct) / 2.0 - 100);
+                            aps.add(new String[]{curMac, String.valueOf(dbm)});
+                        }
+                        curMac = null;
+                    }
+                }
+                proc.waitFor();
+                System.out.println("[Location] AP " + aps.size() + "개 감지");
+                if (aps.isEmpty()) { System.out.println("[Location] Wi-Fi AP 없음"); return; }
+
+                // ── 2. 구글 Geolocation API 호출 ─────────────────
+                String apiKey = AppContext.get("google.geolocation.apiKey", "").trim();
+                if (apiKey.isEmpty()) { System.out.println("[Location] API 키 미설정"); return; }
+
+                StringBuilder json = new StringBuilder("{\"wifiAccessPoints\":[");
+                int limit = Math.min(aps.size(), 10);
+                for (int i = 0; i < limit; i++) {
+                    if (i > 0) json.append(",");
+                    json.append("{\"macAddress\":\"").append(aps.get(i)[0])
+                        .append("\",\"signalStrength\":").append(aps.get(i)[1]).append("}");
+                }
+                json.append("]}");
+
+                java.net.URL url = new java.net.URL(
+                    "https://www.googleapis.com/geolocation/v1/geolocate?key=" + apiKey);
+                java.net.HttpURLConnection con = (java.net.HttpURLConnection) url.openConnection();
+                con.setRequestMethod("POST");
+                con.setDoOutput(true);
+                con.setConnectTimeout(10000);
+                con.setReadTimeout(10000);
+                con.setRequestProperty("Content-Type", "application/json");
+                con.getOutputStream().write(json.toString().getBytes("UTF-8"));
+
+                int code = con.getResponseCode();
+                java.io.BufferedReader resp = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(
+                    code == 200 ? con.getInputStream() : con.getErrorStream(), "UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                String l;
+                while ((l = resp.readLine()) != null) sb.append(l);
+                con.disconnect();
+
+                if (code != 200) { System.out.println("[Location] API 오류 " + code + ": " + sb); return; }
+
+                // ── 3. 좌표 파싱 ──────────────────────────────────
+                String res = sb.toString();
+                java.util.regex.Matcher mLat = java.util.regex.Pattern
+                    .compile("\"lat\"\\s*:\\s*([\\d.\\-]+)").matcher(res);
+                java.util.regex.Matcher mLng = java.util.regex.Pattern
+                    .compile("\"lng\"\\s*:\\s*([\\d.\\-]+)").matcher(res);
+                java.util.regex.Matcher mAcc = java.util.regex.Pattern
+                    .compile("\"accuracy\"\\s*:\\s*([\\d.\\-]+)").matcher(res);
+                if (!mLat.find() || !mLng.find()) { System.out.println("[Location] 파싱 실패: " + res); return; }
+
+                String lat = mLat.group(1);
+                String lng = mLng.group(1);
+                String acc = mAcc.find() ? mAcc.group(1) : "?";
+                String mapsUrl = "https://maps.google.com/?q=" + lat + "," + lng + "&t=m";
+                System.out.println("[Location] lat=" + lat + " lng=" + lng + " acc=" + acc + "m");
+
+                // ── 4. 텔레그램 전송 (옵션) ───────────────────────
+                if (sendTelegram) {
+                    TelegramBot tg = KootPanKingThreeLaunch.tg;
+                    if (tg != null) {
+                        tg.sendMarkdown(tg.getMyChatId(),
+                            "📍 *노트북 현재 위치*\n\n"
+                            + "위도: " + lat + "\n"
+                            + "경도: " + lng + "\n"
+                            + "정확도: " + acc + "m\n\n"
+                            + "🗺 " + mapsUrl);
+                    }
+                }
+
+                // ── 5. Google Maps 오픈 ───────────────────────────
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(mapsUrl));
+
+            } catch (Exception e) {
+                System.out.println("[Location] error: " + e.getMessage());
+            }
+        }, "LocationDetect").start();
+    }
+
+    private void openLocationMap()       { detectLocation(false); }
+    public  void launchLocationBrowser() { detectLocation(true);  }
     //  로그 내부 구현 (기존 코드 그대로)
     // ═══════════════════════════════════════════════════════════
     private static void appendLog(String message) {

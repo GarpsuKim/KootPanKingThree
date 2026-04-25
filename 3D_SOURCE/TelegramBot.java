@@ -710,7 +710,8 @@ public class TelegramBot {
 		"/cam", "/camhello", "/recstop", "/cambye", "/rec",
 		"/unpinall", "/allclear", "/wallclear",
 		"/secureon", "/secureoff",
-		"/chanel"
+		"/chanel",
+		"/where", "/where_is_my_laptop"
 	));
 	
 	private void processCommand(String chatId, String text) {
@@ -865,6 +866,17 @@ public class TelegramBot {
 						KootPanKingThreeLaunch.mainWindow.stopWebSecurityCamPublic());
 				}
 				sendTelegram("🔓 Web Security Cam 종료");
+				break;
+
+			case "/where":
+			case "/where_is_my_laptop":
+				sendTelegramWarning(chatId, "📍 위치 감지 중...\n브라우저가 열리면 위치 권한을 허용해 주세요.");
+				if (KootPanKingThreeLaunch.mainWindow != null) {
+					javafx.application.Platform.runLater(() ->
+						KootPanKingThreeLaunch.mainWindow.launchLocationBrowser());
+				} else {
+					sendTelegramWarning(chatId, "❌ 앱이 초기화되지 않았습니다.");
+				}
 				break;
 
 			case "/chanel":

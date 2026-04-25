@@ -20,6 +20,26 @@ git push -u origin main
 
 
 
+
+1. [관리자 등록] 다이얼로그에 버튼 추가 : '현재 위치 활성화',화면 하단 오른쪽
+2. 이 버튼을 누르면 시스템 기본 브라우저로 현재 위치 호출
+
+3. [MainMenu / utilities] 에 서브메뉴 추가 : 현재 위치 확인
+--> 시스템 기본 브라우저로 현재 위치 호출
+
+4. 텔레그램 명령어 추가 : /where_is_my_laptop , /where
+--> 시스템 기본 브라우저로 현재 위치 호출
+
+
+
+
+
+
+
+
+
+
+
 1. 텔레그램  /secureOff는  관리자 인증 하지 않음
 2. 텔레그램 pin message에  cam on / cam off / secure on / secure off 를 항상 표시
 3. 동영상 caption의 font 크기를 현재 대비 5배 이상 확대 ( 현재 너무 작아서 안보임 )
