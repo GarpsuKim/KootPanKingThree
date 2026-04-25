@@ -80,7 +80,7 @@ public class MainWindow {
     private static  Kakao        kakao  = new Kakao();
     private static  TelegramBot        tg;
     private static  ChimeController    chimeController; // lazy-init
-    // ── Phone Camera (MainWindow 전용) ───────────────────────────
+    // ── PhoneCamera (MainWindow 전용) ───────────────────────────
     private TOOLS.CaptureManager.Camera   mwCamera          = null;
     // ── Web Camera (PC 내장/USB 웹캠) ────────────────────────────
     private TOOLS.WebcamCapture           webCam            = null;
@@ -926,6 +926,7 @@ public class MainWindow {
 	// ── 텔레그램 Settings 다이얼로그 (botToken + myChatId + statusGroupId 자동조회) ─────────
     public void showTelegramSettingsDialog(javafx.stage.Stage owner) {
         if (owner == null) owner = theStage;
+        boolean isKR = "KR".equals(AppContext.NationCode);
 
         javafx.stage.Stage dlg = new javafx.stage.Stage();
         dlg.initOwner(owner);
@@ -955,21 +956,21 @@ public class MainWindow {
 
         javafx.scene.control.ComboBox<String> groupCombo = new javafx.scene.control.ComboBox<>();
         groupCombo.setPrefWidth(320);
-        groupCombo.setPromptText("조회된 그룹 선택");
+        groupCombo.setPromptText(isKR ? "조회된 그룹 선택" : "Select a group");
 
         javafx.scene.control.Label resultLbl = new javafx.scene.control.Label("");
         resultLbl.setWrapText(true);
         resultLbl.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
 
-        javafx.scene.control.Button fetchBtn = new javafx.scene.control.Button("그룹 조회");
+        javafx.scene.control.Button fetchBtn = new javafx.scene.control.Button(isKR ? "그룹 조회" : "Fetch Groups");
         fetchBtn.setOnAction(ev -> {
             String token = tokenField.getText().trim();
             if (token.isEmpty()) {
-                resultLbl.setText("❌ Bot Token을 먼저 입력하세요.");
+                resultLbl.setText(isKR ? "❌ Bot Token을 먼저 입력하세요." : "❌ Please enter the Bot Token first.");
                 return;
             }
             fetchBtn.setDisable(true);
-            resultLbl.setText("조회 중...");
+            resultLbl.setText(isKR ? "조회 중..." : "Fetching...");
             new Thread(() -> {
                 try {
                     java.util.List<String> groups = fetchTelegramGroups(token);
@@ -977,15 +978,15 @@ public class MainWindow {
                         groupCombo.getItems().setAll(groups);
                         fetchBtn.setDisable(false);
                         if (groups.isEmpty()) {
-                            resultLbl.setText("조회된 그룹이 없습니다. 그룹에 봇을 초대하고 메시지를 하나 보낸 뒤 다시 조회하세요.");
+                            resultLbl.setText(isKR ? "조회된 그룹이 없습니다. 그룹에 봇을 초대하고 메시지를 하나 보낸 뒤 다시 조회하세요." : "No groups found. Invite the bot to a group, send a message, then retry.");
                         } else {
-                            resultLbl.setText("✅ 그룹 " + groups.size() + "건 조회");
+                            resultLbl.setText((isKR ? "✅ 그룹 " : "✅ ") + groups.size() + (isKR ? "건 조회" : " group(s) found"));
                         }
                     });
                 } catch (Exception ex) {
                     javafx.application.Platform.runLater(() -> {
                         fetchBtn.setDisable(false);
-                        resultLbl.setText("❌ 조회 실패: " + ex.getMessage());
+                        resultLbl.setText((isKR ? "❌ 조회 실패: " : "❌ Fetch failed: ") + ex.getMessage());
                     });
                 }
             }, "TelegramGroupFetch").start();
@@ -1016,10 +1017,16 @@ public class MainWindow {
         grid.add(lookupRow, 1, 3);
 
         javafx.scene.control.Label hint = new javafx.scene.control.Label(
+            (isKR ?
             "※ Bot Token: BotFather 에서 발급\n" +
             "※ My Chat ID: 1:1 대화창 Chat ID\n" +
             "※ Status Group ID: 상태 모니터링 그룹 Chat ID (-100...)\n" +
             "   [그룹 조회]는 최근 getUpdates 안의 group/supergroup 목록을 보여줍니다."
+            :
+            "※ Bot Token: issued by BotFather\n" +
+            "※ My Chat ID: your 1:1 chat ID\n" +
+            "※ Status Group ID: monitoring group chat ID (-100...)\n" +
+            "   [Fetch Groups] shows group/supergroup list from recent getUpdates.")
         );
         hint.setStyle("-fx-font-size:11px; -fx-text-fill:#777;");
         hint.setWrapText(true);
@@ -1649,6 +1656,7 @@ public class MainWindow {
     }
 
     private Menu buildFileMenu() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         Menu menu = makeMenu("File", "Open Files & App Control");
 		
 		menu.getItems().add(makeRichMenuItem("📁", "SuperDir",
@@ -1672,7 +1680,7 @@ public class MainWindow {
 		"Reboot system and restart program.", "", this::doWindowsReboot));
 
         menu.getItems().add(new SeparatorMenuItem());
-        menu.getItems().add(makeRichMenuItem("👤", "관리자 등록",
+        menu.getItems().add(makeRichMenuItem("👤", isKR ? "관리자 등록" : "Admin Registration",
 		"Admin registration (phone / Gmail / Telegram)", null,
         this::showAdminRegistration));
 
@@ -1729,7 +1737,7 @@ public class MainWindow {
         ipCam.setDisable(true);
         menu.getItems().add(ipCam);
 
-        // ── 제5서브: Phone Camera (서브메뉴) ───────────────────
+        // ── 제5서브: PhoneCamera (서브메뉴) ───────────────────
         menu.getItems().add(buildPhoneCameraMenu());
 
         return menu;
@@ -1781,7 +1789,7 @@ public class MainWindow {
                         hidePhoneSecAlarm();
                         if (secCamMode) showPhoneSecGuard();
                     });
-                    // 전송은 사용자가 /srecstop 또는 /scamBye 로 직접 중단
+                    // 전송은 사용자가 /scamstop 또는 /scamBye 로 직접 중단
                 }
             });
             motionDetector.start();
@@ -1812,6 +1820,7 @@ public class MainWindow {
     //  Phone Security Cam 오버레이 (우하단 녹색 / 화면 중앙 빨간)
     // ══════════════════════════════════════════════════════════════
     private void showPhoneSecGuard() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         if (phoneGuardStage != null) return;
         phoneGuardStage = new javafx.stage.Stage();
         phoneGuardStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
@@ -1819,7 +1828,7 @@ public class MainWindow {
         phoneGuardStage.setResizable(false);
 
         javafx.scene.control.Label lbl =
-            new javafx.scene.control.Label("📷  폰 카메라 감시중");
+            new javafx.scene.control.Label(isKR ? "📷  폰 카메라 감시중" : "📷  PhoneCamera Watching");
         lbl.setStyle("-fx-text-fill:white;-fx-font-size:14px;" +
             "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
@@ -1846,6 +1855,7 @@ public class MainWindow {
     }
 
     private void showPhoneSecAlarm() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         if (phoneAlarmStage != null) return;
         phoneAlarmStage = new javafx.stage.Stage();
         phoneAlarmStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
@@ -1853,7 +1863,7 @@ public class MainWindow {
         phoneAlarmStage.setResizable(false);
 
         javafx.scene.control.Label lbl =
-            new javafx.scene.control.Label("⚠   폰캠  침입 감지 !");
+            new javafx.scene.control.Label(isKR ? "⚠   폰캠  침입 감지 !" : "⚠   Phone Cam Intrusion Detected!");
         lbl.setStyle("-fx-text-fill:white;-fx-font-size:26px;" +
             "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
         javafx.scene.control.Button btn =
@@ -1912,6 +1922,7 @@ public class MainWindow {
     //  Web Security Cam 오버레이 (좌하단 녹색 / 화면 상단 중앙 빨간)
     // ══════════════════════════════════════════════════════════════
     private void showWebSecGuard() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         if (webGuardStage != null) return;
         webGuardStage = new javafx.stage.Stage();
         webGuardStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
@@ -1919,7 +1930,7 @@ public class MainWindow {
         webGuardStage.setResizable(false);
 
         javafx.scene.control.Label lbl =
-            new javafx.scene.control.Label("🌐  웹캠 감시중");
+            new javafx.scene.control.Label(isKR ? "🌐  웹캠 감시중" : "🌐  Webcam Watching");
         lbl.setStyle("-fx-text-fill:white;-fx-font-size:14px;" +
             "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(lbl);
@@ -1947,6 +1958,7 @@ public class MainWindow {
     }
 
     private void showWebSecAlarm() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         if (webAlarmStage != null) return;
         webAlarmStage = new javafx.stage.Stage();
         webAlarmStage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
@@ -1954,7 +1966,7 @@ public class MainWindow {
         webAlarmStage.setResizable(false);
 
         javafx.scene.control.Label lbl =
-            new javafx.scene.control.Label("⚠   웹캠  침입 감지 !");
+            new javafx.scene.control.Label(isKR ? "⚠   웹캠  침입 감지 !" : "⚠   Webcam Intrusion Detected!");
         lbl.setStyle("-fx-text-fill:white;-fx-font-size:26px;" +
             "-fx-font-weight:bold;-fx-font-family:'Malgun Gothic';");
         javafx.scene.control.Button btn =
@@ -1999,6 +2011,7 @@ public class MainWindow {
 
     // ── Web Camera 서브메뉴 ──────────────────────────────────────
     private Menu buildWebCameraMenu() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         Menu menu = makeMenu("🌐 Web Camera", "PC built-in / USB webcam");
 
         // 1) Connect
@@ -2054,13 +2067,18 @@ public class MainWindow {
         menu.getItems().add(makeRichMenuItem("📖", "Guide",
             "How to use webcam", null, () ->
             showAlert(
+                (isKR ?
                 "PC 웹캠 사용 방법\n\n" +
                 "1. [Install] 클릭 → Windows 카메라 설정 열기\n" +
                 "2. 카메라 권한 허용 확인\n" +
                 "3. [Connect] 클릭 → 장치 선택 후 라이브 피드 시작\n\n" +
-                "Windows 카메라 설정 화면 하단의 도움말 링크를 참조하세요.\n\n" +
-                "문제가 있으면:\n" +
-                "설정 → 개인 정보 보호 → 카메라 → 앱 접근 허용",
+                "문제가 있으면: 설정 → 개인정보 → 카메라 → 앱 접근 허용"
+                :
+                "PC Webcam Setup Guide\n\n" +
+                "1. Click [Install] → Windows Camera Settings\n" +
+                "2. Allow camera access\n" +
+                "3. Click [Connect] → Select device to start live feed\n\n" +
+                "If issues: Settings → Privacy → Camera → Allow app access"),
                 "Web Camera Guide")));
 
         return menu;
@@ -2068,13 +2086,14 @@ public class MainWindow {
 
     // ── Web Camera: Connect ──────────────────────────────────────
     public void connectWebCam() {
+        boolean isKR = "KR".equals(AppContext.NationCode);
         // sarxos webcam-capture 방식: ffmpeg 불필요
         // 장치 목록 조회 (별도 스레드 — Webcam.getWebcams() 가 블로킹)
         new Thread(() -> {
             java.util.List<String> devices = TOOLS.WebcamCapture.listDevices(null);
             javafx.application.Platform.runLater(() -> {
                 if (devices.isEmpty()) {
-                    showAlert("웹캠 장치를 찾을 수 없습니다.\n카메라가 연결되어 있는지 확인하세요.", "Web Camera");
+                    showAlert(isKR ? "웹캠 장치를 찾을 수 없습니다.\n카메라가 연결되어 있는지 확인하세요." : "No webcam device found.\nPlease check your camera connection.", "Web Camera");
                     return;
                 }
                 if (devices.size() == 1) {
@@ -2085,7 +2104,7 @@ public class MainWindow {
                 javafx.scene.control.ChoiceDialog<String> dlg =
                     new javafx.scene.control.ChoiceDialog<>(devices.get(0), devices);
                 dlg.setTitle("Web Camera");
-                dlg.setHeaderText("웹캠 장치를 선택하세요");
+                dlg.setHeaderText(isKR ? "웹캠 장치를 선택하세요" : "Select a webcam device");
                 dlg.setContentText("Camera:");
                 dlg.showAndWait().ifPresent(selected -> {
                     int idx = devices.indexOf(selected);
@@ -2171,7 +2190,7 @@ public class MainWindow {
             return;
         }
         // 스마트폰 카메라의 startMwCamera 녹화와 동일하게 mwCamera 패턴 재사용
-        showAlert("녹화는 Phone Camera의 [Start Video Recording] 과 동일하게 동작합니다.\n" +
+        showAlert("녹화는 PhoneCamera의 [Start Video Recording] 과 동일하게 동작합니다.\n" +
                   "현재 웹캠 피드가 탭에 표시되고 있습니다.", "Web Camera");
         // TODO: TelegramCamRecorder 연동 (다음 단계)
     }
@@ -2299,19 +2318,19 @@ public class MainWindow {
         System.out.println("[WebSecCam] stopped");
     }
 
-    // ── Phone Camera 서브메뉴 ────────────────────────────────────
+    // ── PhoneCamera 서브메뉴 ────────────────────────────────────
     private Menu buildPhoneCameraMenu() {
-        Menu phoneCam = makeMenu("📷 Phone Camera", "Smartphone camera via IP Webcam app");
+        Menu phoneCam = makeMenu("📷 PhoneCamera", "SmartPhoneCamera via IP Webcam app");
 
         MenuItem camConnect = makeRichMenuItem("▶", "Connect",
-            "Connect phone camera (IP Webcam)", null, () -> {
+            "Connect PhoneCamera (IP Webcam)", null, () -> {
             // ── Settings 다이얼로그 ───────────────────────────────
             javafx.stage.Stage dlg = new javafx.stage.Stage();
             dlg.initOwner(theStage);
             dlg.initStyle(javafx.stage.StageStyle.UTILITY);
             dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
             dlg.setAlwaysOnTop(true);
-            dlg.setTitle("Phone Camera Settings");
+            dlg.setTitle("PhoneCamera Settings");
 
             Label header = new Label(
                 "1. Install [IP Webcam] app on your Android phone\n" +
@@ -2435,7 +2454,7 @@ public class MainWindow {
         mwCamVideoItem.setDisable(!mwCameraMode);
 
         MenuItem camStop = makeRichMenuItem("⏹", "Stop",
-            "Stop phone camera", null, () -> {
+            "Stop PhoneCamera", null, () -> {
             stopMwVideoRecording();
             stopMwImageSeqRecording();
             stopMwCamera();
@@ -2465,9 +2484,9 @@ public class MainWindow {
             }, "CameraGuide").start();
         });
 
-        // ── Security Cam (Phone Camera 기반) ─────────────────────
+        // ── Security Cam (PhoneCamera 기반) ─────────────────────
         MenuItem phoneSecStart = makeRichMenuItem("🔒", "Secure Start",
-            "Start motion detection security (Phone Camera)", null, () -> {
+            "Start motion detection security (PhoneCamera)", null, () -> {
             if (secCamMode) { showAlert("Security Cam is already running.", "Security Cam"); return; }
             String url = AppContext.getCameraUrl();
             if (url == null || url.trim().isEmpty()) {
@@ -2478,7 +2497,7 @@ public class MainWindow {
         });
 
         MenuItem phoneSecStop = makeRichMenuItem("🔓", "Secure Stop",
-            "Stop motion detection security (Phone Camera)", null, () -> {
+            "Stop motion detection security (PhoneCamera)", null, () -> {
             if (!secCamMode) { showAlert("Security Cam is not running.", "Security Cam"); return; }
             if (!AdminAuth.authenticate(theStage)) return;
             stopSecurityCam();
@@ -3622,10 +3641,17 @@ public class MainWindow {
                     TelegramBot tg = KootPanKingThreeLaunch.tg;
                     if (tg != null) {
                         tg.sendMarkdown(tg.getMyChatId(),
+                            ("KR".equals(AppContext.NationCode) ?
                             "📍 *노트북 현재 위치*\n\n"
                             + "위도: " + lat + "\n"
                             + "경도: " + lng + "\n"
                             + "정확도: " + acc + "m\n\n"
+                            :
+                            "📍 *Laptop Current Location*\n\n"
+                            + "Lat: " + lat + "\n"
+                            + "Lng: " + lng + "\n"
+                            + "Accuracy: " + acc + "m\n\n"
+                            )
                             + "🗺 " + mapsUrl);
                     }
                 }
@@ -3895,7 +3921,7 @@ public class MainWindow {
 		+ "-fx-border-color: rgba(100,140,200,0.45); -fx-border-width: 0 0 1 0;";
 	}
     // ═══════════════════════════════════════════════════════════
-    //  Phone Camera 기능 (KootPanKingThreeApp 동일 로직 이식)
+    //  PhoneCamera 기능 (KootPanKingThreeApp 동일 로직 이식)
     // ═══════════════════════════════════════════════════════════
     private void startMwCamera(String streamUrl) {
         if (mwCamera != null) mwCamera.stop();

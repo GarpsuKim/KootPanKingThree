@@ -815,7 +815,7 @@ public class Multimedia {
     //
     //  /cam        → 현재 프레임 1장 전송
     //  /camHello   → 카메라 시작 + 10초 무한 루프 (전송 + PC저장)
-    //  /recstop    → 전송 중단, 카메라 유지
+    //  /camstop    → 전송 중단, 카메라 유지
     //  /camBye     → 마지막 클립 완료 후 카메라 종료
     //
     //  클립마다: encode → APP_DIR/img/cam_*.mp4 저장 + Telegram sendVideo
@@ -904,7 +904,7 @@ public class Multimedia {
                 return;
             }
             if (continuousRec) {
-                tg.sendTelegram("⚠️ 연속 녹화 중입니다. /recstop 후 사용하세요");
+                tg.sendTelegram("⚠️ 연속 녹화 중입니다. /camstop 후 사용하세요");
                 return;
             }
             String ffExe = checkFfmpeg();
@@ -984,7 +984,7 @@ public class Multimedia {
         // ── /camHello — 10초 무한 루프 시작 ─────────────────────────
         public void startContinuousRec(String chatId) {
             if (continuousRec) {
-                tg.sendTelegram("⚠️ 이미 연속 녹화 중입니다\n중단: /recstop  종료: /camBye");
+                tg.sendTelegram("⚠️ 이미 연속 녹화 중입니다\n중단: /camstop  종료: /camBye");
                 return;
             }
             String ffExe = checkFfmpeg();
@@ -997,11 +997,11 @@ public class Multimedia {
             tg.sendTelegram("🔴 연속 녹화 시작\n" +
                 "• 10초마다 PC 저장 + Telegram 전송\n" +
                 "• 저장 위치: img/cam_*.mp4\n" +
-                "⏹ 전송 중단: /recstop\n" +
+                "⏹ 전송 중단: /camstop\n" +
                 "🛑 카메라 종료: /camBye");
         }
 
-        // ── /recstop — 전송 중단, 카메라 유지 ───────────────────────
+        // ── /camstop — 전송 중단, 카메라 유지 ───────────────────────
         public void stopContinuousRec(String chatId) {
             if (!continuousRec) {
                 tg.sendTelegram("⚠️ 연속 녹화 중이 아닙니다");
@@ -1271,7 +1271,7 @@ public class Multimedia {
         }
     }
 
-    // ── Phone Camera 전용 MotionDetector ────────────────────────────────
+    // ── PhoneCamera 전용 MotionDetector ────────────────────────────────
     public static class PhoneMotionDetector extends MotionDetector {
         private final TOOLS.CaptureManager.Camera camera;
 

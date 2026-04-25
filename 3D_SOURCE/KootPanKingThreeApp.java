@@ -811,7 +811,7 @@ public class KootPanKingThreeApp {
                 chimeController.showChimeDialog();
 			}
 		});
-        javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 Phone Camera");
+        javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 PhoneCamera");
 		return chimeItem;
 	}
 	// ── YouTube 실시간 세계도h 메뉴 ─────────────────────────────────────
@@ -982,12 +982,12 @@ public class KootPanKingThreeApp {
 	// ── 스마트폰 카메라 메뉴 ────────────────────────────────────────────
 	private javafx.scene.control.Menu buildPhoneCamMenu(
 		javafx.scene.control.ContextMenu popup) {
-        javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 Phone Camera");
-        javafx.scene.control.MenuItem camStart      = new javafx.scene.control.MenuItem("▶ Connect Phone Camera");
+        javafx.scene.control.Menu phoneCam = new javafx.scene.control.Menu("📷 PhoneCamera");
+        javafx.scene.control.MenuItem camStart      = new javafx.scene.control.MenuItem("▶ Connect PhoneCamera");
         javafx.scene.control.MenuItem camSnapshot   = new javafx.scene.control.MenuItem("📸 Save Image");
         camVideoItem = new javafx.scene.control.MenuItem("🎬 Start Video Recording");
         javafx.scene.control.MenuItem camCapture    = camVideoItem; // 별칭 (Other위 코드 호환)
-        javafx.scene.control.MenuItem camStop       = new javafx.scene.control.MenuItem("⏹ Stop Phone Camera");
+        javafx.scene.control.MenuItem camStop       = new javafx.scene.control.MenuItem("⏹ Stop PhoneCamera");
         // 초기 activation 상태: 연결 중 때만 Image Save/중지 activation
         camSnapshot .setDisable(!cameraMode);
         camVideoItem.setDisable(!cameraMode);
@@ -1000,7 +1000,7 @@ public class KootPanKingThreeApp {
             dlg.initStyle(javafx.stage.StageStyle.UTILITY);
             dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
             dlg.setAlwaysOnTop(true);
-            dlg.setTitle("Phone Camera Settings");
+            dlg.setTitle("PhoneCamera Settings");
             // Info Text
             javafx.scene.control.Label header = new javafx.scene.control.Label(
                 "1. Launch [IP Webcam] app on your phone\n" +
@@ -1144,8 +1144,8 @@ public class KootPanKingThreeApp {
         javafx.scene.control.MenuItem camGuide = new javafx.scene.control.MenuItem("📖 Usage Guide");
         camGuide.setOnAction(e -> {
 			String GUIDE_URL     = "https://blog.naver.com/garpsu/224213426659";
-			String GUIDE_MSG     = "How to connect PC and phone camera: " + GUIDE_URL;
-			String GUIDE_SUBJECT = "[KootPanKing] PC & Phone Camera Connection Guide";
+			String GUIDE_MSG     = "How to connect PC and PhoneCamera: " + GUIDE_URL;
+			String GUIDE_SUBJECT = "[KootPanKing] PC & PhoneCamera Connection Guide";
             // ① 브라우저 열기
             new Thread(() -> {
                 try {
@@ -2835,7 +2835,7 @@ public class KootPanKingThreeApp {
                     "Images will be saved every 5 seconds.\n" +
                     "Save folder: " + imgDir.getAbsolutePath() + "\n\n" +
                     "To save video:\n" +
-                    "[Connect Phone Camera] → [Set Video Tool] button\n" +
+                    "[Connect PhoneCamera] → [Set Video Tool] button\n" +
 				"Please set ffmpeg.exe.");
                 // info.setAlwaysOnTop(true);
                 info.show();
