@@ -1,5 +1,15 @@
 
 @echo off
+
+rem  *******************************
+rem  WebCamLibraryDownload.BAT
+rem  *******************************
+
+curl -L -o jna-5.14.0.jar "https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar"
+ 
+curl -L -o jna-platform-5.14.0.jar "https://repo1.maven.org/maven2/net/java/dev/jna/jna-platform/5.14.0/jna-platform-5.14.0.jar"
+
+
 rem  *******************************
 rem  WebCamLibraryDownload.BAT
 rem  *******************************

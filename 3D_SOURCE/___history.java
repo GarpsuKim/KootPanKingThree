@@ -1,7 +1,7 @@
 
 git add .
 
-git commit -m "위치추적2"
+git commit -m "위치추적3"
 
 git push -u origin main
 

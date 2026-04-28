@@ -69,6 +69,10 @@ public class TelegramBot {
         void saveConfig();
         /** /text 로 Save된 Text File을 메인창 탭으로 열기 */
         void openTextFile(java.io.File file);
+        /** /lock   — Super Lock Screen 즉시 활성화 */
+        default void superLock()   {}
+        /** /unlock — Super Lock Screen 해제 */
+        default void superUnlock() {}
 	}
 
 	// ── 카메라 명령 핸들러 (CommandHandler 와 분리 — MainWindow 에서 등록) ──────
@@ -258,6 +262,11 @@ public class TelegramBot {
 		AppLogger.logException(e);		}
 	}
 	/** 폴링 시작 전 기존 Message를 모두 건너뜀 - Restart 후 이전 명령 재처리 방지 */
+	/** 슈퍼잠금 해제 시 호출 — 잠금 중 쌓인 텔레그램 메시지를 읽어 lastUpdateId 갱신 후 무시 */
+	public void flushPendingUpdates() {
+		skipOldUpdates();
+	}
+
 	private void skipOldUpdates() {
 		try {
 			String apiUrl = "https://api.telegram.org/bot" + botToken
@@ -720,7 +729,8 @@ public class TelegramBot {
 		"/unpinall", "/allclear", "/wallclear",
 		"/secureon", "/secureoff",
 		"/chanel",
-		"/where", "/where_is_my_laptop"
+		"/where", "/where_is_my_laptop",
+		"/lock", "/unlock"
 	));
 	
 	private void processCommand(String chatId, String text) {
@@ -739,6 +749,17 @@ public class TelegramBot {
 		switch (cmd) {
 			case "/cmd"   : processCMD  ( chatId,  text);	break;
 			case "/ps"   : processPowerShell  ( chatId,  text);	break;
+
+			case "/lock":
+				sendTelegram("🔐 " + t("슈퍼 잠금 활성화 중...", "Activating Super Lock..."));
+				handler.superLock();
+				sendTelegram("🔐 " + t("슈퍼 잠금 완료. 해제: /unlock", "Super Lock active. Release: /unlock"));
+				break;
+
+			case "/unlock":
+				handler.superUnlock();
+				sendTelegram("🔓 " + t("슈퍼 잠금 해제 완료.", "Super Lock released."));
+				break;
 			
 			case "/save"  : processSave ( chatId,  text);	break;
 			case "/wh"    : processStart( chatId,  text);	break;
