@@ -751,9 +751,9 @@ public class TelegramBot {
 			case "/ps"   : processPowerShell  ( chatId,  text);	break;
 
 			case "/lock":
-				sendTelegram("🔐 " + t("슈퍼 잠금 활성화 중...", "Activating Super Lock..."));
+				sendTelegram("🔐 " + t("화면 잠금 중...", "Locking screen..."));
 				handler.superLock();
-				sendTelegram("🔐 " + t("슈퍼 잠금 완료. 해제: /unlock", "Super Lock active. Release: /unlock"));
+				sendTelegram("🔐 " + t("잠금 완료. Windows 비밀번호로 해제하세요.", "Locked. Use Windows password to unlock."));
 				break;
 
 			case "/unlock":

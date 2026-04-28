@@ -583,10 +583,12 @@ public final class AppContext {
         set("camera.url", url != null ? url : "");
         save();
 	}
-	
+
     /** ffmpeg Executable Path (카메라·YouTube 공용) */
     public static String getFfmpegPath() {
-        return get("ffmpeg.path", "");
+        String ffmpegPath = get("ffmpeg.path", "");
+		if ( ffmpegPath == null || ffmpegPath.isEmpty() ) ffmpegPath = "ffmpeg";
+		return ffmpegPath;
 	}
     public static void setFfmpegPath(String path) {
         set("ffmpeg.path", path != null ? path : "");

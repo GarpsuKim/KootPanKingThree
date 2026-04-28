@@ -56,24 +56,7 @@ public class KootPanKingThreeLaunch extends Application {
 		setupMouseHook();
 		setupKeyboardHook();
 
-		// ── Lock Screen 용 글로벌 훅 이벤트 억제 콜백 ─────────
-		// 슈퍼잠금 시: swallow=true 훅으로 교체 → OS 레벨에서 이벤트 완전 소비
-		// 해제 시: 일반 훅으로 복원
-		mainWindow.onLockHooksOff = () -> {
-			try {
-				// 기존 훅 종료
-				if (mouseHook    != null && mouseHook.isAlive())    mouseHook.shutdownHook();
-				if (keyboardHook != null && keyboardHook.isAlive()) keyboardHook.shutdownHook();
-				mouseHook    = null;
-				keyboardHook = null;
-				// swallow=true 훅 시작 → 모든 이벤트를 OS 레벨에서 소비 (리스너 불필요)
-				mouseHook    = new GlobalMouseHook(true);
-				keyboardHook = new GlobalKeyboardHook(true);
-				System.out.println("[SuperLock] swallow 훅 시작 — 모든 입력 이벤트 소비");
-			} catch (Exception e) {
-				System.out.println("[SuperLock] swallow 훅 시작 실패: " + e.getMessage());
-			}
-		};
+		// ── Lock Screen 용 글로벌 훅 복원 콜백 ───────────────────
 		mainWindow.onLockHooksOn = () -> {
 			try {
 				// swallow 훅 종료

@@ -137,10 +137,9 @@ public class MainWindow {
     public  Runnable                       onLockHooksOn    = null;  // 해제 시 훅 재활성화
     public  Runnable                       onSuperUnlock    = null;  // 슈퍼잠금 해제 시 TG 큐 플러시
     // ── Super Lock Screen ──────────────────────────────────────
-    private final java.util.List<javafx.stage.Stage>           superLockStages     = new java.util.ArrayList<>();
-    private final java.util.List<javafx.scene.image.ImageView> superLockCamViews   = new java.util.ArrayList<>();
-    private boolean                        superLockStartedCam  = false;
-    private javafx.animation.Timeline      superLockCamTimeline = null;
+    private volatile boolean               superLocked             = false;
+    private volatile boolean               sessionWatcherRunning   = false;
+    private Thread                         sessionWatcherThread    = null;
     private volatile long                 mwImgSeqLastMs    = 0L;
     private static final long             MW_IMG_SEQ_MS     = 5_000L;
     private Multimedia.CameraTabHandle    mwCamTabHandle    = null;
@@ -2408,24 +2407,8 @@ public class MainWindow {
         new Thread(() -> {
             java.util.List<String> devices = TOOLS.WebcamCapture.listDevices(null);
             javafx.application.Platform.runLater(() -> {
-                if (devices.isEmpty()) {
-                    showAlert(isKR ? "웹캠 장치를 찾을 수 없습니다.\n카메라가 연결되어 있는지 확인하세요." : "No webcam device found.\nPlease check your camera connection.", "Web Camera");
-                    return;
-                }
-                if (devices.size() == 1) {
-                    startWebCamFeed(0, devices.get(0));
-                    return;
-                }
-                // 장치 2개 이상 → 선택 다이얼로그
-                javafx.scene.control.ChoiceDialog<String> dlg =
-                    new javafx.scene.control.ChoiceDialog<>(devices.get(0), devices);
-                dlg.setTitle("Web Camera");
-                dlg.setHeaderText(isKR ? "웹캠 장치를 선택하세요" : "Select a webcam device");
-                dlg.setContentText("Camera:");
-                dlg.showAndWait().ifPresent(selected -> {
-                    int idx = devices.indexOf(selected);
-                    startWebCamFeed(idx, selected);
-                });
+                if (devices.isEmpty()) return;
+                startWebCamFeed(0, devices.get(0));
             });
         }, "WebCamListDevices").start();
     }
@@ -3887,14 +3870,16 @@ public class MainWindow {
         boolean BlockInput(boolean fBlockIt);
         boolean ClipCursor(com.sun.jna.platform.win32.WinDef.RECT lpRect);
         boolean GetCursorPos(com.sun.jna.platform.win32.WinDef.POINT lpPoint);
-        boolean SetCursorPos(int x, int y);  // 커서 강제 이동
+        boolean SetCursorPos(int x, int y);
+        com.sun.jna.platform.win32.WinNT.HANDLE OpenInputDesktop(int dwFlags, boolean fInherit, int dwDesiredAccess);
+        boolean GetUserObjectInformationA(com.sun.jna.platform.win32.WinNT.HANDLE hObj, int nIndex,
+            com.sun.jna.Pointer pvInfo, int nLength, com.sun.jna.ptr.IntByReference lpnLengthNeeded);
+        boolean CloseDesktop(com.sun.jna.platform.win32.WinNT.HANDLE hDesktop);
     }
 
-    /** BlockInput + ClipCursor(커서 1x1 고정) */
     private void setBlockInput(boolean block) {
         try {
             boolean ok = WinUser32.INSTANCE.BlockInput(block);
-            // BlockInput(false) 가 Ctrl+Alt+Del 로 이미 해제된 경우 result=false → 재시도
             if (!block && !ok) {
                 for (int i = 0; i < 3; i++) {
                     WinUser32.INSTANCE.BlockInput(true);
@@ -3902,35 +3887,22 @@ public class MainWindow {
                     if (ok) break;
                 }
             }
-            System.out.println("[LockScreen] BlockInput=" + block + " result=" + ok);
         } catch (Throwable t) {
             System.out.println("[LockScreen] BlockInput 실패: " + t.getMessage());
         }
         try {
             if (block) {
-                // 현재 커서 위치 파악 → 그 자리에 1x1 박스로 고정
-                com.sun.jna.platform.win32.WinDef.POINT pt =
-                    new com.sun.jna.platform.win32.WinDef.POINT();
+                com.sun.jna.platform.win32.WinDef.POINT pt = new com.sun.jna.platform.win32.WinDef.POINT();
                 WinUser32.INSTANCE.GetCursorPos(pt);
-                com.sun.jna.platform.win32.WinDef.RECT rect =
-                    new com.sun.jna.platform.win32.WinDef.RECT();
-                rect.left   = pt.x;
-                rect.top    = pt.y;
-                rect.right  = pt.x + 1;
-                rect.bottom = pt.y + 1;
-                boolean ok2 = WinUser32.INSTANCE.ClipCursor(rect);
-                System.out.println("[LockScreen] ClipCursor(lock) result=" + ok2
-                    + " pos=(" + pt.x + "," + pt.y + ")");
+                com.sun.jna.platform.win32.WinDef.RECT rect = new com.sun.jna.platform.win32.WinDef.RECT();
+                rect.left = pt.x; rect.top = pt.y; rect.right = pt.x + 1; rect.bottom = pt.y + 1;
+                WinUser32.INSTANCE.ClipCursor(rect);
             } else {
-                // ClipCursor 해제 후 커서를 주 모니터 중앙으로 이동 → 이벤트 큐 정리
                 WinUser32.INSTANCE.ClipCursor(null);
-                javafx.geometry.Rectangle2D screen =
-                    javafx.stage.Screen.getPrimary().getVisualBounds();
-                int cx = (int)(screen.getMinX() + screen.getWidth()  / 2);
-                int cy = (int)(screen.getMinY() + screen.getHeight() / 2);
-                WinUser32.INSTANCE.SetCursorPos(cx, cy);
-                System.out.println("[LockScreen] ClipCursor released, cursor → center ("
-                    + cx + "," + cy + ")");
+                javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
+                WinUser32.INSTANCE.SetCursorPos(
+                    (int)(screen.getMinX() + screen.getWidth()  / 2),
+                    (int)(screen.getMinY() + screen.getHeight() / 2));
             }
         } catch (Throwable t) {
             System.out.println("[LockScreen] ClipCursor 실패: " + t.getMessage());
@@ -4084,135 +4056,64 @@ public class MainWindow {
     //  슈퍼 잠금 / 해제  (키보드+마우스 완전 차단, 텔레그램 /unlock 전용)
     // ═══════════════════════════════════════════════════════════
     public void superLockScreen() {
-        if (!superLockStages.isEmpty()) return;
-        boolean isKR = "KR".equals(AppContext.NationCode);
-        superLockCamViews.clear();
-
-        if (onLockHooksOff != null) onLockHooksOff.run();
-        setBlockInput(true);
-        applyPowerButtonLock();  // 전원버튼/뚜껑 닫기 → 아무 것도 안 함
-        applyHidDeviceLock();    // 키보드/마우스 HID 장치 비활성화 (카메라 제외)
-
-        for (javafx.stage.Screen screen : javafx.stage.Screen.getScreens()) {
-            javafx.geometry.Rectangle2D b = screen.getBounds();
-
-            javafx.scene.control.Label iconLbl = new javafx.scene.control.Label("🔐");
-            iconLbl.setStyle("-fx-font-size:52px;");
-
-            javafx.scene.control.Label clockLbl = new javafx.scene.control.Label(
-                new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()));
-            clockLbl.setStyle("-fx-font-family:'" + AppContext.getUiFontFamily() + "';"
-                + "-fx-font-size:52px; -fx-font-weight:bold; -fx-text-fill:white;");
-            javafx.animation.Timeline clockTick = new javafx.animation.Timeline(
-                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), ev ->
-                    clockLbl.setText(new java.text.SimpleDateFormat("HH:mm:ss")
-                        .format(new java.util.Date()))));
-            clockTick.setCycleCount(javafx.animation.Animation.INDEFINITE);
-            clockTick.play();
-
-            javafx.scene.control.Label msgLbl = new javafx.scene.control.Label(
-                isKR ? "🔐 슈퍼 잠금 활성화" : "🔐 Super Lock Active");
-            msgLbl.setStyle("-fx-font-family:'" + AppContext.getUiFontFamily() + "';"
-                + "-fx-font-size:22px; -fx-font-weight:bold; -fx-text-fill:#ff4444;");
-
-            javafx.scene.control.Label hintLbl = new javafx.scene.control.Label(
-                isKR ? "텔레그램  /unlock  으로만 해제 가능"
-                     : "Only Telegram  /unlock  can release");
-            hintLbl.setStyle("-fx-font-family:'" + AppContext.getUiFontFamily() + "';"
-                + "-fx-font-size:14px; -fx-text-fill:rgba(255,200,100,0.85);");
-
-            javafx.scene.image.ImageView camView = new javafx.scene.image.ImageView();
-            camView.setPreserveRatio(true);
-            camView.setFitWidth(Math.min(b.getWidth() * 0.72, 720));
-            camView.setFitHeight(Math.min(b.getHeight() * 0.50, 450));
-            camView.setStyle("-fx-effect: dropshadow(gaussian,rgba(0,0,0,0.7),18,0,0,4);");
-            superLockCamViews.add(camView);
-
-            javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(18,
-                iconLbl, clockLbl, msgLbl, camView, hintLbl);
-            content.setAlignment(javafx.geometry.Pos.CENTER);
-
-            javafx.scene.layout.StackPane root = new javafx.scene.layout.StackPane(content);
-            root.setStyle("-fx-background-color: rgba(5,5,18,0.97);");
-
-            javafx.scene.Scene scene = new javafx.scene.Scene(root, b.getWidth(), b.getHeight());
-            scene.setFill(javafx.scene.paint.Color.BLACK);
-
-            javafx.stage.Stage lock = new javafx.stage.Stage();
-            lock.initStyle(javafx.stage.StageStyle.UNDECORATED);
-            lock.setAlwaysOnTop(true);
-            lock.setResizable(false);
-            lock.setScene(scene);
-            lock.setX(b.getMinX());
-            lock.setY(b.getMinY());
-            lock.setOnHidden(ev -> clockTick.stop());
-            lock.show();
-            superLockStages.add(lock);
-        }
-
-        if (webCam == null || !webCam.isRunning()) {
-            superLockStartedCam = true;
-            new Thread(() -> {
-                java.util.List<String> devices = TOOLS.WebcamCapture.listDevices(null);
-                if (devices.isEmpty()) { System.out.println("[SuperLock] 웹캠 없음"); return; }
-                TOOLS.WebcamCapture cam =
-                    new TOOLS.WebcamCapture(null, 0, devices.get(0), frame -> {});
-                cam.start();
-                javafx.application.Platform.runLater(() -> webCam = cam);
-                System.out.println("[SuperLock] 웹캠 시작: " + devices.get(0));
-            }, "SuperLockCam").start();
-        } else {
-            superLockStartedCam = false;
-        }
-
-        superLockCamTimeline = new javafx.animation.Timeline(
-            new javafx.animation.KeyFrame(javafx.util.Duration.millis(66), ev -> {
-                if (webCam == null) return;
-                java.awt.image.BufferedImage frame = webCam.getLastFrameAWT();
-                if (frame == null) return;
-                javafx.scene.image.WritableImage fxImg =
-                    javafx.embed.swing.SwingFXUtils.toFXImage(frame, null);
-                for (javafx.scene.image.ImageView iv : superLockCamViews) iv.setImage(fxImg);
-            }));
-        superLockCamTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        superLockCamTimeline.play();
-
-        System.out.println("[SuperLock] 슈퍼잠금 완료 — " + superLockStages.size() + "개 모니터");
+        if (superLocked) return;
+        superLocked = true;
+        applyPowerButtonLock();
+        com.sun.jna.platform.win32.User32.INSTANCE.LockWorkStation();
+        startSessionUnlockWatcher();
+        System.out.println("[SuperLock] LockWorkStation 호출 완료");
     }
 
     public void superUnlockScreen() {
-        if (!javafx.application.Platform.isFxApplicationThread()) {
-            javafx.application.Platform.runLater(this::superUnlockScreen);
-            return;
+        if (!superLocked) return;
+        superLocked = false;
+        stopSessionUnlockWatcher();
+        removePowerButtonLock();
+        System.out.println("[SuperLock] 전원버튼 복원 완료");
+    }
+
+    private void startSessionUnlockWatcher() {
+        sessionWatcherRunning = true;
+        sessionWatcherThread = new Thread(() -> {
+            // LockWorkStation 이 실제로 적용될 때까지 대기
+            try { Thread.sleep(3_000); } catch (InterruptedException e) { return; }
+            while (sessionWatcherRunning) {
+                try {
+                    Thread.sleep(1_000);
+                    if (!isWorkstationLocked()) {
+                        sessionWatcherRunning = false;
+                        superUnlockScreen();
+                        System.out.println("[SuperLock] Windows 잠금 해제 감지 → 전원버튼 복원");
+                        break;
+                    }
+                } catch (InterruptedException e) { break; }
+            }
+        }, "SuperLockWatcher");
+        sessionWatcherThread.setDaemon(true);
+        sessionWatcherThread.start();
+    }
+
+    private void stopSessionUnlockWatcher() {
+        sessionWatcherRunning = false;
+        if (sessionWatcherThread != null) {
+            sessionWatcherThread.interrupt();
+            sessionWatcherThread = null;
         }
-        if (superLockStages.isEmpty()) return;
+    }
 
-        setBlockInput(false);
-        removePowerButtonLock();  // 전원버튼/뚜껑 닫기 동작 복원
-        removeHidDeviceLock();    // 키보드/마우스 HID 장치 재활성화
-
-        if (superLockCamTimeline != null) { superLockCamTimeline.stop(); superLockCamTimeline = null; }
-        superLockCamViews.clear();
-        superLockStages.forEach(javafx.stage.Stage::close);
-        superLockStages.clear();
-
-        if (superLockStartedCam) {
-            if (webCam != null) { webCam.stop(); webCam = null; }
-            if (webCamTabHandle != null) { webCamTabHandle.closeTab(); webCamTabHandle = null; }
-            superLockStartedCam = false;
-            System.out.println("[SuperLock] 웹캠 종료");
+    private boolean isWorkstationLocked() {
+        try {
+            com.sun.jna.platform.win32.WinNT.HANDLE hDesk =
+                WinUser32.INSTANCE.OpenInputDesktop(0, false, 0x0100);
+            if (hDesk == null) return true;
+            com.sun.jna.Memory mem = new com.sun.jna.Memory(256);
+            com.sun.jna.ptr.IntByReference lenRef = new com.sun.jna.ptr.IntByReference();
+            WinUser32.INSTANCE.GetUserObjectInformationA(hDesk, 2, mem, 256, lenRef);
+            WinUser32.INSTANCE.CloseDesktop(hDesk);
+            return !"Default".equalsIgnoreCase(mem.getString(0));
+        } catch (Throwable t) {
+            return true;
         }
-
-        // 3초 대기 → 잠금 중 쌓인 마우스/키보드/텔레그램 이벤트 큐 소진 후 훅 재활성화
-        new Thread(() -> {
-            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-            // 텔레그램 대기 큐 플러시 (잠금 중 쌓인 명령 무시)
-            if (onSuperUnlock != null) onSuperUnlock.run();
-            javafx.application.Platform.runLater(() -> {
-                if (onLockHooksOn != null) onLockHooksOn.run();
-                System.out.println("[SuperLock] 슈퍼잠금 해제 완료");
-            });
-        }, "SuperUnlockHookDelay").start();
     }
 
     /**
@@ -4289,44 +4190,7 @@ public class MainWindow {
      * 카메라는 Camera/Image 클래스 → HID/Keyboard/Mouse 와 다르므로 영향 없음.
      * 내장 노트북 키보드(I2C HID) 포함하여 전부 비활성화.
      */
-    private void applyHidDeviceLock() {
-        // Keyboard, Mouse, HIDClass 전체 비활성화 (Camera 클래스는 제외됨)
-        String ps =
-            "Get-PnpDevice -Class @('Keyboard','Mouse','HIDClass') " +
-            "| Where-Object {$_.Status -eq 'OK'} " +
-            "| Disable-PnpDevice -Confirm:$false -ErrorAction SilentlyContinue";
-        runPowerShell(ps, "HID lock");
-        System.out.println("[SuperLock] HID 장치 비활성화 완료");
-    }
-
-    /**
-     * 슈퍼잠금 해제 시 키보드/마우스 PnP 장치 재활성화.
-     */
-    private void removeHidDeviceLock() {
-        String ps =
-            "Get-PnpDevice -Class @('Keyboard','Mouse','HIDClass') " +
-            "| Where-Object {$_.Status -eq 'Error' -or $_.Status -eq 'Disabled'} " +
-            "| Enable-PnpDevice -Confirm:$false -ErrorAction SilentlyContinue";
-        runPowerShell(ps, "HID unlock");
-        System.out.println("[SuperLock] HID 장치 재활성화 완료");
-    }
-
-    /** PowerShell 명령 실행 헬퍼 */
-    private void runPowerShell(String command, String tag) {
-        try {
-            new ProcessBuilder(
-                "powershell", "-NoProfile", "-NonInteractive",
-                "-ExecutionPolicy", "Bypass",
-                "-Command", command)
-                .inheritIO()
-                .start();
-            System.out.println("[SuperLock] PowerShell " + tag + " 실행");
-        } catch (Exception e) {
-            System.out.println("[SuperLock] PowerShell " + tag + " 실패: " + e.getMessage());
-        }
-    }
-
-    public boolean isSuperLocked() { return !superLockStages.isEmpty(); }
+    public boolean isSuperLocked() { return superLocked; }
 
     private void openBrowser(String url) {
         try { java.awt.Desktop.getDesktop().browse(new java.net.URI(url)); }
